@@ -4,12 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { waitUntil } from "@vercel/functions";
-import {
-  ExternalLink,
-  GitBranch,
-  GitMerge,
-  GitPullRequest,
-} from "lucide-react";
+import { ExternalLink, GitPullRequest } from "lucide-react";
 
 import { PullRequestDiffViewer } from "@/components/pr/pull-request-diff-viewer";
 import {
@@ -267,13 +262,13 @@ function PullRequestHeaderContent({
   const updatedAt = new Date(pullRequest.updated_at);
 
   return (
-    <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm">
-      <div className="flex flex-col gap-5 lg:flex-row lg:justify-between lg:gap-8">
-        <div className="flex-1">
-          <div className="flex flex-wrap items-center gap-3 text-sm">
+    <section className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <span
               className={cn(
-                "rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide",
+                "rounded-md px-2 py-0.5 font-semibold uppercase tracking-wide",
                 statusBadge.className
               )}
             >
@@ -287,72 +282,47 @@ function PullRequestHeaderContent({
             </span>
           </div>
 
-          <h1 className="mt-3 text-2xl font-semibold leading-tight text-neutral-900 sm:text-3xl">
+          <h1 className="mt-2 text-xl font-semibold leading-tight text-neutral-900">
             {pullRequest.title}
           </h1>
 
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-neutral-600">
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-600">
             {pullRequest.user?.login ? (
-              <span>
-                opened by{" "}
+              <>
                 <span className="font-medium text-neutral-900">
                   @{pullRequest.user.login}
                 </span>
-              </span>
+                <span className="text-neutral-400">•</span>
+              </>
             ) : null}
-            <span className="text-neutral-400">•</span>
-            <span>
-              {formatRelativeTimeFromNow(createdAt)} • {formatDate(createdAt)}
-            </span>
+            <span>{formatRelativeTimeFromNow(createdAt)}</span>
             <span className="text-neutral-400">•</span>
             <span>Updated {formatRelativeTimeFromNow(updatedAt)}</span>
           </div>
         </div>
 
-        <aside className="flex flex-col gap-4 text-sm">
+        <aside className="flex flex-wrap items-center gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-neutral-600">
+              <GitPullRequest className="inline h-3 w-3" /> {pullRequest.changed_files}
+            </span>
+            <span className="text-neutral-400">•</span>
+            <span className="text-emerald-700">
+              +{pullRequest.additions}
+            </span>
+            <span className="text-rose-700">
+              -{pullRequest.deletions}
+            </span>
+          </div>
           <a
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-700 shadow-sm transition hover:border-neutral-400 hover:text-neutral-900"
+            className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 font-medium text-neutral-700 transition hover:border-neutral-400 hover:text-neutral-900"
             href={pullRequest.html_url}
             target="_blank"
             rel="noreferrer"
           >
-            View on GitHub
-            <ExternalLink className="h-4 w-4" />
+            GitHub
+            <ExternalLink className="h-3 w-3" />
           </a>
-
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <StatCard
-              icon={<GitPullRequest className="h-4 w-4" />}
-              label="Files"
-              value={pullRequest.changed_files}
-            />
-            <StatCard
-              icon={<GitBranch className="h-4 w-4" />}
-              label="Source"
-              value={
-                pullRequest.head?.label ?? pullRequest.head?.ref ?? "unknown"
-              }
-            />
-            <StatCard
-              icon={<GitMerge className="h-4 w-4" />}
-              label="Target"
-              value={
-                pullRequest.base?.label ?? pullRequest.base?.ref ?? "unknown"
-              }
-            />
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700">
-            <span className="font-semibold">Δ</span>
-            <div className="flex items-center gap-3">
-              <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-emerald-700">
-                +{pullRequest.additions}
-              </span>
-              <span className="rounded-md bg-rose-100 px-2 py-0.5 text-rose-700">
-                -{pullRequest.deletions}
-              </span>
-            </div>
-          </div>
         </aside>
       </div>
     </section>
@@ -428,23 +398,6 @@ function PullRequestDiffSection({
   }
 }
 
-function StatCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: number | string;
-}) {
-  return (
-    <div className="flex flex-col items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-neutral-700">
-      <span className="text-neutral-500">{icon}</span>
-      <span className="text-sm font-medium">{label}</span>
-      <span className="text-sm text-neutral-900">{value}</span>
-    </div>
-  );
-}
 
 function summarizeFiles(files: GithubPullRequestFile[]): {
   fileCount: number;
@@ -590,9 +543,3 @@ function formatRelativeTimeFromNow(date: Date): string {
   return rtf.format(-years, "year");
 }
 
-function formatDate(date: Date): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-}

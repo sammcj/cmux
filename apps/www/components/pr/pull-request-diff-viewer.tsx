@@ -256,38 +256,38 @@ function getFileStatusMeta(
     case "added":
       return {
         icon: <FilePlus className={iconClassName} />,
-        colorClassName: "text-emerald-600 dark:text-emerald-400",
+        colorClassName: "text-emerald-600",
         label: "Added file",
       };
     case "removed":
       return {
         icon: <FileMinus className={iconClassName} />,
-        colorClassName: "text-rose-600 dark:text-rose-400",
+        colorClassName: "text-rose-600",
         label: "Removed file",
       };
     case "modified":
     case "changed":
       return {
         icon: <FileEdit className={iconClassName} />,
-        colorClassName: "text-amber-600 dark:text-amber-300",
+        colorClassName: "text-amber-600",
         label: "Modified file",
       };
     case "renamed":
       return {
         icon: <FileCode className={iconClassName} />,
-        colorClassName: "text-sky-600 dark:text-sky-400",
+        colorClassName: "text-sky-600",
         label: "Renamed file",
       };
     case "copied":
       return {
         icon: <FileCode className={iconClassName} />,
-        colorClassName: "text-sky-600 dark:text-sky-400",
+        colorClassName: "text-sky-600",
         label: "Copied file",
       };
     default:
       return {
         icon: <FileText className={iconClassName} />,
-        colorClassName: "text-neutral-500 dark:text-neutral-400",
+        colorClassName: "text-neutral-500",
         label: "File change",
       };
   }
@@ -598,22 +598,22 @@ function ReviewProgressIndicator({
 
   return (
     <div
-      className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm transition dark:border-neutral-800 dark:bg-neutral-900"
+      className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm transition"
       aria-live="polite"
     >
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          <p className="text-sm font-medium text-neutral-700">
             Automated review progress
           </p>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="text-xs text-neutral-500">
             {statusText}
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs font-semibold">
           <span
             className={cn(
-              "rounded-md bg-emerald-100 px-2 py-0.5 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
+              "rounded-md bg-emerald-100 px-2 py-0.5 text-emerald-700",
               isLoading ? "animate-pulse" : undefined
             )}
           >
@@ -621,7 +621,7 @@ function ReviewProgressIndicator({
           </span>
           <span
             className={cn(
-              "rounded-md bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+              "rounded-md bg-amber-100 px-2 py-0.5 text-amber-700",
               isLoading ? "animate-pulse" : undefined
             )}
           >
@@ -629,9 +629,9 @@ function ReviewProgressIndicator({
           </span>
         </div>
       </div>
-      <div className="mt-3 h-2 rounded-full bg-neutral-200 dark:bg-neutral-800">
+      <div className="mt-3 h-2 rounded-full bg-neutral-200">
         <div
-          className="h-full rounded-full bg-sky-500 transition-[width] duration-300 ease-out dark:bg-sky-400"
+          className="h-full rounded-full bg-sky-500 transition-[width] duration-300 ease-out"
           style={{ width: `${progressPercent}%` }}
           role="progressbar"
           aria-label="Automated review progress"
