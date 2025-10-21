@@ -197,6 +197,7 @@ export function RenderPanel(props: PanelFactoryProps): ReactNode {
       } = props;
 
       if (!PersistentWebView || !WorkspaceLoadingIndicator) return null;
+      const shouldShowWorkspaceLoader = Boolean(selectedRun) && !workspaceUrl;
 
       return panelWrapper(
         <Code2 className="size-3" aria-hidden />,
@@ -221,16 +222,15 @@ export function RenderPanel(props: PanelFactoryProps): ReactNode {
               onStatusChange={setEditorStatus}
               loadTimeoutMs={60_000}
             />
+          ) : shouldShowWorkspaceLoader ? (
+            <div className="flex h-full items-center justify-center">
+              <WorkspaceLoadingIndicator variant="vscode" status="loading" />
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
               {workspacePlaceholderMessage}
             </div>
           )}
-          {selectedRun && !workspaceUrl ? (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <WorkspaceLoadingIndicator variant="vscode" status="loading" />
-            </div>
-          ) : null}
         </div>
       );
     }
@@ -264,6 +264,7 @@ export function RenderPanel(props: PanelFactoryProps): ReactNode {
       } = props;
 
       if (!PersistentWebView || !WorkspaceLoadingIndicator) return null;
+      const shouldShowBrowserLoader = Boolean(selectedRun) && isMorphProvider && (!browserUrl || !browserPersistKey);
 
       return panelWrapper(
         <Globe2 className="size-3" aria-hidden />,
@@ -289,24 +290,15 @@ export function RenderPanel(props: PanelFactoryProps): ReactNode {
               errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
               loadTimeoutMs={45_000}
             />
+          ) : shouldShowBrowserLoader ? (
+            <div className="flex h-full items-center justify-center">
+              <WorkspaceLoadingIndicator variant="browser" status="loading" />
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
               {browserOverlayMessage}
             </div>
           )}
-          {selectedRun && isMorphProvider ? (
-            <div
-              className={clsx(
-                "pointer-events-none absolute inset-0 flex items-center justify-center transition-opacity",
-                {
-                  "opacity-100": isBrowserBusy,
-                  "opacity-0": !isBrowserBusy,
-                },
-              )}
-            >
-              <WorkspaceLoadingIndicator variant="browser" status="loading" />
-            </div>
-          ) : null}
         </div>
       );
     }

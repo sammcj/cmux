@@ -366,15 +366,15 @@ function TaskDetailPage() {
     if (!selectedRun) {
       return runsWithDepth.length
         ? "Select a run to open the browser preview."
-        : "Run the task to expose a browser preview.";
+        : "Browser preview becomes available once a run starts.";
     }
     if (!isMorphProvider) {
-      return "Browser preview is only available for Morph workspaces.";
+      return "Browser preview requires a cloud workspace. Switch to cloud mode to view it.";
     }
     if (!hasBrowserView) {
-      return "Waiting for the workspace to expose a browser session…";
+      return "Waiting for the workspace to expose a browser preview...";
     }
-    return "Launching browser…";
+    return "Launching browser preview...";
   }, [selectedRun, runsWithDepth.length, isMorphProvider, hasBrowserView]);
   const editorStatus = workspacePersistKey
     ? iframeStatusByKey[workspacePersistKey]?.status ?? "loading"
@@ -387,12 +387,12 @@ function TaskDetailPage() {
 
   const workspacePlaceholderMessage = useMemo(() => {
     if (!runsWithDepth.length) {
-      return "Run the task to launch a workspace.";
+      return "Waiting for a run to start the workspace...";
     }
     if (!selectedRun) {
       return "Select a run to open the workspace.";
     }
-    return "Workspace is starting…";
+    return "Workspace is starting...";
   }, [runsWithDepth.length, selectedRun]);
 
   const availablePanels = useMemo(() => getAvailablePanels(panelConfig), [panelConfig]);

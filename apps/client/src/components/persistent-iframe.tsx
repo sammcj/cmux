@@ -161,7 +161,7 @@ export function PersistentIframe({
       if (attempt && attempt > 1) {
         return `Retrying workspace resume (attempt ${attempt})…`;
       }
-      return "Resuming Morph workspace…";
+      return "Resuming cloud workspace…";
     }
 
     if (preflightPhase === "resume_failed") {

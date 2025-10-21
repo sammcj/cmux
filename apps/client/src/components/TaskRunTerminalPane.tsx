@@ -1,267 +1,295 @@
-import { createTerminalOptions } from "@cmux/shared/terminal-config";
-import { FitAddon } from "@xterm/addon-fit";
-import { AttachAddon } from "@xterm/addon-attach";
-import { WebLinksAddon } from "@xterm/addon-web-links";
-import { Terminal } from "@xterm/xterm";
-import "@xterm/xterm/css/xterm.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, MonitorUp, RotateCw } from "lucide-react";
-
-import { resolveWorkspaceServiceBases } from "@/lib/toProxyWorkspaceUrl";
-
-const REQUIRED_PORT = 39383;
-const TMUX_ATTACH_COMMAND = "tmux attach -t cmux";
-
-type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
+import { MonitorUp } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { TaskRunTerminalSession } from "./task-run-terminal-session";
+import { toMorphXtermBaseUrl } from "@/lib/toProxyWorkspaceUrl";
+import {
+  createTerminalTab,
+  terminalTabsQueryKey,
+  terminalTabsQueryOptions,
+  type TerminalTabId,
+} from "@/queries/terminals";
 
 interface TaskRunTerminalPaneProps {
   workspaceUrl: string | null;
 }
 
+const INITIAL_AUTO_CREATE_DELAY_MS = 4_000;
+const MAX_AUTO_CREATE_ATTEMPTS = 3;
+const AUTO_RETRY_BASE_DELAY_MS = 4_000;
+
 export function TaskRunTerminalPane({ workspaceUrl }: TaskRunTerminalPaneProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const terminalRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
-  const attachAddonRef = useRef<AttachAddon | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-
-  const [status, setStatus] = useState<ConnectionStatus>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [retryCounter, setRetryCounter] = useState(0);
-
-  const serviceBaseUrls = useMemo(() => {
+  const baseUrl = useMemo(() => {
     if (!workspaceUrl) {
-      return [];
+      return null;
     }
-    return resolveWorkspaceServiceBases(workspaceUrl, REQUIRED_PORT);
+    return toMorphXtermBaseUrl(workspaceUrl);
   }, [workspaceUrl]);
 
-  const sendResize = useCallback(() => {
-    const ws = wsRef.current;
-    const terminal = terminalRef.current;
-    if (!ws || !terminal) return;
-    if (ws.readyState !== WebSocket.OPEN) return;
-    ws.send(
-      JSON.stringify({
-        type: "resize",
-        cols: terminal.cols,
-        rows: terminal.rows,
-      }),
-    );
-  }, []);
+  const hasTerminalBackend = Boolean(baseUrl);
+  const queryClient = useQueryClient();
+
+  const tabsQuery = useQuery(
+    terminalTabsQueryOptions({
+      baseUrl,
+      contextKey: workspaceUrl,
+      enabled: hasTerminalBackend,
+    })
+  );
+
+  const {
+    data: tabs,
+    isLoading: isTabsLoading,
+    isError: isTabsError,
+    error: tabsError,
+  } = tabsQuery;
+
+  const terminalIds = useMemo(() => tabs ?? [], [tabs]);
+  const tabsQueryKey = useMemo(
+    () => terminalTabsQueryKey(baseUrl, workspaceUrl),
+    [baseUrl, workspaceUrl]
+  );
+
+  const workspaceReadyAtRef = useRef<number | null>(null);
+  const autoCreateStateRef = useRef<{
+    context: string | null;
+    inFlight: boolean;
+    attempts: number;
+  }>({ context: null, inFlight: false, attempts: 0 });
+  const retryTimeoutRef = useRef<number | null>(null);
+  const autoCreateAttemptRef = useRef<((options?: { manual?: boolean }) => void) | null>(
+    null
+  );
+
+  const [autoCreateError, setAutoCreateError] = useState<string | null>(null);
+  const [autoCreateAttemptCount, setAutoCreateAttemptCount] = useState(0);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    if (!baseUrl) {
+      workspaceReadyAtRef.current = null;
+      return;
+    }
+    workspaceReadyAtRef.current = Date.now();
+  }, [baseUrl]);
 
-    const terminal = new Terminal(
-      createTerminalOptions({
-        convertEol: true,
-        cursorBlink: true,
-        scrollback: 200_000,
-        fontSize: 13,
-      }),
-    );
-    const fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon();
-    terminal.loadAddon(fitAddon);
-    terminal.loadAddon(webLinksAddon);
-    terminal.open(container);
-    fitAddon.fit();
-    terminal.focus();
-
-    terminalRef.current = terminal;
-    fitAddonRef.current = fitAddon;
-
-    const handleWindowResize = () => {
-      fitAddon.fit();
-      sendResize();
-    };
-
-    const resizeObserver = typeof ResizeObserver !== "undefined"
-      ? new ResizeObserver(handleWindowResize)
-      : null;
-    resizeObserver?.observe(container);
-    window.addEventListener("resize", handleWindowResize);
-
+  useEffect(() => {
     return () => {
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", handleWindowResize);
-      attachAddonRef.current?.dispose();
-      wsRef.current?.close();
-      wsRef.current = null;
-      terminal.dispose();
-      terminalRef.current = null;
-      fitAddonRef.current = null;
-    };
-  }, [sendResize]);
-
-  useEffect(() => {
-    if (!terminalRef.current) {
-      setStatus(workspaceUrl ? "idle" : "idle");
-      setError(null);
-      return;
-    }
-
-    if (!workspaceUrl || serviceBaseUrls.length === 0) {
-      setStatus("error");
-      setError("Workspace terminal endpoint unavailable");
-      return;
-    }
-
-    let cancelled = false;
-    let tmuxReady = false;
-    setStatus("connecting");
-    setError(null);
-
-    const cols = Math.max(terminalRef.current.cols || 120, 40);
-    const rows = Math.max(terminalRef.current.rows || 32, 12);
-
-    const controller = new AbortController();
-    const signal = controller.signal;
-
-    const createSession = async () => {
-      const maxAttempts = 10;
-      const baseDelayMs = 1000;
-
-      const lastIndex = serviceBaseUrls.length - 1;
-
-      for (const [index, baseUrl] of serviceBaseUrls.entries()) {
-        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-          try {
-            const response = await fetch(`${baseUrl}/api/tabs`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                cmd: "/bin/bash",
-                args: ["-lc", TMUX_ATTACH_COMMAND],
-                cols,
-                rows,
-              }),
-              signal,
-            });
-
-            if (!response.ok) {
-              throw new Error(`Terminal request failed (${response.status})`);
-            }
-
-            const payload: { id: string; ws_url: string } = await response.json();
-            if (cancelled) {
-              return;
-            }
-
-            const socketUrl = new URL(baseUrl);
-            socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
-            socketUrl.pathname = `/ws/${payload.id}`;
-            socketUrl.search = "";
-            socketUrl.hash = "";
-
-            const socket = new WebSocket(socketUrl.toString());
-            socket.binaryType = "arraybuffer";
-
-            socket.addEventListener("open", () => {
-              if (cancelled) return;
-              // Don't mark as connected yet - wait for first message indicating tmux is ready
-              fitAddonRef.current?.fit();
-              sendResize();
-            });
-
-            socket.addEventListener("message", () => {
-              if (cancelled || tmuxReady) return;
-              // First message indicates tmux has attached and is ready
-              tmuxReady = true;
-              setStatus("connected");
-            });
-
-            socket.addEventListener("close", () => {
-              if (cancelled) return;
-              setStatus("error");
-              setError("Terminal connection closed");
-            });
-
-            socket.addEventListener("error", () => {
-              if (cancelled) return;
-              setStatus("error");
-              setError("Failed to connect to terminal");
-            });
-
-            const attachAddon = new AttachAddon(socket, { bidirectional: true });
-            attachAddonRef.current = attachAddon;
-            terminalRef.current?.loadAddon(attachAddon);
-            wsRef.current = socket;
-            return;
-          } catch (err) {
-            if (cancelled) return;
-
-            if (attempt === maxAttempts) {
-              // Try the next base URL if available
-              if (index === lastIndex) {
-                setStatus("error");
-                setError(err instanceof Error ? err.message : String(err));
-                return;
-              }
-            } else {
-              const delay = baseDelayMs * attempt;
-              await new Promise((resolve) => setTimeout(resolve, delay));
-            }
-          }
-        }
+      if (retryTimeoutRef.current !== null) {
+        window.clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
     };
-
-    void createSession();
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      attachAddonRef.current?.dispose();
-      attachAddonRef.current = null;
-      wsRef.current?.close();
-      wsRef.current = null;
-    };
-  }, [serviceBaseUrls, workspaceUrl, retryCounter, sendResize]);
-
-  const handleRetry = useCallback(() => {
-    setRetryCounter((value) => value + 1);
   }, []);
 
-  if (!workspaceUrl) {
+  const scheduleRetry = useCallback((delayMs: number) => {
+    if (retryTimeoutRef.current !== null) {
+      window.clearTimeout(retryTimeoutRef.current);
+    }
+    retryTimeoutRef.current = window.setTimeout(() => {
+      retryTimeoutRef.current = null;
+      autoCreateAttemptRef.current?.();
+    }, delayMs);
+  }, []);
+
+  const attemptAutoCreate = useCallback(
+    (options?: { manual?: boolean }) => {
+      if (!workspaceUrl || !baseUrl || !hasTerminalBackend) {
+        return;
+      }
+
+      if (terminalIds.length > 0) {
+        setAutoCreateError(null);
+        setAutoCreateAttemptCount(0);
+        const current = autoCreateStateRef.current;
+        current.inFlight = false;
+        current.attempts = 0;
+        if (retryTimeoutRef.current !== null) {
+          window.clearTimeout(retryTimeoutRef.current);
+          retryTimeoutRef.current = null;
+        }
+        return;
+      }
+
+      const contextIdentifier = `${baseUrl}|${workspaceUrl}`;
+      const state = autoCreateStateRef.current;
+
+      if (state.context !== contextIdentifier) {
+        state.context = contextIdentifier;
+        state.attempts = 0;
+      }
+
+      if (state.inFlight) {
+        return;
+      }
+
+      if (!options?.manual) {
+        const readyAt = workspaceReadyAtRef.current;
+        if (readyAt) {
+          const elapsed = Date.now() - readyAt;
+          if (elapsed < INITIAL_AUTO_CREATE_DELAY_MS) {
+            scheduleRetry(INITIAL_AUTO_CREATE_DELAY_MS - elapsed);
+            return;
+          }
+        }
+
+        if (state.attempts >= MAX_AUTO_CREATE_ATTEMPTS) {
+          return;
+        }
+      }
+
+      state.inFlight = true;
+      state.attempts += 1;
+      setAutoCreateAttemptCount(state.attempts);
+      setAutoCreateError(null);
+
+      (async () => {
+        try {
+          const created = await createTerminalTab({
+            baseUrl,
+            request: {
+              cmd: "tmux",
+              args: ["new-session", "-A", "-s", "cmux"],
+            },
+          });
+
+          queryClient.setQueryData<TerminalTabId[]>(tabsQueryKey, (current) => {
+            if (!current || current.length === 0) {
+              return [created.id];
+            }
+            if (current.includes(created.id)) {
+              return current;
+            }
+            return [...current, created.id];
+          });
+
+          state.inFlight = false;
+          state.attempts = 0;
+          setAutoCreateAttemptCount(0);
+          setAutoCreateError(null);
+          if (retryTimeoutRef.current !== null) {
+            window.clearTimeout(retryTimeoutRef.current);
+            retryTimeoutRef.current = null;
+          }
+        } catch (error) {
+          console.error("Failed to auto-create tmux terminal", error);
+          state.inFlight = false;
+
+          const shouldRetryAutomatically = !options?.manual && state.attempts < MAX_AUTO_CREATE_ATTEMPTS;
+          if (shouldRetryAutomatically) {
+            const delay = AUTO_RETRY_BASE_DELAY_MS * state.attempts;
+            scheduleRetry(delay);
+            return;
+          }
+
+          const message =
+            error instanceof Error ? error.message : "Unable to connect to tmux session.";
+          setAutoCreateError(message);
+        }
+      })();
+    },
+    [
+      baseUrl,
+      hasTerminalBackend,
+      queryClient,
+      scheduleRetry,
+      tabsQueryKey,
+      terminalIds.length,
+      workspaceUrl,
+    ]
+  );
+
+  useEffect(() => {
+    autoCreateAttemptRef.current = attemptAutoCreate;
+  }, [attemptAutoCreate]);
+
+  useEffect(() => {
+    if (isTabsLoading || isTabsError) {
+      return;
+    }
+    attemptAutoCreate();
+  }, [attemptAutoCreate, isTabsError, isTabsLoading]);
+
+  const handleManualRetry = useCallback(() => {
+    const state = autoCreateStateRef.current;
+    state.attempts = 0;
+    state.inFlight = false;
+    setAutoCreateError(null);
+    setAutoCreateAttemptCount(0);
+    if (retryTimeoutRef.current !== null) {
+      window.clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    workspaceReadyAtRef.current = Date.now() - INITIAL_AUTO_CREATE_DELAY_MS;
+    attemptAutoCreate({ manual: true });
+  }, [attemptAutoCreate]);
+
+  const activeTerminalId = terminalIds[0] ?? null;
+
+  if (!workspaceUrl || !baseUrl) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
-        <MonitorUp className="size-4" aria-hidden />
-        <span>Terminal becomes available after the workspace starts.</span>
+        <MonitorUp className="size-4 animate-pulse" aria-hidden />
+        <span>Terminal is starting...</span>
+      </div>
+    );
+  }
+
+  if (isTabsLoading) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+        <MonitorUp className="size-4 animate-pulse" aria-hidden />
+        <span>Loading terminal...</span>
+      </div>
+    );
+  }
+
+  if (isTabsError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+        <MonitorUp className="size-4 text-red-500" aria-hidden />
+        <span className="text-red-500 dark:text-red-400">
+          {tabsError instanceof Error ? tabsError.message : "Failed to load terminal"}
+        </span>
+      </div>
+    );
+  }
+
+  if (terminalIds.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-neutral-500 dark:text-neutral-400">
+        <MonitorUp className="size-4 animate-pulse" aria-hidden />
+        <div className="flex flex-col gap-1">
+          <span>
+            {autoCreateError
+              ? autoCreateError
+              : "Waiting for a terminal session..."}
+          </span>
+          {!autoCreateError && autoCreateAttemptCount > 0 ? (
+            <span className="text-xs text-neutral-400 dark:text-neutral-500">
+              {`Attempt ${Math.min(autoCreateAttemptCount, MAX_AUTO_CREATE_ATTEMPTS)} of ${MAX_AUTO_CREATE_ATTEMPTS}`}
+            </span>
+          ) : null}
+        </div>
+        {autoCreateError ? (
+          <button
+            type="button"
+            onClick={handleManualRetry}
+            className="inline-flex items-center justify-center rounded border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-600 transition hover:border-neutral-400 hover:text-neutral-800 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-neutral-500 dark:hover:text-neutral-100"
+          >
+            Retry terminal
+          </button>
+        ) : null}
       </div>
     );
   }
 
   return (
-    <div className="relative flex h-full flex-col">
-      <div ref={containerRef} className="flex-1 bg-black" />
-      {status !== "connected" ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/60">
-          <div className="pointer-events-auto flex max-w-xs flex-col items-center gap-2 rounded-md bg-neutral-900/90 px-4 py-3 text-center text-sm text-neutral-200">
-            {status === "connecting" ? (
-              <span>Connecting to tmux session…</span>
-            ) : (
-              <div className="flex flex-col items-center gap-1">
-                <AlertTriangle className="size-4 text-amber-400" aria-hidden />
-                <span>Unable to connect to the tmux session.</span>
-                {error ? (
-                  <span className="text-xs text-neutral-400">{error}</span>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={handleRetry}
-                  className="mt-2 inline-flex items-center gap-1 rounded border border-neutral-700 px-3 py-1 text-xs text-neutral-200 hover:border-neutral-500 hover:text-neutral-50"
-                >
-                  <RotateCw className="size-3" aria-hidden />
-                  Retry
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : null}
+    <div className="h-full w-full bg-black">
+      <TaskRunTerminalSession
+        baseUrl={baseUrl}
+        terminalId={activeTerminalId}
+        isActive={true}
+      />
     </div>
   );
 }

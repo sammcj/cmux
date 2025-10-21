@@ -74,12 +74,12 @@ function BrowserComponent() {
 
   const overlayMessage = useMemo(() => {
     if (!isMorphProvider) {
-      return "Browser is only available for Morph-based runs.";
+      return "Browser preview requires a cloud workspace. Switch to cloud mode to view it.";
     }
     if (!hasBrowserView) {
-      return "Waiting for Morph workspace to expose the browser...";
+      return "Waiting for the workspace to expose a browser preview...";
     }
-    return "Launching browser...";
+    return "Launching browser preview...";
   }, [hasBrowserView, isMorphProvider]);
 
   const onLoad = useCallback(() => {
@@ -145,12 +145,7 @@ function BrowserComponent() {
             )}
           >
             {showLoader ? (
-              <WorkspaceLoadingIndicator
-                variant="browser"
-                status="loading"
-                loadingTitle="Waiting for Morph workspace"
-                loadingDescription="Waiting for Morph workspace to expose the browser..."
-              />
+              <WorkspaceLoadingIndicator variant="browser" status="loading" />
             ) : (
               <span className="text-sm text-neutral-500 dark:text-neutral-400 text-center px-4">
                 {overlayMessage}
