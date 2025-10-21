@@ -19,11 +19,10 @@ const WORKSPACE_LOG_RELATIVE_PATH = "pr-review-inject.log";
 const WORKSPACE_LOG_ABSOLUTE_PATH = `${REMOTE_WORKSPACE_DIR}/${WORKSPACE_LOG_RELATIVE_PATH}`;
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
-let productionModeOverride: boolean | null = null;
 
-function isProductionMode(): boolean {
-  if (productionModeOverride !== null) {
-    return productionModeOverride;
+function resolveProductionMode(explicit?: boolean): boolean {
+  if (typeof explicit === "boolean") {
+    return explicit;
   }
   return (
     process.env.NODE_ENV === "production" ||
@@ -79,8 +78,8 @@ function getBunExecutable(): string {
   return process.env.BUN_RUNTIME ?? process.env.BUN_BIN ?? "bun";
 }
 
-async function buildInjectScript(): Promise<void> {
-  if (isProductionMode()) {
+async function buildInjectScript(productionMode: boolean): Promise<void> {
+  if (productionMode) {
     console.log(
       "[pr-review][debug] Production mode detected; expecting prebuilt inject script bundle."
     );
@@ -134,13 +133,13 @@ async function buildInjectScript(): Promise<void> {
   });
 }
 
-async function getInjectScriptSource(): Promise<string> {
+async function getInjectScriptSource(productionMode: boolean): Promise<string> {
   if (!cachedInjectScriptPromise) {
     cachedInjectScriptPromise = (async () => {
       console.log(
         "[pr-review][debug] getInjectScriptSource ensuring inject script bundle is available"
       );
-      await buildInjectScript();
+      await buildInjectScript(productionMode);
       console.log(
         `[pr-review][debug] Reading inject script bundle from ${injectScriptBundlePath}`
       );
@@ -539,6 +538,7 @@ async function startMorphInstanceTask(
 export async function startAutomatedPrReview(
   config: PrReviewJobContext
 ): Promise<void> {
+  const productionMode = resolveProductionMode(config.productionMode);
   console.log(
     `[pr-review] Preparing Morph review environment for ${config.prUrl}`
   );
@@ -551,14 +551,10 @@ export async function startAutomatedPrReview(
     hasFileCallback: Boolean(config.fileCallback),
     morphSnapshotId: config.morphSnapshotId,
     productionMode: config.productionMode ?? null,
+    resolvedProductionMode: productionMode,
   });
   const morphClient = ensureMorphClient();
   let instance: Instance | null = null;
-  const previousProductionOverride = productionModeOverride;
-  productionModeOverride =
-    typeof config.productionMode === "boolean"
-      ? config.productionMode
-      : null;
 
   try {
     console.log("[pr-review][debug] Starting parallel tasks", {
@@ -632,7 +628,7 @@ export async function startAutomatedPrReview(
     }
 
     const remoteScriptPath = "/root/pr-review-inject.ts";
-    const injectScriptSource = await getInjectScriptSource();
+    const injectScriptSource = await getInjectScriptSource(productionMode);
     const baseRepoUrl = `https://github.com/${prMetadata.owner}/${prMetadata.repo}.git`;
     const headRepoUrl = `https://github.com/${prMetadata.headRepoOwner}/${prMetadata.headRepoName}.git`;
 
@@ -750,8 +746,5 @@ export async function startAutomatedPrReview(
       }
     }
     throw error;
-  }
-  finally {
-    productionModeOverride = previousProductionOverride;
   }
 }
