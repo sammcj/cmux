@@ -30,6 +30,7 @@ interface ElectronPreviewBrowserProps {
   borderRadius?: number;
   terminalVisible?: boolean;
   onToggleTerminal?: () => void;
+  renderBelowAddressBar?: () => React.ReactNode;
 }
 
 interface NativeViewHandle {
@@ -98,6 +99,7 @@ export function ElectronPreviewBrowser({
   src,
   terminalVisible = false,
   onToggleTerminal,
+  renderBelowAddressBar,
 }: ElectronPreviewBrowserProps) {
   const [viewHandle, setViewHandle] = useState<NativeViewHandle | null>(null);
   const [addressValue, setAddressValue] = useState(src);
@@ -792,8 +794,8 @@ export function ElectronPreviewBrowser({
           </div>
         </form>
       </div>
-      <div className="flex-1 overflow-hidden bg-white dark:bg-neutral-950 pl-[pxpx] border-l">
-        <div className="relative h-full w-full">
+      <div className="flex-1 min-h-0 flex">
+        <div className="flex-1 overflow-hidden bg-white dark:bg-neutral-950 border-l">
           <PersistentWebView
             persistKey={persistKey}
             src={src}
@@ -805,6 +807,7 @@ export function ElectronPreviewBrowser({
             forceWebContentsViewIfElectron
           />
         </div>
+        {renderBelowAddressBar?.()}
       </div>
     </div>
   );
