@@ -249,6 +249,7 @@ export interface ServerToWorkerEvents {
     worktreePath: string;
   }) => void;
   "worker:stop-file-watch": (data: { taskRunId: Id<"taskRuns"> }) => void;
+  "worker:start-screenshot-collection": () => void;
 
   // Management events
   "worker:terminal-assignment": (data: TerminalAssignment) => void;

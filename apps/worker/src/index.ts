@@ -40,6 +40,7 @@ import { detectTerminalIdle } from "./detectTerminalIdle";
 import { runWorkerExec } from "./execRunner";
 import { FileWatcher, computeGitDiff, getFileWithDiff } from "./fileWatcher";
 import { log } from "./logger";
+import { startScreenshotCollection } from "./screenshotCollector/startScreenshotCollection";
 
 const execAsync = promisify(exec);
 
@@ -459,6 +460,27 @@ managementIO.on("connection", (socket) => {
           error instanceof Error ? error.message : "Unknown error"
         }`,
       });
+    }
+  });
+
+  socket.on("worker:start-screenshot-collection", async () => {
+    log(
+      "INFO",
+      `Worker ${WORKER_ID} received request to start screenshot collection`,
+      undefined,
+      WORKER_ID
+    );
+    try {
+      await startScreenshotCollection();
+    } catch (error) {
+      log(
+        "ERROR",
+        "Failed to start screenshot collection",
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+        WORKER_ID
+      );
     }
   });
 
