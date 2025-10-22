@@ -31,7 +31,13 @@ export function CrownStatus({ taskId, teamSlugOrId }: CrownStatusProps) {
   );
 
   const crownStatus = task?.crownEvaluationStatus ?? null;
-  const crownErrorMessage = task?.crownEvaluationError ?? null;
+  const isCrownEvaluating = task?.crownEvaluationStatus === "in_progress";
+  const rawCrownErrorMessage = task?.crownEvaluationError ?? null;
+  const crownErrorMessage =
+    rawCrownErrorMessage === "pending_evaluation" ||
+    rawCrownErrorMessage === "in_progress"
+      ? null
+      : rawCrownErrorMessage;
 
   const isLoadingRuns = taskRuns === undefined;
   const isLoadingCrownedRun = crownedRun === undefined;
@@ -44,6 +50,10 @@ export function CrownStatus({ taskId, teamSlugOrId }: CrownStatusProps) {
 
   const resolvedCrownedRun = crownedRun ?? null;
   const displayState = (() => {
+    if (isCrownEvaluating) {
+      return "evaluating" as const;
+    }
+
     if (
       !hasMultipleRuns &&
       crownStatus !== "pending" &&
@@ -63,12 +73,8 @@ export function CrownStatus({ taskId, teamSlugOrId }: CrownStatusProps) {
       return "waiting" as const;
     }
 
-    if (resolvedCrownedRun) {
+    if (resolvedCrownedRun && (crownStatus === "succeeded" || crownStatus === null)) {
       return "winner" as const;
-    }
-
-    if (crownStatus === "in_progress") {
-      return "evaluating" as const;
     }
 
     if (crownStatus === "pending") {

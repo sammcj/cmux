@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { resolveTeamIdLoose } from "../_shared/team";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery, taskIdWithFake } from "./users/utils";
 
 export const get = authQuery({
@@ -306,6 +306,41 @@ export const updateCrownError = authMutation({
       ...updates,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const setCrownEvaluationStatusInternal = internalMutation({
+  args: {
+    taskId: v.id("tasks"),
+    teamId: v.string(),
+    userId: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("in_progress"),
+      v.literal("succeeded"),
+      v.literal("error"),
+    ),
+    errorMessage: v.optional(v.string()),
+    clearError: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task || task.teamId !== args.teamId || task.userId !== args.userId) {
+      throw new Error("Task not found or unauthorized");
+    }
+
+    const patch: Record<string, unknown> = {
+      crownEvaluationStatus: args.status,
+      updatedAt: Date.now(),
+    };
+
+    if (args.clearError) {
+      patch.crownEvaluationError = undefined;
+    } else if (Object.prototype.hasOwnProperty.call(args, "errorMessage")) {
+      patch.crownEvaluationError = args.errorMessage;
+    }
+
+    await ctx.db.patch(args.taskId, patch);
   },
 });
 
