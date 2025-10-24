@@ -1,14 +1,17 @@
 #!/usr/bin/env bun
 
-import { rm } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
+import { dirname, join as joinPath } from "node:path";
 import {
   codeReviewCallbackSchema,
   type CodeReviewCallbackPayload,
   codeReviewFileCallbackSchema,
   type CodeReviewFileCallbackPayload,
 } from "@cmux/shared/codeReview/callback-schemas";
+import { getGithubToken } from "./github";
+import { formatUnifiedDiffWithLineNumbers } from "./diff-utils";
 
 interface CommandOptions {
   cwd?: string;
@@ -141,6 +144,47 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function readBooleanEnv(name: string, defaultValue: boolean): boolean {
+  const raw = process.env[name];
+  if (!raw) {
+    return defaultValue;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "n", "off"].includes(normalized)) {
+    return false;
+  }
+  return defaultValue;
+}
+
+const showDiffLineNumbers = readBooleanEnv(
+  "CMUX_PR_REVIEW_SHOW_DIFF_LINE_NUMBERS",
+  false
+);
+const showContextLineNumbers = readBooleanEnv(
+  "CMUX_PR_REVIEW_SHOW_CONTEXT_LINE_NUMBERS",
+  true
+);
+
+async function configureGitCredentials(token: string): Promise<void> {
+  const homeDir =
+    process.env.HOME && process.env.HOME.length > 0
+      ? process.env.HOME
+      : "/root";
+  const credentialFile = joinPath(homeDir, ".git-credentials");
+  const credentialEntry = `https://x-access-token:${token}@github.com\n`;
+  await writeFile(credentialFile, credentialEntry, { mode: 0o600 });
+  await runCommand("git", [
+    "config",
+    "--global",
+    "credential.helper",
+    `store --file=${credentialFile}`,
+  ]);
+  console.log("[inject] Configured Git credential helper for GitHub.");
+}
+
 function parseFileList(output: string): string[] {
   return output
     .split("\n")
@@ -169,6 +213,17 @@ function logIndentedBlock(header: string, content: string): void {
     return;
   }
   normalized.split("\n").forEach((line) => {
+    console.log(`[inject]   ${line}`);
+  });
+}
+
+function logDiffWithLineNumbers(label: string, lines: string[]): void {
+  console.log(label);
+  if (lines.length === 0) {
+    console.log("[inject]   (no diff output)");
+    return;
+  }
+  lines.forEach((line) => {
     console.log(`[inject]   ${line}`);
   });
 }
@@ -334,10 +389,17 @@ async function runCodexReviews({
         ["diff", `${baseRevision}..HEAD`, "--", file],
         { cwd: workspaceDir }
       );
+      const formattedDiff = formatUnifiedDiffWithLineNumbers(diff, {
+        showLineNumbers: showDiffLineNumbers,
+        includeContextLineNumbers: showContextLineNumbers,
+      });
+      logDiffWithLineNumbers(`[inject] Diff for ${file}`, formattedDiff);
       const thread = codex.startThread({
         workingDirectory: workspaceDir,
         model: "gpt-5-codex",
       });
+      const diffForPrompt =
+        formattedDiff.length > 0 ? formattedDiff.join("\n") : "(no diff output)";
       const prompt = `\
 You are a senior engineer performing a focused pull request review, focusing only on the diffs in the file provided.
 File path: ${file}
@@ -355,7 +417,7 @@ Non-clean code too.
 Only return lines that are actually interesting to review. Do not return lines that a human would not care about. But you should still be thorough and cover all interesting/suspicious lines.
 
 The diff:
-${diff || "(no diff output)"}`;
+${diffForPrompt}`;
 
       logIndentedBlock(`[inject] Prompt for ${file}`, prompt);
 
@@ -482,6 +544,9 @@ async function main(): Promise<void> {
   const sandboxInstanceId = requireEnv("SANDBOX_INSTANCE_ID");
   const logFilePath = process.env.LOG_FILE_PATH ?? null;
   const logSymlinkPath = process.env.LOG_SYMLINK_PATH ?? null;
+  const codeReviewOutputPathEnv = process.env.CODE_REVIEW_OUTPUT_PATH ?? null;
+  const codeReviewOutputSymlinkPath =
+    process.env.CODE_REVIEW_OUTPUT_SYMLINK_PATH ?? null;
   const teamId = process.env.TEAM_ID ?? null;
   const repoFullName = process.env.REPO_FULL_NAME ?? null;
   const commitRef = process.env.COMMIT_REF ?? null;
@@ -525,7 +590,96 @@ async function main(): Promise<void> {
     `[inject] Base ${baseRepo.owner}/${baseRepo.name}@${baseRefName}`
   );
 
+  const codeReviewOutputPath =
+    codeReviewOutputPathEnv && codeReviewOutputPathEnv.trim().length > 0
+      ? codeReviewOutputPathEnv.trim()
+      : logFilePath
+          ? joinPath(dirname(logFilePath), "code-review-output.json")
+          : null;
+
+  async function writeJsonFileIfPossible(
+    path: string | null,
+    data: unknown,
+    label: string
+  ): Promise<boolean> {
+    if (!path) {
+      return false;
+    }
+    try {
+      const json = JSON.stringify(data, null, 2);
+      await writeFile(path, `${json}\n`);
+      console.log(`[inject] Saved ${label} to ${path}`);
+      return true;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error ?? "unknown error");
+      console.warn(
+        `[inject] Failed to write ${label} to ${path}: ${message}`
+      );
+      return false;
+    }
+  }
+
+  async function createSymlinkIfPossible(
+    targetPath: string,
+    symlinkPath: string | null,
+    label: string
+  ): Promise<void> {
+    if (!symlinkPath) {
+      return;
+    }
+    try {
+      await runCommand("ln", ["-sf", targetPath, symlinkPath]);
+      console.log(
+        `[inject] Linked ${symlinkPath} -> ${targetPath} for ${label}`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error ?? "unknown error");
+      console.warn(
+        `[inject] Failed to link ${symlinkPath} -> ${targetPath}: ${message}`
+      );
+    }
+  }
+
+  const persistCodeReviewOutput = async (
+    data: unknown
+  ): Promise<void> => {
+    const label = "code review output";
+    const wrote = await writeJsonFileIfPossible(
+      codeReviewOutputPath,
+      data,
+      label
+    );
+    if (wrote && codeReviewOutputPath) {
+      await createSymlinkIfPossible(
+        codeReviewOutputPath,
+        codeReviewOutputSymlinkPath,
+        label
+      );
+    }
+  };
+
   const jobStart = performance.now();
+
+  const githubToken = getGithubToken();
+  if (githubToken) {
+    try {
+      await configureGitCredentials(githubToken);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error ?? "unknown error");
+      console.warn(
+        `[inject] Failed to configure Git credentials automatically: ${message}`
+      );
+    }
+  }
 
   try {
     console.log(`[inject] Clearing workspace ${workspaceDir}...`);
@@ -668,6 +822,8 @@ async function main(): Promise<void> {
       codexReviews,
     };
 
+    await persistCodeReviewOutput(reviewOutput);
+
     if (callbackContext) {
       await sendCallback(callbackContext, {
         status: "success",
@@ -688,6 +844,13 @@ async function main(): Promise<void> {
         performance.now() - jobStart
       )}`
     );
+    await persistCodeReviewOutput({
+      status: "error",
+      jobId,
+      sandboxInstanceId,
+      prUrl,
+      error: message,
+    });
     if (callbackContext) {
       try {
         await sendCallback(callbackContext, {

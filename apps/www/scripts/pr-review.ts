@@ -9,28 +9,43 @@ import {
   startAutomatedPrReview,
   type PrReviewJobContext,
 } from "../src/pr-review";
+import { parsePrUrl } from "./pr-review/github";
 
 const DEFAULT_PR_URL = "https://github.com/manaflow-ai/cmux/pull/653";
 const execFileAsync = promisify(execFile);
 
-interface ParsedPrUrl {
-  owner: string;
-  repo: string;
-  number: number;
-}
-
 interface CliOptions {
   prUrl: string | null;
   isProduction: boolean;
+  showDiffLineNumbers: boolean | null;
+  showContextLineNumbers: boolean | null;
 }
 
 function parseCliArgs(argv: readonly string[]): CliOptions {
   const remainingArgs: string[] = [];
   let isProduction = false;
+  let showDiffLineNumbers: boolean | null = null;
+  let showContextLineNumbers: boolean | null = null;
 
   argv.forEach((arg) => {
     if (arg === "--production") {
       isProduction = true;
+      return;
+    }
+    if (arg === "--diff-line-numbers") {
+      showDiffLineNumbers = true;
+      return;
+    }
+    if (arg === "--no-diff-line-numbers") {
+      showDiffLineNumbers = false;
+      return;
+    }
+    if (arg === "--diff-context-line-numbers") {
+      showContextLineNumbers = true;
+      return;
+    }
+    if (arg === "--no-diff-context-line-numbers") {
+      showContextLineNumbers = false;
       return;
     }
     remainingArgs.push(arg);
@@ -39,31 +54,9 @@ function parseCliArgs(argv: readonly string[]): CliOptions {
   return {
     prUrl: remainingArgs[0] ?? null,
     isProduction,
+    showDiffLineNumbers,
+    showContextLineNumbers,
   };
-}
-
-function parsePrUrl(prUrl: string): ParsedPrUrl {
-  let url: URL;
-  try {
-    url = new URL(prUrl);
-  } catch (_error) {
-    throw new Error(`Invalid PR URL: ${prUrl}`);
-  }
-
-  const parts = url.pathname.split("/").filter(Boolean);
-  if (parts.length < 4 || parts[2] !== "pull") {
-    throw new Error(
-      `PR URL must be in the form https://github.com/<owner>/<repo>/pull/<number>, received: ${prUrl}`
-    );
-  }
-
-  const [owner, repo, _pull, numberRaw] = parts;
-  const number = Number(numberRaw);
-  if (!Number.isInteger(number)) {
-    throw new Error(`Invalid pull request number in URL: ${prUrl}`);
-  }
-
-  return { owner, repo, number };
 }
 
 async function resolveCommitRef(
@@ -100,7 +93,12 @@ async function resolveCommitRef(
 }
 
 async function main(): Promise<void> {
-  const { prUrl: prUrlArg, isProduction } = parseCliArgs(
+  const {
+    prUrl: prUrlArg,
+    isProduction,
+    showDiffLineNumbers,
+    showContextLineNumbers,
+  } = parseCliArgs(
     process.argv.slice(2)
   );
   if (isProduction) {
@@ -138,6 +136,13 @@ async function main(): Promise<void> {
     morphSnapshotId: "snapshot_vb7uqz8o",
     productionMode,
   };
+
+  if (showDiffLineNumbers !== null) {
+    config.showDiffLineNumbers = showDiffLineNumbers;
+  }
+  if (showContextLineNumbers !== null) {
+    config.showContextLineNumbers = showContextLineNumbers;
+  }
 
   try {
     await startAutomatedPrReview(config);
