@@ -61,6 +61,10 @@ const DEV_WINDOW_NAME = "{{DEV_WINDOW_NAME}}";
 const MAINTENANCE_EXIT_CODE_PATH = "{{MAINTENANCE_EXIT_CODE_PATH}}";
 const HAS_MAINTENANCE_SCRIPT = "{{HAS_MAINTENANCE_SCRIPT}}" === "true";
 const HAS_DEV_SCRIPT = "{{HAS_DEV_SCRIPT}}" === "true";
+const CONVEX_URL = "{{CONVEX_URL}}";
+const ACCESS_TOKEN = "{{ACCESS_TOKEN}}";
+const TASK_RUN_ID = "{{TASK_RUN_ID}}";
+const TEAM_SLUG_OR_ID = "{{TEAM_SLUG_OR_ID}}";
 
 async function waitForTmuxSession(): Promise<void> {
   for (let i = 0; i < 20; i++) {
@@ -177,6 +181,55 @@ exec zsh\`;
   }
 }
 
+async function reportErrorToConvex(maintenanceError: string | null, devError: string | null): Promise<void> {
+  if (!TASK_RUN_ID || !CONVEX_URL || !ACCESS_TOKEN || !TEAM_SLUG_OR_ID) {
+    console.log("[ORCHESTRATOR] Skipping Convex error reporting: missing configuration");
+    return;
+  }
+
+  if (!maintenanceError && !devError) {
+    console.log("[ORCHESTRATOR] No errors to report");
+    return;
+  }
+
+  try {
+    console.log("[ORCHESTRATOR] Reporting errors to Convex...");
+
+    const args: { teamSlugOrId: string; id: string; maintenanceError?: string; devError?: string } = {
+      teamSlugOrId: TEAM_SLUG_OR_ID,
+      id: TASK_RUN_ID,
+    };
+
+    if (maintenanceError) {
+      args.maintenanceError = maintenanceError;
+    }
+    if (devError) {
+      args.devError = devError;
+    }
+
+    const response = await fetch(\`\${CONVEX_URL}/api/mutation\`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": \`Bearer \${ACCESS_TOKEN}\`,
+      },
+      body: JSON.stringify({
+        path: "taskRuns:updateEnvironmentError",
+        args,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(\`[ORCHESTRATOR] Failed to report errors to Convex: \${response.status} \${errorText}\`);
+    } else {
+      console.log("[ORCHESTRATOR] Successfully reported errors to Convex");
+    }
+  } catch (error) {
+    console.error(\`[ORCHESTRATOR] Exception while reporting errors to Convex:\`, error);
+  }
+}
+
 async function startDevScript(): Promise<{ error: string | null }> {
   if (!HAS_DEV_SCRIPT) {
     console.log("[DEV] No dev script to run");
@@ -224,9 +277,17 @@ async function startDevScript(): Promise<{ error: string | null }> {
     const devResult = await startDevScript();
     if (devResult.error) {
       console.error(\`[ORCHESTRATOR] Dev script failed: \${devResult.error}\`);
-      process.exit(1);
     } else {
       console.log("[ORCHESTRATOR] Dev script started successfully");
+    }
+
+    // Report any errors to Convex
+    if (maintenanceResult.error || devResult.error) {
+      await reportErrorToConvex(maintenanceResult.error, devResult.error);
+    }
+
+    if (devResult.error) {
+      process.exit(1);
     }
 
     console.log("[ORCHESTRATOR] Orchestrator completed successfully");
@@ -243,11 +304,19 @@ export async function runMaintenanceAndDevScripts({
   maintenanceScript,
   devScript,
   identifiers,
+  convexUrl,
+  accessToken,
+  taskRunId,
+  teamSlugOrId,
 }: {
   instance: MorphInstance;
   maintenanceScript?: string;
   devScript?: string;
   identifiers?: ScriptIdentifiers;
+  convexUrl?: string;
+  accessToken?: string;
+  taskRunId?: string;
+  teamSlugOrId?: string;
 }): Promise<ScriptResult> {
   const ids = identifiers ?? allocateScriptIdentifiers();
 
@@ -304,7 +373,11 @@ ${devScript}
     .replace(/{{DEV_WINDOW_NAME}}/g, ids.dev.windowName)
     .replace(/{{MAINTENANCE_EXIT_CODE_PATH}}/g, maintenanceExitCodePath)
     .replace(/{{HAS_MAINTENANCE_SCRIPT}}/g, String(maintenanceScriptContent !== null))
-    .replace(/{{HAS_DEV_SCRIPT}}/g, String(devScriptContent !== null));
+    .replace(/{{HAS_DEV_SCRIPT}}/g, String(devScriptContent !== null))
+    .replace(/{{CONVEX_URL}}/g, convexUrl || '')
+    .replace(/{{ACCESS_TOKEN}}/g, accessToken || '')
+    .replace(/{{TASK_RUN_ID}}/g, taskRunId || '')
+    .replace(/{{TEAM_SLUG_OR_ID}}/g, teamSlugOrId || '');
 
   // Create the command that sets up all scripts and starts the orchestrator in background
   const setupAndRunCommand = `set -eu
