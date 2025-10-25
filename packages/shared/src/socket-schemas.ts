@@ -55,6 +55,11 @@ export const CreateLocalWorkspaceSchema = z.object({
   projectFullName: z.string().optional(),
   repoUrl: z.string().optional(),
   branch: z.string().optional(),
+  taskId: typedZid("tasks").optional(),
+  taskRunId: typedZid("taskRuns").optional(),
+  workspaceName: z.string().optional(),
+  descriptor: z.string().optional(),
+  sequence: z.number().optional(),
 });
 
 export const CreateLocalWorkspaceResponseSchema = z.object({
@@ -64,6 +69,7 @@ export const CreateLocalWorkspaceResponseSchema = z.object({
   workspaceName: z.string().optional(),
   workspacePath: z.string().optional(),
   workspaceUrl: z.string().optional(),
+  pending: z.boolean().optional(),
   error: z.string().optional(),
 });
 

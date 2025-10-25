@@ -28,7 +28,7 @@ const PROXY_HOST = "127.0.0.1";
 const DEFAULT_PROXY_PORT = 0;
 const SOCKET_READY_TIMEOUT_MS = 15_000;
 const FRAME_ANCESTORS_HEADER =
-  "frame-ancestors 'self' https://cmux.local http://cmux.local https://www.cmux.sh https://cmux.sh https://www.cmux.dev https://cmux.dev http://localhost:5173;";
+  "frame-ancestors 'self' https://cmux.local http://cmux.local https://www.cmux.sh https://cmux.sh https://www.cmux.dev https://cmux.dev http://localhost:5173 http://cmux-vscode.localhost https://cmux-vscode.localhost http://cmux-vscode.local https://cmux-vscode.local;";
 
 let resolvedVSCodeExecutable: string | null = null;
 let currentServeWebBaseUrl: string | null = null;

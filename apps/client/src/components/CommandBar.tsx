@@ -6,14 +6,17 @@ import { isElectron } from "@/lib/electron";
 import { copyAllElectronLogs } from "@/lib/electron-logs/electron-logs";
 import { setLastTeamSlugOrId } from "@/lib/lastTeam";
 import { stackClientApp } from "@/lib/stack";
+import { preloadTaskRunIframes } from "@/lib/preloadTaskRunIframes";
+import { toProxyWorkspaceUrl } from "@/lib/toProxyWorkspaceUrl";
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 import type { CreateLocalWorkspaceResponse } from "@cmux/shared";
+import { deriveRepoBaseName, generateWorkspaceName } from "@cmux/shared";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useUser, type Team } from "@stackframe/react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { Command, useCommandState } from "cmdk";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import {
   Bug,
   GitPullRequest,
@@ -75,6 +78,12 @@ type TeamCommandItem = {
   slug?: string;
   teamSlugOrId: string;
   isCurrent: boolean;
+  keywords: string[];
+};
+
+type LocalWorkspaceOption = {
+  fullName: string;
+  repoBaseName: string;
   keywords: string[];
 };
 
@@ -148,54 +157,57 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
   const teamMemberships = useQuery(api.teams.listTeamMemberships, {});
   const reposByOrg = useQuery(api.github.getReposByOrg, { teamSlugOrId });
 
-  const localWorkspaceOptions = useMemo(
-    () => {
-      const repoGroups = reposByOrg ?? {};
-      const uniqueRepos = new Map<string, Doc<"repos">>();
+  const localWorkspaceOptions = useMemo<LocalWorkspaceOption[]>(() => {
+    const repoGroups = reposByOrg ?? {};
+    const uniqueRepos = new Map<string, Doc<"repos">>();
 
-      for (const repos of Object.values(repoGroups)) {
-        for (const repo of repos ?? []) {
-          const existing = uniqueRepos.get(repo.fullName);
-          if (!existing) {
-            uniqueRepos.set(repo.fullName, repo);
-            continue;
-          }
-          const existingActivity =
-            existing.lastPushedAt ?? Number.NEGATIVE_INFINITY;
-          const candidateActivity =
-            repo.lastPushedAt ?? Number.NEGATIVE_INFINITY;
-          if (candidateActivity > existingActivity) {
-            uniqueRepos.set(repo.fullName, repo);
-          }
+    for (const repos of Object.values(repoGroups)) {
+      for (const repo of repos ?? []) {
+        const existing = uniqueRepos.get(repo.fullName);
+        if (!existing) {
+          uniqueRepos.set(repo.fullName, repo);
+          continue;
+        }
+        const existingActivity =
+          existing.lastPushedAt ?? Number.NEGATIVE_INFINITY;
+        const candidateActivity =
+          repo.lastPushedAt ?? Number.NEGATIVE_INFINITY;
+        if (candidateActivity > existingActivity) {
+          uniqueRepos.set(repo.fullName, repo);
         }
       }
+    }
 
-      return Array.from(uniqueRepos.values())
-        .sort((a, b) => {
-          const aPushedAt = a.lastPushedAt ?? Number.NEGATIVE_INFINITY;
-          const bPushedAt = b.lastPushedAt ?? Number.NEGATIVE_INFINITY;
-          if (aPushedAt !== bPushedAt) {
-            return bPushedAt - aPushedAt;
-          }
-          return a.fullName.localeCompare(b.fullName);
-        })
-        .map((repo) => {
-          const [owner, name] = repo.fullName.split("/");
-          return {
-            fullName: repo.fullName,
-            keywords: compactStrings([
-              repo.fullName,
-              repo.name,
-              repo.org,
-              repo.ownerLogin,
-              owner,
-              name,
-            ]),
-          };
-        });
-    },
-    [reposByOrg],
-  );
+    return Array.from(uniqueRepos.values())
+      .sort((a, b) => {
+        const aPushedAt = a.lastPushedAt ?? Number.NEGATIVE_INFINITY;
+        const bPushedAt = b.lastPushedAt ?? Number.NEGATIVE_INFINITY;
+        if (aPushedAt !== bPushedAt) {
+          return bPushedAt - aPushedAt;
+        }
+        return a.fullName.localeCompare(b.fullName);
+      })
+      .map((repo) => {
+        const repoBaseName =
+          deriveRepoBaseName({
+            projectFullName: repo.fullName,
+            repoUrl: repo.gitRemote,
+          }) ?? repo.name;
+        const [owner, name] = repo.fullName.split("/");
+        return {
+          fullName: repo.fullName,
+          repoBaseName,
+          keywords: compactStrings([
+            repo.fullName,
+            repo.name,
+            repo.org,
+            repo.ownerLogin,
+            owner,
+            name,
+          ]),
+        };
+      });
+  }, [reposByOrg]);
 
   const isLocalWorkspaceLoading = reposByOrg === undefined;
 
@@ -260,6 +272,13 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     : "Sign in to view teams.";
 
   const allTasks = useQuery(api.tasks.getTasksWithTaskRuns, { teamSlugOrId });
+  const nextWorkspaceSequence = useQuery(api.localWorkspaces.nextSequence, {
+    teamSlugOrId,
+  });
+  const predictedWorkspaceSequence =
+    nextWorkspaceSequence?.sequence ?? null;
+  const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
+  const failTaskRun = useMutation(api.taskRuns.fail);
 
   useEffect(() => {
     openRef.current = open;
@@ -300,7 +319,9 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
 
   const createLocalWorkspace = useCallback(
     async (projectFullName: string) => {
-      if (isCreatingLocalWorkspace) return;
+      if (isCreatingLocalWorkspace) {
+        return;
+      }
       if (!socket) {
         toast.error(
           "Socket is not connected yet. Please try again momentarily.",
@@ -309,8 +330,30 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
       }
 
       setIsCreatingLocalWorkspace(true);
+      let loadingToast: ReturnType<typeof toast.loading> | undefined;
+      let reservedTaskId: Id<"tasks"> | null = null;
+      let reservedTaskRunId: Id<"taskRuns"> | null = null;
+
       try {
         const repoUrl = `https://github.com/${projectFullName}.git`;
+        const reservation = await reserveLocalWorkspace({
+          teamSlugOrId,
+          projectFullName,
+          repoUrl,
+        });
+        if (!reservation) {
+          throw new Error("Unable to reserve workspace name");
+        }
+
+        reservedTaskId = reservation.taskId;
+        reservedTaskRunId = reservation.taskRunId;
+
+        addTaskToExpand(reservation.taskId);
+
+        loadingToast = toast.loading(
+          `Workspace ${reservation.workspaceName} is provisioning…`,
+        );
+
         await new Promise<void>((resolve) => {
           socket.emit(
             "create-local-workspace",
@@ -318,55 +361,129 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
               teamSlugOrId,
               projectFullName,
               repoUrl,
+              taskId: reservation.taskId,
+              taskRunId: reservation.taskRunId,
+              workspaceName: reservation.workspaceName,
+              descriptor: reservation.descriptor,
             },
-            (response: CreateLocalWorkspaceResponse) => {
-              if (!response?.success) {
-                const message =
-                  response?.error ??
-                  `Unable to create workspace for ${projectFullName}`;
-                toast.error("Failed to create workspace", {
-                  description: message,
-                });
-              } else {
-                if (response.taskId) {
-                  addTaskToExpand(response.taskId);
+            async (response: CreateLocalWorkspaceResponse) => {
+              try {
+                if (!response?.success) {
+                  const message =
+                    response?.error ??
+                    `Unable to create workspace for ${projectFullName}`;
+                  if (reservedTaskRunId) {
+                    await failTaskRun({
+                      teamSlugOrId,
+                      id: reservedTaskRunId,
+                      errorMessage: message,
+                    }).catch(() => undefined);
+                  }
+                  if (loadingToast) {
+                    toast.error(message, { id: loadingToast });
+                  } else {
+                    toast.error("Failed to create workspace", {
+                      description: message,
+                    });
+                  }
+                  return;
                 }
-                toast.success(
-                  `Workspace ${
-                    response.workspaceName ?? projectFullName
-                  } ready`,
-                );
-                if (response.taskId && response.taskRunId) {
+
+                const effectiveTaskId = response.taskId ?? reservedTaskId;
+                const effectiveTaskRunId =
+                  response.taskRunId ?? reservedTaskRunId;
+                const effectiveWorkspaceName =
+                  response.workspaceName ??
+                  reservation.workspaceName ??
+                  projectFullName;
+
+                if (loadingToast) {
+                  toast.success(
+                    response.pending
+                      ? `${effectiveWorkspaceName} is provisioning…`
+                      : `${effectiveWorkspaceName} is ready`,
+                    { id: loadingToast },
+                  );
+                  loadingToast = undefined;
+                }
+
+                if (response.workspaceUrl && effectiveTaskRunId) {
+                  const proxiedUrl = toProxyWorkspaceUrl(response.workspaceUrl);
+                  if (proxiedUrl) {
+                    void preloadTaskRunIframes([
+                      { url: proxiedUrl, taskRunId: effectiveTaskRunId },
+                    ]).catch(() => undefined);
+                  }
+                }
+
+                if (effectiveTaskId && effectiveTaskRunId) {
+                  void router
+                    .preloadRoute({
+                      to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                      params: {
+                        teamSlugOrId,
+                        taskId: effectiveTaskId,
+                        runId: effectiveTaskRunId,
+                      },
+                    })
+                    .catch(() => undefined);
                   void navigate({
                     to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
                     params: {
                       teamSlugOrId,
-                      taskId: response.taskId,
-                      runId: response.taskRunId,
+                      taskId: effectiveTaskId,
+                      runId: effectiveTaskRunId,
                     },
                   });
                 } else if (response.workspaceUrl) {
                   window.location.assign(response.workspaceUrl);
                 }
+              } catch (callbackError) {
+                const message =
+                  callbackError instanceof Error
+                    ? callbackError.message
+                    : String(callbackError ?? "Unknown");
+                if (loadingToast) {
+                  toast.error(message, { id: loadingToast });
+                } else {
+                  toast.error("Failed to create workspace", {
+                    description: message,
+                  });
+                }
+              } finally {
+                resolve();
               }
-              resolve();
             },
           );
         });
       } catch (error) {
         const message =
           error instanceof Error ? error.message : String(error ?? "Unknown");
-        toast.error("Failed to create workspace", {
-          description: message,
-        });
+        if (reservedTaskRunId) {
+          await failTaskRun({
+            teamSlugOrId,
+            id: reservedTaskRunId,
+            errorMessage: message,
+          }).catch(() => undefined);
+        }
+        if (loadingToast) {
+          toast.error(message, { id: loadingToast });
+        } else {
+          toast.error("Failed to create workspace", {
+            description: message,
+          });
+        }
       } finally {
         setIsCreatingLocalWorkspace(false);
       }
     },
     [
       addTaskToExpand,
-      navigate,
+      failTaskRun,
       isCreatingLocalWorkspace,
+      navigate,
+      reserveLocalWorkspace,
+      router,
       socket,
       teamSlugOrId,
     ],
@@ -1191,27 +1308,43 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                       Loading repositories…
                     </Command.Item>
                   ) : localWorkspaceOptions.length > 0 ? (
-                    localWorkspaceOptions.map((option) => (
-                      <Command.Item
-                        key={option.fullName}
-                        value={`local-workspace:${option.fullName}`}
-                        data-value={`local-workspace:${option.fullName}`}
-                        keywords={option.keywords}
-                        disabled={isCreatingLocalWorkspace}
-                        onSelect={() =>
-                          handleLocalWorkspaceSelect(option.fullName)
-                        }
-                        className="flex items-center gap-3 px-3 py-2.5 mx-1 rounded-md cursor-pointer
+                    localWorkspaceOptions.map((option) => {
+                      const predictedWorkspaceName =
+                        predictedWorkspaceSequence !== null
+                          ? generateWorkspaceName({
+                              repoName: option.repoBaseName,
+                              sequence: predictedWorkspaceSequence,
+                            })
+                          : null;
+                      return (
+                        <Command.Item
+                          key={option.fullName}
+                          value={`local-workspace:${option.fullName}`}
+                          data-value={`local-workspace:${option.fullName}`}
+                          keywords={option.keywords}
+                          disabled={isCreatingLocalWorkspace}
+                          onSelect={() =>
+                            handleLocalWorkspaceSelect(option.fullName)
+                          }
+                          className="flex items-center gap-3 px-3 py-2.5 mx-1 rounded-md cursor-pointer
                 hover:bg-neutral-100 dark:hover:bg-neutral-800
                 data-[selected=true]:bg-neutral-100 dark:data-[selected=true]:bg-neutral-800
                 data-[selected=true]:text-neutral-900 dark:data-[selected=true]:text-neutral-100"
-                      >
-                        <GitHubIcon className="h-4 w-4 text-neutral-500" />
-                        <span className="flex-1 truncate text-sm">
-                          {option.fullName}
-                        </span>
-                      </Command.Item>
-                    ))
+                        >
+                          <GitHubIcon className="h-4 w-4 text-neutral-500" />
+                          <div className="flex min-w-0 flex-1 flex-col">
+                            <span className="truncate text-sm">
+                              {option.fullName}
+                            </span>
+                            {predictedWorkspaceName ? (
+                              <span className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                                {predictedWorkspaceName}
+                              </span>
+                            ) : null}
+                          </div>
+                        </Command.Item>
+                      );
+                    })
                   ) : (
                     <Command.Item
                       value="local-workspaces:none"
