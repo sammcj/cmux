@@ -13,6 +13,7 @@ import { DockerVSCodeInstance } from "./vscode/DockerVSCodeInstance";
 import { VSCodeInstance } from "./vscode/VSCodeInstance";
 import {
   ensureVSCodeServeWeb,
+  getVSCodeServeWebBaseUrl,
   stopVSCodeServeWeb,
   type VSCodeServeWebHandle,
 } from "./vscode/serveWeb";
@@ -144,6 +145,10 @@ export async function startServer({
       vscodeServeHandle.process.on("exit", () => {
         vscodeServeHandle = null;
       });
+      const baseUrl = getVSCodeServeWebBaseUrl();
+      if (baseUrl) {
+        serverLogger.info(`VS Code serve-web proxy available at ${baseUrl}`);
+      }
     }
 
     // Startup refresh moved to first authenticated socket connection
