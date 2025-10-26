@@ -1,7 +1,7 @@
 import path, { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { createServer, request as httpRequest, type Server as HttpServer } from "node:http";
+import { request as httpRequest } from "node:http";
 import { is } from "@electron-toolkit/utils";
 import {
   app,
@@ -22,10 +22,9 @@ import {
 import { startEmbeddedServer } from "./embedded-server";
 import { registerWebContentsViewHandlers } from "./web-contents-view";
 import { registerGlobalContextMenu } from "./context-menu";
-import { connect as connectSocket, type Socket as NetSocket } from "node:net";
 import {
-  getVSCodeServeWebSocketPath,
-  LOCAL_VSCODE_HOST,
+  LOCAL_VSCODE_HOST_WITH_PORT,
+  VSCODE_SERVE_WEB_PORT,
   VSCODE_FRAME_ANCESTORS_HEADER,
 } from "@cmux/server/vscode/serveWeb";
 import electronUpdater, {
@@ -83,17 +82,6 @@ const LOG_ROTATION: LogRotationOptions = {
   maxBytes: 5 * 1024 * 1024,
   maxBackups: 3,
 };
-
-type VSCodeProxyServer = {
-  server: HttpServer;
-  port: number;
-  socketPath: string;
-  sockets: Set<NetSocket>;
-  upstreamSockets: Set<NetSocket>;
-};
-
-let vscodeProxyServer: VSCodeProxyServer | null = null;
-let vscodeProxyServerPromise: Promise<VSCodeProxyServer | null> | null = null;
 
 process.on("uncaughtException", (error) => {
   console.error("[ElectronMain] Uncaught exception", error);
@@ -234,255 +222,6 @@ export function mainError(...args: unknown[]) {
 
   console.error("[MAIN]", line);
   emitToRenderer("error", `[MAIN] ${line}`);
-}
-
-async function startVSCodeProxyServer(
-  socketPath: string
-): Promise<VSCodeProxyServer> {
-  return await new Promise<VSCodeProxyServer>((resolve, reject) => {
-    const sockets = new Set<NetSocket>();
-    const upstreamSockets = new Set<NetSocket>();
-    let resolved = false;
-
-    const server = createServer((clientReq, clientRes) => {
-      const targetPath = clientReq.url ?? "/";
-      const headers = {
-        ...clientReq.headers,
-        host: LOCAL_VSCODE_HOST,
-      };
-
-      const proxyReq = httpRequest(
-        {
-          socketPath,
-          path: targetPath,
-          method: clientReq.method ?? "GET",
-          headers,
-        },
-        (proxyRes) => {
-          clientRes.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers);
-          proxyRes.pipe(clientRes);
-        }
-      );
-
-      proxyReq.on("error", (error) => {
-        mainWarn("VS Code proxy HTTP request failed", error);
-        if (!clientRes.headersSent) {
-          clientRes.writeHead(502, { "Content-Type": "text/plain" });
-        }
-        clientRes.end("VS Code proxy error");
-      });
-
-      clientReq.on("error", (error) => {
-        mainWarn("VS Code proxy client request error", error);
-        proxyReq.destroy(error instanceof Error ? error : undefined);
-      });
-
-      clientReq.pipe(proxyReq);
-    });
-
-    server.on("connection", (socket) => {
-      const connectionSocket = socket as NetSocket;
-      sockets.add(connectionSocket);
-      connectionSocket.on("close", () => sockets.delete(connectionSocket));
-      connectionSocket.on("error", (error) => {
-        mainWarn("VS Code proxy connection error", error);
-      });
-    });
-
-    server.on("upgrade", (req, rawSocket, head) => {
-      const clientSocket = rawSocket as unknown as NetSocket;
-      clientSocket.setNoDelay(true);
-      sockets.add(clientSocket);
-      clientSocket.on("close", () => sockets.delete(clientSocket));
-
-      const upstream = connectSocket(socketPath);
-      upstream.setNoDelay(true);
-      upstreamSockets.add(upstream);
-      upstream.on("close", () => upstreamSockets.delete(upstream));
-
-      const destroyBoth = (reason?: Error) => {
-        if (reason) {
-          mainWarn("VS Code websocket proxy error", reason);
-        }
-        try {
-          clientSocket.destroy();
-        } catch {
-          // ignore
-        }
-        try {
-          upstream.destroy();
-        } catch {
-          // ignore
-        }
-      };
-
-      upstream.once("error", (error) => {
-        destroyBoth(error instanceof Error ? error : new Error(String(error)));
-      });
-
-      clientSocket.once("error", (error) => {
-        destroyBoth(error instanceof Error ? error : new Error(String(error)));
-      });
-
-      upstream.once("connect", () => {
-        try {
-          const requestLine = `${req.method ?? "GET"} ${req.url ?? "/"} HTTP/${req.httpVersion}`;
-          const headerLines = Object.entries(req.headers)
-            .map(([key, value]) =>
-              Array.isArray(value)
-                ? `${key}: ${value.join(", ")}`
-                : `${key}: ${value ?? ""}`
-            )
-            .join("\r\n");
-
-          upstream.write(`${requestLine}\r\n${headerLines}\r\n\r\n`);
-          if (head && head.length > 0) {
-            upstream.write(head);
-          }
-
-          upstream.pipe(clientSocket);
-          clientSocket.pipe(upstream);
-        } catch (error) {
-          destroyBoth(
-            error instanceof Error ? error : new Error(String(error ?? "Failed"))
-          );
-        }
-      });
-    });
-
-    server.on("error", (error) => {
-      if (!resolved) {
-        reject(error instanceof Error ? error : new Error(String(error ?? "")));
-        return;
-      }
-      mainWarn("VS Code proxy server error", error);
-    });
-
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") {
-        server.close();
-        reject(new Error("Failed to determine VS Code proxy server address"));
-        return;
-      }
-      resolved = true;
-      resolve({
-        server,
-        port: address.port,
-        socketPath,
-        sockets,
-        upstreamSockets,
-      });
-    });
-  });
-}
-
-async function stopVSCodeProxyServer(server: VSCodeProxyServer): Promise<void> {
-  for (const socket of server.sockets) {
-    try {
-      socket.destroy();
-    } catch {
-      // ignore
-    }
-  }
-  for (const socket of server.upstreamSockets) {
-    try {
-      socket.destroy();
-    } catch {
-      // ignore
-    }
-  }
-
-  await new Promise<void>((resolve) => {
-    server.server.close((error) => {
-      if (error) {
-        mainWarn("Failed to close VS Code proxy server", error);
-      }
-      resolve();
-    });
-  });
-}
-
-async function ensureVSCodeProxyServer(
-  socketPath: string
-): Promise<VSCodeProxyServer | null> {
-  if (vscodeProxyServer && vscodeProxyServer.socketPath === socketPath) {
-    return vscodeProxyServer;
-  }
-
-  if (vscodeProxyServerPromise) {
-    const current = await vscodeProxyServerPromise;
-    if (current && current.socketPath === socketPath) {
-      return current;
-    }
-  }
-
-  const startPromise = (async () => {
-    if (vscodeProxyServer) {
-      await stopVSCodeProxyServer(vscodeProxyServer);
-      vscodeProxyServer = null;
-    }
-
-    try {
-      const created = await startVSCodeProxyServer(socketPath);
-      vscodeProxyServer = created;
-      mainLog("Started VS Code websocket proxy", {
-        port: created.port,
-        socketPath: created.socketPath,
-      });
-      return created;
-    } catch (error) {
-      mainWarn("Failed to start VS Code websocket proxy", error);
-      return null;
-    } finally {
-      vscodeProxyServerPromise = null;
-    }
-  })();
-
-  vscodeProxyServerPromise = startPromise;
-  return startPromise;
-}
-
-async function shutdownVSCodeProxy(): Promise<void> {
-  if (vscodeProxyServerPromise) {
-    await vscodeProxyServerPromise.catch(() => undefined);
-  }
-  if (vscodeProxyServer) {
-    await stopVSCodeProxyServer(vscodeProxyServer);
-    vscodeProxyServer = null;
-  }
-}
-
-function registerVSCodeWebSocketRedirect(
-  currentSession: Electron.Session
-): void {
-  currentSession.webRequest.onBeforeRequest(
-    { urls: [`ws://${LOCAL_VSCODE_HOST}/*`] },
-    (details, callback) => {
-      void (async () => {
-        if (details.resourceType && details.resourceType !== "webSocket") {
-          callback({});
-          return;
-        }
-        const socketPath = getVSCodeServeWebSocketPath();
-        if (!socketPath) {
-          callback({ cancel: true });
-          return;
-        }
-        const server = await ensureVSCodeProxyServer(socketPath);
-        if (!server) {
-          callback({ cancel: true });
-          return;
-        }
-        const url = new URL(details.url);
-        const redirectURL = `ws://127.0.0.1:${server.port}${url.pathname}${url.search}`;
-        callback({ redirectURL });
-      })().catch((error) => {
-        mainWarn("VS Code websocket redirect failed", error);
-        callback({ cancel: true });
-      });
-    }
-  );
 }
 
 function sendShortcutToFocusedWindow(
@@ -1099,20 +838,14 @@ app.whenReady().then(async () => {
   // });
 
   const ses = session.fromPartition(PARTITION);
-  registerVSCodeWebSocketRedirect(ses);
 
   const handleCmuxProtocol = async (request: Request): Promise<Response> => {
     const electronReq = request as unknown as Electron.ProtocolRequest;
     const url = new URL(electronReq.url);
 
-    if (url.hostname === LOCAL_VSCODE_HOST) {
-      const socketPath = getVSCodeServeWebSocketPath();
-      if (!socketPath) {
-        return new Response("VS Code workspace is not ready", { status: 503 });
-      }
+    if (url.host === LOCAL_VSCODE_HOST_WITH_PORT) {
       try {
-        void ensureVSCodeProxyServer(socketPath);
-        return await proxyVSCodeHttp(electronReq, socketPath, ses);
+        return await proxyVSCodeHttp(electronReq, ses);
       } catch (error) {
         const message =
           error instanceof Error ? error.message : String(error ?? "Unknown error");
@@ -1148,7 +881,6 @@ app.whenReady().then(async () => {
 
   async function proxyVSCodeHttp(
     req: Electron.ProtocolRequest,
-    socketPath: string,
     currentSession: Electron.Session
   ): Promise<Response> {
     const targetUrl = new URL(req.url);
@@ -1159,7 +891,7 @@ app.whenReady().then(async () => {
       if (typeof value === "undefined") continue;
       headers[key] = Array.isArray(value) ? value.join(", ") : value;
     }
-    headers.host = LOCAL_VSCODE_HOST;
+    headers.host = LOCAL_VSCODE_HOST_WITH_PORT;
     if (req.referrer && !hasHeader(headers, "referer")) {
       headers.referer = req.referrer;
     }
@@ -1176,8 +908,9 @@ app.whenReady().then(async () => {
     return await new Promise<Response>((resolve, reject) => {
       const upstream = httpRequest(
         {
-          socketPath,
-          method: req.method,
+          host: "127.0.0.1",
+          port: VSCODE_SERVE_WEB_PORT,
+          method: req.method ?? "GET",
           path: targetPath || "/",
           headers,
         },
@@ -1455,13 +1188,8 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
-    void shutdownVSCodeProxy();
     app.quit();
   }
-});
-
-app.on("before-quit", () => {
-  void shutdownVSCodeProxy();
 });
 
 // Simple in-memory cache of RemoteJWKSet by issuer

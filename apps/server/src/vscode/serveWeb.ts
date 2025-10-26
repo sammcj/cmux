@@ -1,10 +1,8 @@
 import { execFile, spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
-import { access, unlink } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { promisify } from "node:util";
 
 type Logger = {
@@ -15,28 +13,25 @@ type Logger = {
 };
 
 const execFileAsync = promisify(execFile);
-export const LOCAL_VSCODE_HOST =
-  process.env.CMUX_VSCODE_PUBLIC_HOST?.trim() || "cmux-vscode.local";
-const SOCKET_READY_TIMEOUT_MS = 15_000;
+export const LOCAL_VSCODE_HOST = "localhost";
+export const VSCODE_SERVE_WEB_PORT = 39_384;
+export const LOCAL_VSCODE_HOST_WITH_PORT = `${LOCAL_VSCODE_HOST}:${VSCODE_SERVE_WEB_PORT}`;
+export const LOCAL_VSCODE_ORIGIN = `http://${LOCAL_VSCODE_HOST_WITH_PORT}`;
+const SERVER_READY_TIMEOUT_MS = 15_000;
 export const VSCODE_FRAME_ANCESTORS_HEADER =
-  "frame-ancestors 'self' https://cmux.local http://cmux.local https://www.cmux.sh https://cmux.sh https://www.cmux.dev https://cmux.dev http://localhost:5173 http://cmux-vscode.local https://cmux-vscode.local http://cmux-vscode.localhost https://cmux-vscode.localhost;";
+  "frame-ancestors 'self' https://cmux.local http://cmux.local https://www.cmux.sh https://cmux.sh https://www.cmux.dev https://cmux.dev http://localhost:5173 http://localhost:39384 https://localhost:39384;";
 
 let resolvedVSCodeExecutable: string | null = null;
 let currentServeWebBaseUrl: string | null = null;
-let currentServeWebSocketPath: string | null = null;
 
 export type VSCodeServeWebHandle = {
   process: ChildProcess;
   executable: string;
-  socketPath: string;
+  port: number;
 };
 
 export function getVSCodeServeWebBaseUrl(): string | null {
   return currentServeWebBaseUrl;
-}
-
-export function getVSCodeServeWebSocketPath(): string | null {
-  return currentServeWebSocketPath;
 }
 
 export async function waitForVSCodeServeWebBaseUrl(
@@ -70,22 +65,13 @@ export async function ensureVSCodeServeWeb(
     return null;
   }
 
-  if (process.platform === "win32") {
-    logger.warn(
-      "Unix socket mode for VS Code serve-web is unavailable on Windows; skipping launch."
-    );
-    return null;
-  }
-
-  const socketPath = createSocketPath();
+  await killProcessOnPort(VSCODE_SERVE_WEB_PORT, logger);
 
   let child: ChildProcess | null = null;
 
   try {
-    await removeStaleSocket(socketPath, logger);
-
     logger.info(
-      `Starting VS Code serve-web using executable ${executable} with socket ${socketPath}...`
+      `Starting VS Code serve-web using executable ${executable} on port ${VSCODE_SERVE_WEB_PORT}...`
     );
 
     child = spawn(
@@ -94,11 +80,13 @@ export async function ensureVSCodeServeWeb(
         "serve-web",
         "--accept-server-license-terms",
         "--without-connection-token",
-        "--socket-path",
-        socketPath,
+        "--host",
+        "127.0.0.1",
+        "--port",
+        String(VSCODE_SERVE_WEB_PORT),
       ],
       {
-        detached: true,
+        detached: false,
         stdio: ["ignore", "pipe", "pipe"],
       }
     );
@@ -122,30 +110,26 @@ export async function ensureVSCodeServeWeb(
         logger.info("Clearing cached VS Code serve-web base URL");
         currentServeWebBaseUrl = null;
       }
-      currentServeWebSocketPath = null;
     });
 
-    child!.unref();
+    await waitForServeWebPort(logger);
 
-    await waitForSocket(socketPath);
-
-    currentServeWebSocketPath = socketPath;
-    const baseUrl = `http://${LOCAL_VSCODE_HOST}`;
-    currentServeWebBaseUrl = baseUrl;
+    currentServeWebBaseUrl = LOCAL_VSCODE_ORIGIN;
+    const baseUrl = currentServeWebBaseUrl;
 
     logger.info(
       `VS Code serve-web ready at ${baseUrl} (pid ${child.pid ?? "unknown"}).`
     );
 
-    await warmUpVSCodeServeWeb(socketPath, logger);
+    await warmUpVSCodeServeWeb(logger);
 
     return {
       process: child!,
       executable,
-      socketPath,
+      port: VSCODE_SERVE_WEB_PORT,
     };
   } catch (error) {
-    logger.error("Failed to launch VS Code serve-web via unix socket:", error);
+    logger.error("Failed to launch VS Code serve-web:", error);
     if (child && !child.killed && child.exitCode === null) {
       try {
         child.kill();
@@ -156,13 +140,7 @@ export async function ensureVSCodeServeWeb(
         );
       }
     }
-    try {
-      await unlink(socketPath);
-    } catch {
-      // ignore cleanup errors here
-    }
     currentServeWebBaseUrl = null;
-    currentServeWebSocketPath = null;
     return null;
   }
 }
@@ -175,25 +153,9 @@ export function stopVSCodeServeWeb(
     return;
   }
 
-  const { process: child, socketPath } = handle;
+  const { process: child } = handle;
 
   currentServeWebBaseUrl = null;
-  currentServeWebSocketPath = null;
-
-  void unlink(socketPath).catch((error) => {
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      (error as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
-      return;
-    }
-    logger.warn(
-      `Failed to remove VS Code serve-web socket at ${socketPath}:`,
-      error
-    );
-  });
 
   if (child.killed || child.exitCode !== null || child.signalCode !== null) {
     return;
@@ -284,32 +246,12 @@ async function resolveVSCodeExecutable(logger: Logger) {
   return resolvedVSCodeExecutable;
 }
 
-async function warmUpVSCodeServeWeb(
-  socketPath: string,
-  logger: Logger
-) {
+async function warmUpVSCodeServeWeb(logger: Logger) {
   const warmupDeadline = Date.now() + 10_000;
 
   while (Date.now() < warmupDeadline) {
     try {
-      await new Promise<void>((resolve, reject) => {
-        const req = httpRequest(
-          {
-            socketPath,
-            method: "GET",
-            path: "/",
-            headers: {
-              host: LOCAL_VSCODE_HOST,
-            },
-          },
-          (res) => {
-            res.resume();
-            res.on("end", resolve);
-          }
-        );
-        req.on("error", reject);
-        req.end();
-      });
+      await performServeWebRequest("GET");
       logger.info("VS Code serve-web warm-up succeeded.");
       return;
     } catch (error) {
@@ -364,50 +306,142 @@ function pipeStreamLines(
   });
 }
 
-function createSocketPath(): string {
-  const filename = `cmux-vscode-${process.pid}-${Date.now()}.sock`;
-  return path.join(tmpdir(), filename);
-}
-
-async function removeStaleSocket(socketPath: string, logger: Logger) {
-  try {
-    await unlink(socketPath);
-    logger.info(`Removed stale VS Code serve-web socket at ${socketPath}`);
-  } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      (error as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
-      return;
-    }
-    logger.debug?.("Failed to remove stale VS Code serve-web socket:", error);
-  }
-}
-
-async function waitForSocket(socketPath: string) {
-  const deadline = Date.now() + SOCKET_READY_TIMEOUT_MS;
+async function waitForServeWebPort(logger: Logger) {
+  const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
 
   while (Date.now() < deadline) {
     try {
-      await access(socketPath, fsConstants.F_OK);
+      await performServeWebRequest("HEAD");
       return;
     } catch (error) {
-      if (
-        error &&
-        typeof error === "object" &&
-        "code" in error &&
-        (error as NodeJS.ErrnoException).code === "ENOENT"
-      ) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        continue;
-      }
-      throw error;
+      logger.debug?.("VS Code serve-web readiness check failed:", error);
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
 
   throw new Error(
-    `VS Code serve-web socket ${socketPath} was not ready within ${SOCKET_READY_TIMEOUT_MS} ms`
+    `VS Code serve-web port ${VSCODE_SERVE_WEB_PORT} was not ready within ${SERVER_READY_TIMEOUT_MS} ms`
   );
+}
+
+async function performServeWebRequest(method: "GET" | "HEAD"): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const req = httpRequest(
+      {
+        host: "127.0.0.1",
+        port: VSCODE_SERVE_WEB_PORT,
+        method,
+        path: "/",
+        headers: {
+          host: LOCAL_VSCODE_HOST_WITH_PORT,
+        },
+      },
+      (res) => {
+        res.resume();
+        res.on("end", resolve);
+      }
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+async function killProcessOnPort(port: number, logger: Logger): Promise<void> {
+  const pids = new Set<number>();
+
+  if (process.platform === "win32") {
+    try {
+      const { stdout } = await execFileAsync("netstat", ["-ano", "-p", "TCP"]);
+      const lines = stdout.split(/\r?\n/);
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        const parts = line.split(/\s+/);
+        if (parts.length < 5) continue;
+        const localAddress = parts[1] ?? "";
+        if (!localAddress.endsWith(`:${port}`)) continue;
+        const state = parts[3];
+        if (state.toUpperCase() !== "LISTENING") continue;
+        const pidStr = parts[parts.length - 1];
+        const pid = Number.parseInt(pidStr, 10);
+        if (!Number.isFinite(pid)) continue;
+        pids.add(pid);
+      }
+    } catch (error) {
+      logger.debug?.(
+        `Failed to inspect netstat output for port ${port}:`,
+        error
+      );
+    }
+
+    for (const pid of pids) {
+      try {
+        await execFileAsync("taskkill", ["/PID", String(pid), "/F"]);
+        logger.info(`Terminated process ${pid} using port ${port}`);
+      } catch (error) {
+        logger.warn(
+          `Failed to terminate process ${pid} using port ${port}:`,
+          error
+        );
+      }
+    }
+
+    return;
+  }
+
+  try {
+    const { stdout } = await execFileAsync("lsof", [
+      "-nP",
+      "-i",
+      `:${port}`,
+      "-sTCP:LISTEN",
+      "-t",
+    ]);
+    stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .forEach((line) => {
+        const pid = Number.parseInt(line, 10);
+        if (Number.isFinite(pid)) {
+          pids.add(pid);
+        }
+      });
+  } catch (error) {
+    logger.debug?.(`lsof failed while checking port ${port}:`, error);
+  }
+
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch (error) {
+      logger.debug?.(
+        `SIGTERM failed for process ${pid} on port ${port}:`,
+        error
+      );
+    }
+  }
+
+  if (pids.size === 0) {
+    return;
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 200));
+
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 0);
+      try {
+        process.kill(pid, "SIGKILL");
+        logger.info(`Force killed process ${pid} using port ${port}`);
+      } catch (error) {
+        logger.warn(
+          `Failed to force kill process ${pid} on port ${port}:`,
+          error
+        );
+      }
+    } catch {
+      // process already exited
+    }
+  }
 }

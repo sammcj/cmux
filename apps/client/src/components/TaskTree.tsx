@@ -9,6 +9,10 @@ import { useArchiveTask } from "@/hooks/useArchiveTask";
 import { useOpenWithActions } from "@/hooks/useOpenWithActions";
 import { isElectron } from "@/lib/electron";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
+import {
+  isLocalWorkspaceRun,
+  isLocalWorkspaceTask,
+} from "@/lib/local-workspace";
 import type { AnnotatedTaskRun, TaskRunWithChildren } from "@/types/task";
 import { ContextMenu } from "@base-ui-components/react/context-menu";
 import { api } from "@cmux/convex/api";
@@ -223,6 +227,7 @@ function TaskTreeInner({
 
   const canExpand = true;
   const isCrownEvaluating = task.crownEvaluationStatus === "in_progress";
+  const isLocalWorkspace = isLocalWorkspaceTask(task);
 
   const taskLeadingIcon = (() => {
     if (isCrownEvaluating) {
@@ -307,6 +312,10 @@ function TaskTreeInner({
         default:
           return null;
       }
+    }
+
+    if (isLocalWorkspace) {
+      return null;
     }
 
     return task.isCompleted ? (
@@ -585,6 +594,8 @@ function TaskRunTreeInner({
     [isExpanded, run._id, setRunExpanded]
   );
 
+  const isLocalWorkspaceRunEntry = isLocalWorkspaceRun(run);
+
   const statusIcon = {
     pending: <Circle className="w-3 h-3 text-neutral-400" />,
     running: <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />,
@@ -592,10 +603,16 @@ function TaskRunTreeInner({
     failed: <XCircle className="w-3 h-3 text-red-500" />,
   }[run.status];
 
+  const shouldHideStatusIcon =
+    isLocalWorkspaceRunEntry && run.status !== "failed";
+  const resolvedStatusIcon = shouldHideStatusIcon ? null : statusIcon;
+
   const runLeadingIcon =
     run.status === "failed" && run.errorMessage ? (
       <Tooltip>
-        <TooltipTrigger asChild>{statusIcon}</TooltipTrigger>
+        <TooltipTrigger asChild>
+          {resolvedStatusIcon ?? statusIcon}
+        </TooltipTrigger>
         <TooltipContent
           side="right"
           className="max-w-xs whitespace-pre-wrap break-words"
@@ -604,7 +621,7 @@ function TaskRunTreeInner({
         </TooltipContent>
       </Tooltip>
     ) : (
-      statusIcon
+      resolvedStatusIcon
     );
 
   const crownIcon = run.isCrowned ? (
