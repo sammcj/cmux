@@ -37,6 +37,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type ReactNode,
 } from "react";
 import { RepositoryAdvancedOptions } from "./RepositoryAdvancedOptions";
 
@@ -110,6 +111,7 @@ export interface RepositoryPickerProps {
     instanceId?: string;
     snapshotId?: MorphSnapshotId;
   }) => void;
+  topAccessory?: ReactNode;
 }
 
 export function RepositoryPicker({
@@ -126,6 +128,7 @@ export function RepositoryPicker({
   headerDescription = "Choose repositories to include in your environment.",
   className = "",
   onStartConfigure,
+  topAccessory,
 }: RepositoryPickerProps) {
   const router = useRouter();
   const navigate = useNavigate();
@@ -315,6 +318,7 @@ export function RepositoryPicker({
 
   return (
     <div className={className}>
+      {topAccessory ? <div className="mb-4">{topAccessory}</div> : null}
       {showHeader && (
         <>
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">

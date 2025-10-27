@@ -204,16 +204,6 @@ function EnvironmentsPage() {
       <div className="flex flex-col grow select-none relative h-full overflow-hidden">
         {activeStep === "select" ? (
           <div className="p-6 max-w-3xl w-full mx-auto overflow-auto">
-            <div className="mb-4">
-              <button
-                type="button"
-                onClick={handleDiscardAndExit}
-                className="inline-flex items-center gap-2 rounded-md border border-neutral-200 dark:border-neutral-800 px-3 py-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Back to environments
-              </button>
-            </div>
             <RepositoryPicker
               teamSlugOrId={teamSlugOrId}
               instanceId={activeInstanceId}
@@ -223,6 +213,16 @@ function EnvironmentsPage() {
               showContinueButton={true}
               showManualConfigOption={true}
               onStartConfigure={handleStartConfigure}
+              topAccessory={
+                <button
+                  type="button"
+                  onClick={handleDiscardAndExit}
+                  className="inline-flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to environments
+                </button>
+              }
             />
           </div>
         ) : (
