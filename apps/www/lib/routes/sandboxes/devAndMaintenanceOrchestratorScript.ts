@@ -94,12 +94,26 @@ async function runCommand(
   });
 }
 
+const WHITESPACE_REGEX = /\s/;
+
+function sanitizeEnvValue(name: string, value: string): string {
+  if (value.trim().length === 0) {
+    throw new Error(`Env var ${name} is empty or whitespace`);
+  }
+
+  if (WHITESPACE_REGEX.test(value)) {
+    throw new Error(`Env var ${name} must not contain whitespace characters`);
+  }
+
+  return value;
+}
+
 function requireEnv(name: string): string {
   const value = process.env[name];
-  if (!value) {
+  if (value === undefined) {
     throw new Error(`Missing env var ${name}`);
   }
-  return value;
+  return sanitizeEnvValue(name, value);
 }
 
 function envBoolean(name: string): boolean {
@@ -107,7 +121,8 @@ function envBoolean(name: string): boolean {
   if (!value) {
     return false;
   }
-  return value === "1" || value.toLowerCase() === "true";
+  const sanitizedValue = sanitizeEnvValue(name, value);
+  return sanitizedValue === "1" || sanitizedValue.toLowerCase() === "true";
 }
 
 const config = {
@@ -123,8 +138,8 @@ const config = {
   devErrorLogPath: requireEnv("CMUX_ORCH_DEV_ERROR_LOG_PATH"),
   hasMaintenanceScript: envBoolean("CMUX_ORCH_HAS_MAINTENANCE_SCRIPT"),
   hasDevScript: envBoolean("CMUX_ORCH_HAS_DEV_SCRIPT"),
-  convexUrl: process.env.CMUX_ORCH_CONVEX_URL ?? "",
-  taskRunJwt: process.env.CMUX_ORCH_TASK_RUN_JWT ?? "",
+  convexUrl: requireEnv("CMUX_ORCH_CONVEX_URL"),
+  taskRunJwt: requireEnv("CMUX_ORCH_TASK_RUN_JWT"),
 };
 
 async function waitForTmuxSession(): Promise<void> {
