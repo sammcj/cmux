@@ -424,20 +424,16 @@ function TaskTreeInner({
   if (task.projectFullName) {
     taskSecondaryParts.push(task.projectFullName);
   }
-  if (
-    trimmedPullRequestTitle &&
-    trimmedPullRequestTitle.length > 0 &&
-    trimmedPullRequestTitle !== taskTitleValue
-  ) {
+  if (trimmedPullRequestTitle && trimmedPullRequestTitle !== taskTitleValue) {
     taskSecondaryParts.push(trimmedPullRequestTitle);
   }
   const taskSecondary = taskSecondaryParts.join(" • ");
   const taskListPaddingLeft = 10 + level * 4;
   const taskTitleClassName = clsx(
     "inline-flex flex-1 min-w-0 items-center h-[18px] text-[13px] leading-[18px] text-neutral-900 dark:text-neutral-100 transition-colors duration-200",
-    isRenamePending && "text-neutral-400 dark:text-neutral-500",
     isRenaming &&
-      "!font-normal !overflow-visible !whitespace-normal [text-overflow:clip]"
+    "!font-normal !overflow-visible !whitespace-normal [text-overflow:clip]",
+    isRenamePending && "text-neutral-400/70 dark:text-neutral-500/70",
   );
   const renameInputElement = (
     <input
@@ -460,7 +456,7 @@ function TaskTreeInner({
         "leading-[18px] h-[18px] px-0 py-0 align-middle",
         "placeholder:text-neutral-400 outline-none border-none focus-visible:outline-none focus-visible:ring-0 appearance-none",
         "dark:text-neutral-100 dark:caret-neutral-200 dark:placeholder:text-neutral-500",
-        isRenamePending && "text-neutral-400 dark:text-neutral-500 cursor-wait"
+        isRenamePending && "text-neutral-400/70 dark:text-neutral-500/70 cursor-wait"
       )}
     />
   );
