@@ -650,52 +650,54 @@ export function PullRequestDiffViewer({
     setShouldNotifyOnCompletion(false);
   }, []);
 
-  const notificationCardState = useMemo<
-    ReviewCompletionNotificationCardState | null
-  >(() => {
-    if (
-      !isNotificationSupported ||
-      !hasKnownPendingFiles ||
-      notificationPermission === null
-    ) {
-      return null;
-    }
+  const notificationCardState =
+    useMemo<ReviewCompletionNotificationCardState | null>(() => {
+      if (
+        !isNotificationSupported ||
+        !hasKnownPendingFiles ||
+        notificationPermission === null
+      ) {
+        return null;
+      }
 
-    if (notificationPermission === "denied") {
-      return { kind: "blocked" };
-    }
+      if (notificationPermission === "denied") {
+        return { kind: "blocked" };
+      }
 
-    if (shouldNotifyOnCompletion) {
+      if (shouldNotifyOnCompletion) {
+        return {
+          kind: "enabled",
+          onDisable: handleDisableCompletionNotification,
+        };
+      }
+
       return {
-        kind: "enabled",
-        onDisable: handleDisableCompletionNotification,
+        kind: "prompt",
+        isRequesting: isRequestingNotification,
+        onEnable: handleEnableCompletionNotification,
       };
-    }
-
-    return {
-      kind: "prompt",
-      isRequesting: isRequestingNotification,
-      onEnable: handleEnableCompletionNotification,
-    };
-  }, [
-    handleDisableCompletionNotification,
-    handleEnableCompletionNotification,
-    hasKnownPendingFiles,
-    isNotificationSupported,
-    isRequestingNotification,
-    notificationPermission,
-    shouldNotifyOnCompletion,
-  ]);
+    }, [
+      handleDisableCompletionNotification,
+      handleEnableCompletionNotification,
+      hasKnownPendingFiles,
+      isNotificationSupported,
+      isRequestingNotification,
+      notificationPermission,
+      shouldNotifyOnCompletion,
+    ]);
 
   const parsedDiffs = useMemo<ParsedFileDiff[]>(() => {
     return sortedFiles.map((file) => {
       if (!file.patch) {
+        const renameMessage =
+          file.status === "renamed"
+            ? buildRenameMissingDiffMessage(file)
+            : null;
         return {
           file,
           anchorId: file.filename,
           diff: null,
-          error:
-            "GitHub did not return a textual diff for this file. It may be binary or too large.",
+          error: renameMessage ?? undefined,
         };
       }
 
@@ -1561,6 +1563,12 @@ function FileDiffCard({
     () => getFileStatusMeta(file.status),
     [file.status]
   );
+  const renameLabel = useMemo(() => {
+    if (!file.previous_filename) {
+      return null;
+    }
+    return createRenameLabel(file.filename, file.previous_filename);
+  }, [file.filename, file.previous_filename]);
 
   useEffect(() => {
     if (isActive) {
@@ -1844,11 +1852,6 @@ function FileDiffCard({
               <span className="pl-1.5 text-sm text-neutral-700 truncate">
                 {file.filename}
               </span>
-              {file.previous_filename ? (
-                <span className="text-sm text-neutral-500 truncate">
-                  Renamed from {file.previous_filename}
-                </span>
-              ) : null}
             </div>
 
             <div className="flex items-center gap-2 text-[13px] font-medium text-neutral-600">
@@ -2427,4 +2430,87 @@ function getParentPaths(path: string): string[] {
     parents.push(segments.slice(0, index).join("/"));
   }
   return parents;
+}
+
+function createRenameLabel(
+  currentPath: string,
+  previousPath: string
+): { display: string; full: string } {
+  if (currentPath === previousPath) {
+    return { display: previousPath, full: previousPath };
+  }
+
+  const currentSegments = currentPath.split("/");
+  const previousSegments = previousPath.split("/");
+
+  let prefixLength = 0;
+  const maxPrefix = Math.min(currentSegments.length, previousSegments.length);
+  while (
+    prefixLength < maxPrefix &&
+    currentSegments[prefixLength] === previousSegments[prefixLength]
+  ) {
+    prefixLength += 1;
+  }
+
+  const remainingCurrent = currentSegments.slice(prefixLength);
+  const remainingPrevious = previousSegments.slice(prefixLength);
+
+  let suffixLength = 0;
+  const maxSuffix = Math.min(remainingCurrent.length, remainingPrevious.length);
+  while (
+    suffixLength < maxSuffix &&
+    remainingCurrent[remainingCurrent.length - 1 - suffixLength] ===
+      remainingPrevious[remainingPrevious.length - 1 - suffixLength]
+  ) {
+    suffixLength += 1;
+  }
+
+  const diffSegments = previousSegments.slice(
+    prefixLength,
+    previousSegments.length - suffixLength
+  );
+
+  let displaySegments = diffSegments;
+
+  if (displaySegments.length <= 1 && suffixLength > 0) {
+    const suffixStart = previousSegments.length - suffixLength;
+    const suffixSegment = previousSegments[suffixStart];
+    if (suffixSegment) {
+      displaySegments = [...displaySegments, suffixSegment];
+    }
+  }
+
+  if (displaySegments.length > 3) {
+    displaySegments = displaySegments.slice(displaySegments.length - 3);
+  }
+
+  if (displaySegments.length === 0) {
+    const fallbackStart = Math.max(
+      0,
+      previousSegments.length - Math.max(1, suffixLength)
+    );
+    displaySegments = previousSegments.slice(fallbackStart);
+  }
+
+  let display = displaySegments.join("/");
+  if (prefixLength > 0 && display) {
+    display = `…/${display}`;
+  }
+
+  if (!display) {
+    display = previousPath;
+  }
+
+  return {
+    display,
+    full: previousPath,
+  };
+}
+
+function buildRenameMissingDiffMessage(file: GithubFileChange): string {
+  const previousPath = file.previous_filename;
+  if (previousPath) {
+    return `File renamed from ${previousPath} to ${file.filename}.`;
+  }
+  return "File renamed without diff details.";
 }
