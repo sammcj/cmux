@@ -434,32 +434,44 @@ export const getRunDiffContext = authQuery({
       }
     }
 
-    const screenshotSetDocs = await ctx.db
-      .query("taskRunScreenshotSets")
-      .withIndex("by_run_capturedAt", (q) => q.eq("runId", args.runId))
-      .collect();
+    const screenshotSets = await (async () => {
+      const runDoc = await ctx.db.get(args.runId);
+      // Prevent leaking screenshots for runs outside the authenticated task/team
+      if (
+        !runDoc ||
+        runDoc.teamId !== teamId ||
+        runDoc.taskId !== args.taskId
+      ) {
+        return [];
+      }
 
-    screenshotSetDocs.sort((a, b) => b.capturedAt - a.capturedAt);
+      const screenshotSetDocs = await ctx.db
+        .query("taskRunScreenshotSets")
+        .withIndex("by_run_capturedAt", (q) => q.eq("runId", args.runId))
+        .collect();
 
-    const trimmedScreenshotSets = screenshotSetDocs.slice(0, 20);
+      screenshotSetDocs.sort((a, b) => b.capturedAt - a.capturedAt);
 
-    const screenshotSets = await Promise.all(
-      trimmedScreenshotSets.map(async (set) => {
-        const imagesWithUrls = await Promise.all(
-          set.images.map(async (image) => {
-            const url = await ctx.storage.getUrl(image.storageId);
-            return {
-              ...image,
-              url: url ?? undefined,
-            };
-          }),
-        );
-        return {
-          ...set,
-          images: imagesWithUrls,
-        };
-      }),
-    );
+      const trimmedScreenshotSets = screenshotSetDocs.slice(0, 20);
+
+      return Promise.all(
+        trimmedScreenshotSets.map(async (set) => {
+          const imagesWithUrls = await Promise.all(
+            set.images.map(async (image) => {
+              const url = await ctx.storage.getUrl(image.storageId);
+              return {
+                ...image,
+                url: url ?? undefined,
+              };
+            }),
+          );
+          return {
+            ...set,
+            images: imagesWithUrls,
+          };
+        }),
+      );
+    })();
 
     return {
       task: taskWithImages,
