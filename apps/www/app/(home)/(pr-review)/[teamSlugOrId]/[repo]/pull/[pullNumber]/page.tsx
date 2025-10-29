@@ -103,7 +103,7 @@ export async function generateMetadata({
   const repoIsPublic = await isRepoPublic(githubOwner, repo);
 
   // Get user if available
-  const user = await stackServerApp.getUser({ or: "return-null" });
+  const user = await stackServerApp.getUser({ or: "anonymous" });
 
   // For private repos without user, or if user doesn't have a team, return basic metadata
   if (!repoIsPublic && !user) {
@@ -332,7 +332,7 @@ function scheduleCodeReviewStart({
           return;
         }
 
-        const user = await stackServerApp.getUser({ or: "return-null" });
+        const user = await stackServerApp.getUser({ or: "anonymous" });
         if (!user) {
           return;
         }
@@ -344,19 +344,20 @@ function scheduleCodeReviewStart({
         if (!accessToken) {
           return;
         }
+
+        let githubAccessToken: string | null = null;
         if (!githubAccount) {
           console.warn(
-            "[code-review] Skipping auto-start: GitHub account not connected"
+            "[code-review] GitHub account not connected, proceeding without token"
           );
-          return;
-        }
-        const { accessToken: githubAccessToken } =
-          await githubAccount.getAccessToken();
-        if (!githubAccessToken) {
-          console.warn(
-            "[code-review] Skipping auto-start: GitHub access token unavailable"
-          );
-          return;
+        } else {
+          const tokenResult = await githubAccount.getAccessToken();
+          githubAccessToken = tokenResult.accessToken ?? null;
+          if (!githubAccessToken) {
+            console.warn(
+              "[code-review] GitHub access token unavailable, proceeding without token"
+            );
+          }
         }
 
         const { job, deduplicated, backgroundTask } = await startCodeReviewJob({

@@ -77,8 +77,7 @@ authAnonymousRouter.openapi(
           {
             success: false,
             message: errorData.message || "Failed to create anonymous user",
-          },
-          response.status
+          }
         );
       }
 
