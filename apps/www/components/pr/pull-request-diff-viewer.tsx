@@ -1733,7 +1733,7 @@ function HeatmapThresholdControl({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={percent}
-        aria-valuetext={`Highlight threshold ${percent} percent`}
+        aria-valuetext={`"Should review" threshold ${percent} percent`}
         aria-describedby={descriptionId}
       />
       <p
@@ -2097,8 +2097,9 @@ function FileDiffCard({
                   <span className="cmux-heatmap-char-wrapper">{rendered}</span>
                 </TooltipTrigger>
                 <TooltipContent
-                  side="top"
+                  side="bottom"
                   align="start"
+                  sideOffset={0}
                   className={cn(
                     "max-w-xs space-y-1 text-left leading-relaxed border backdrop-blur",
                     getHeatmapTooltipTheme(tooltipMeta.score).contentClass
@@ -2449,7 +2450,7 @@ function HeatmapGutterTooltip({
         </span>
       </TooltipTrigger>
       <TooltipContent
-        side="top"
+        side="left"
         align="start"
         className={cn(
           "max-w-xs space-y-1 text-left leading-relaxed border backdrop-blur",

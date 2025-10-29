@@ -22,9 +22,6 @@ export function summarizeFiles(files: GithubFileChange[]): {
 
 export function ReviewDiffContent({
   files,
-  fileCount,
-  additions,
-  deletions,
   teamSlugOrId,
   repoFullName,
   reviewTarget,
@@ -32,9 +29,6 @@ export function ReviewDiffContent({
   baseCommitRef,
 }: {
   files: GithubFileChange[];
-  fileCount: number;
-  additions: number;
-  deletions: number;
   teamSlugOrId: string;
   repoFullName: string;
   reviewTarget:
@@ -45,11 +39,6 @@ export function ReviewDiffContent({
 }) {
   return (
     <section className="flex flex-col gap-1">
-      <ReviewDiffSummary
-        fileCount={fileCount}
-        additions={additions}
-        deletions={deletions}
-      />
       <ReviewDiffViewerWrapper
         files={files}
         teamSlugOrId={teamSlugOrId}
