@@ -66,9 +66,11 @@ import {
   MaterialSymbolsFolderSharp,
 } from "../icons/material-symbols";
 import {
-  buildDiffHeatmap,
   parseReviewHeatmap,
+  prepareDiffHeatmapArtifacts,
+  renderDiffHeatmapFromArtifacts,
   type DiffHeatmap,
+  type DiffHeatmapArtifacts,
   type ReviewHeatmapLine,
   type ResolvedHeatmapLine,
 } from "./heatmap";
@@ -244,7 +246,7 @@ type FileDiffViewModel = {
   entry: ParsedFileDiff;
   review: FileOutput | null;
   reviewHeatmap: ReviewHeatmapLine[];
-  diffHeatmap: DiffHeatmap | null;
+  diffHeatmapArtifacts: DiffHeatmapArtifacts | null;
   changeKeyByLine: Map<string, string>;
 };
 
@@ -758,27 +760,39 @@ export function PullRequestDiffViewer({
       const reviewHeatmap = review
         ? parseReviewHeatmap(review.codexReviewOutput)
         : [];
-      const diffHeatmap =
+      const diffHeatmapArtifacts =
         entry.diff && reviewHeatmap.length > 0
-          ? buildDiffHeatmap(entry.diff, reviewHeatmap, {
-              scoreThreshold: heatmapThreshold,
-            })
+          ? prepareDiffHeatmapArtifacts(entry.diff, reviewHeatmap)
           : null;
 
       return {
         entry,
         review,
         reviewHeatmap,
-        diffHeatmap,
+        diffHeatmapArtifacts,
         changeKeyByLine: buildChangeKeyIndex(entry.diff),
       };
     });
-  }, [parsedDiffs, fileOutputIndex, heatmapThreshold]);
+  }, [parsedDiffs, fileOutputIndex]);
+
+  const thresholdedFileEntries = useMemo(
+    () =>
+      fileEntries.map((fileEntry) => ({
+        ...fileEntry,
+        diffHeatmap: fileEntry.diffHeatmapArtifacts
+          ? renderDiffHeatmapFromArtifacts(
+              fileEntry.diffHeatmapArtifacts,
+              heatmapThreshold
+            )
+          : null,
+      })),
+    [fileEntries, heatmapThreshold]
+  );
 
   const errorTargets = useMemo<ReviewErrorTarget[]>(() => {
     const targets: ReviewErrorTarget[] = [];
 
-    for (const fileEntry of fileEntries) {
+    for (const fileEntry of thresholdedFileEntries) {
       const { entry, diffHeatmap, changeKeyByLine } = fileEntry;
       if (!diffHeatmap || diffHeatmap.totalEntries === 0) {
         continue;
@@ -816,7 +830,7 @@ export function PullRequestDiffViewer({
     }
 
     return targets;
-  }, [fileEntries]);
+  }, [thresholdedFileEntries]);
 
   const targetCount = errorTargets.length;
 
@@ -1498,7 +1512,7 @@ export function PullRequestDiffViewer({
         </div>
 
         <div className="flex-1 min-w-0 space-y-3">
-          {fileEntries.map(({ entry, review, diffHeatmap }) => {
+          {thresholdedFileEntries.map(({ entry, review, diffHeatmap }) => {
             const isFocusedFile =
               focusedError?.filePath === entry.file.filename;
             const focusedLine = isFocusedFile
@@ -1668,16 +1682,16 @@ function HeatmapThresholdControl({
   );
 
   return (
-    <div className="rounded border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
+    <div className="rounded border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-700">
       <div className="flex items-center justify-between gap-3">
         <label
           htmlFor={sliderId}
-          className="font-medium text-neutral-700 dark:text-neutral-100"
+          className="font-medium text-neutral-700"
         >
-          Highlight threshold
+          "Should review" threshold
         </label>
-        <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-300">
-          ≥ {percent}%
+        <span className="text-xs font-semibold text-neutral-600">
+          ≥ <span className="tabular-nums">{percent}%</span>
         </span>
       </div>
       <input
@@ -1688,7 +1702,7 @@ function HeatmapThresholdControl({
         step={5}
         value={percent}
         onChange={handleSliderChange}
-        className="mt-3 w-full accent-sky-500 dark:accent-sky-400"
+        className="mt-3 w-full accent-sky-500"
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={percent}
@@ -1697,7 +1711,7 @@ function HeatmapThresholdControl({
       />
       <p
         id={descriptionId}
-        className="mt-2 text-xs text-neutral-500 dark:text-neutral-400"
+        className="mt-2 text-xs text-neutral-500"
       >
         Only show heatmap highlights with a score at or above this value.
       </p>
