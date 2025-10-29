@@ -598,38 +598,3 @@ export async function startAutomatedPrReview(
     throw error;
   }
 }
-
-function buildComparisonMetadata(config: PrReviewJobContext): PrMetadata {
-  const comparison = config.comparison;
-  if (!comparison) {
-    throw new Error("Comparison context is required to build metadata");
-  }
-  const { owner: repoOwner, name: repoName } = splitRepoFullName(
-    config.repoFullName
-  );
-  const baseOwner = comparison.baseOwner || repoOwner;
-  const headOwner = comparison.headOwner || repoOwner;
-
-  return {
-    owner: baseOwner,
-    repo: repoName,
-    number: config.prNumber ?? -1,
-    prUrl: config.prUrl,
-    headRefName: comparison.headRef,
-    headRepoOwner: headOwner,
-    headRepoName: repoName,
-    headSha: config.commitRef,
-    baseRefName: comparison.baseRef,
-  };
-}
-
-function splitRepoFullName(repoFullName: string): {
-  owner: string;
-  name: string;
-} {
-  const [owner, name] = repoFullName.split("/");
-  if (!owner || !name) {
-    throw new Error(`Invalid repo full name: ${repoFullName}`);
-  }
-  return { owner, name };
-}
