@@ -39,13 +39,28 @@ export default function HeatmapPage() {
             <span className="bg-yellow-300 px-1">0github.com</span>. Under the
             hood, we spin up{" "}
             <span className="bg-yellow-200 px-1">gpt-5-codex</span> for every
-            diff and ask it to output a JSON data structure that we parse into
-            a <span className="bg-yellow-200 px-1">colored heatmap</span>.
+            diff and ask it to output a JSON data structure that we parse into a{" "}
+            <span className="bg-yellow-200 px-1">colored heatmap</span>.
+          </p>
+
+          <p className="mb-4">
+            Heatmap is open source under the{" "}
+            <a
+              href="https://github.com/manaflow-ai/cmux"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-black underline"
+            >
+              cmux repo
+            </a>
+            .
           </p>
         </div>
 
         <div className="mt-8 text-base">
-          <p className="mb-4">Examples:</p>
+          <p className="mb-4">
+            <span className="bg-yellow-200 px-1">Examples:</span>
+          </p>
           <div className="flex flex-col gap-2">
             <a
               href="https://0github.com/tinygrad/tinygrad/pull/12999"
@@ -53,7 +68,8 @@ export default function HeatmapPage() {
               rel="noopener noreferrer"
               className="text-black underline"
             >
-              https://0github.com/tinygrad/tinygrad/pull/12999
+              https://<span className="bg-yellow-300 px-1">0github.com</span>
+              /tinygrad/tinygrad/pull/12999
             </a>
             <a
               href="https://0github.com/simonw/datasette/pull/2548"
@@ -61,7 +77,8 @@ export default function HeatmapPage() {
               rel="noopener noreferrer"
               className="text-black underline"
             >
-              https://0github.com/simonw/datasette/pull/2548
+              https://<span className="bg-yellow-300 px-1">0github.com</span>
+              /simonw/datasette/pull/2548
             </a>
           </div>
         </div>
