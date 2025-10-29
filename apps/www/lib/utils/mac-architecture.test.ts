@@ -4,6 +4,7 @@ import {
   detectMacArchitectureFromHeaders,
   inferMacArchitectureFromUserAgent,
   normalizeMacArchitecture,
+  pickMacDownloadUrl,
 } from "./mac-architecture";
 
 describe("normalizeMacArchitecture", () => {
@@ -77,5 +78,32 @@ describe("detectMacArchitectureFromHeaders", () => {
     });
 
     expect(detectMacArchitectureFromHeaders(headers)).toBe("x64");
+  });
+});
+
+describe("pickMacDownloadUrl", () => {
+  const macDownloadUrls = {
+    universal: "https://example.com/universal.dmg",
+    arm64: "https://example.com/arm64.dmg",
+    x64: "https://example.com/x64.dmg",
+  } as const;
+
+  it("returns architecture-specific url when available", () => {
+    const target = pickMacDownloadUrl(macDownloadUrls, "https://fallback", "arm64");
+    expect(target).toBe(macDownloadUrls.arm64);
+  });
+
+  it("falls back to universal when architecture not detected", () => {
+    const target = pickMacDownloadUrl(macDownloadUrls, "https://fallback", null);
+    expect(target).toBe(macDownloadUrls.universal);
+  });
+
+  it("falls back to provided fallback when no downloads exist", () => {
+    const target = pickMacDownloadUrl(
+      { universal: null, arm64: null, x64: null },
+      "https://fallback",
+      "arm64",
+    );
+    expect(target).toBe("https://fallback");
   });
 });
