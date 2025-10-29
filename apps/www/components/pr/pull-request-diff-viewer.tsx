@@ -27,6 +27,7 @@ import {
   Sparkles,
   Copy,
   Check,
+  Loader2,
 } from "lucide-react";
 import {
   Decoration,
@@ -334,6 +335,7 @@ type FileTreeNode = {
   path: string;
   children: FileTreeNode[];
   file?: GithubFileChange;
+  isLoading?: boolean;
 };
 
 type FileStatusMeta = {
@@ -911,7 +913,29 @@ export function PullRequestDiffViewer({
       ? null
       : (errorTargets[focusedErrorIndex] ?? null);
 
-  const fileTree = useMemo(() => buildFileTree(sortedFiles), [sortedFiles]);
+  const fileTree = useMemo(() => {
+    const tree = buildFileTree(sortedFiles);
+    // Add loading state to file nodes
+    const addLoadingState = (nodes: FileTreeNode[]): FileTreeNode[] => {
+      return nodes.map((node) => {
+        if (node.file) {
+          // This is a file node - check if it's been processed
+          const isLoading = !fileOutputIndex.has(node.file.filename);
+          return {
+            ...node,
+            isLoading,
+            children: addLoadingState(node.children),
+          };
+        }
+        // This is a directory node
+        return {
+          ...node,
+          children: addLoadingState(node.children),
+        };
+      });
+    };
+    return addLoadingState(tree);
+  }, [sortedFiles, fileOutputIndex]);
   const directoryPaths = useMemo(
     () => collectDirectoryPaths(fileTree),
     [fileTree]
@@ -1511,6 +1535,8 @@ export function PullRequestDiffViewer({
                   }
                 : null;
 
+            const isLoading = !fileOutputIndex.has(entry.file.filename);
+
             return (
               <FileDiffCard
                 key={entry.anchorId}
@@ -1521,6 +1547,7 @@ export function PullRequestDiffViewer({
                 focusedLine={focusedLine}
                 focusedChangeKey={focusedChangeKey}
                 autoTooltipLine={autoTooltipLine}
+                isLoading={isLoading}
               />
             );
           })}
@@ -1809,7 +1836,7 @@ function FileTreeNavigator({
             type="button"
             onClick={() => onSelectFile(node.path)}
             className={cn(
-              "flex w-full items-center gap-1 px-2.5 py-1 text-left text-sm transition hover:bg-neutral-100",
+              "flex w-full items-center gap-1.5 px-2.5 py-1 text-left text-sm transition hover:bg-neutral-100",
               isActive
                 ? "bg-sky-100/80 text-sky-900 font-semibold"
                 : "text-neutral-700"
@@ -1817,6 +1844,22 @@ function FileTreeNavigator({
             style={{ paddingLeft: depth * 14 + 32 }}
           >
             <span className="truncate">{node.name}</span>
+            {node.isLoading ? (
+              <Tooltip delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center ml-auto">
+                    <Loader2 className="h-3.5 w-3.5 text-sky-500 animate-spin flex-shrink-0" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="right"
+                  align="center"
+                  className="rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-xs text-neutral-700 shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
+                >
+                  AI review in progress...
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
           </button>
         );
       })}
@@ -1832,6 +1875,7 @@ function FileDiffCard({
   focusedLine,
   focusedChangeKey,
   autoTooltipLine,
+  isLoading,
 }: {
   entry: ParsedFileDiff;
   isActive: boolean;
@@ -1840,6 +1884,7 @@ function FileDiffCard({
   focusedLine: DiffLineLocation | null;
   focusedChangeKey: string | null;
   autoTooltipLine: DiffLineLocation | null;
+  isLoading: boolean;
 }) {
   const { file, diff, anchorId, error } = entry;
   const cardRef = useRef<HTMLElement | null>(null);
@@ -2129,8 +2174,24 @@ function FileDiffCard({
             </span>
 
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="pl-1.5 text-sm text-neutral-700 truncate">
+              <span className="pl-1.5 text-sm text-neutral-700 truncate flex items-center gap-2">
                 {file.filename}
+                {isLoading ? (
+                  <Tooltip delayDuration={300}>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center">
+                        <Loader2 className="h-3.5 w-3.5 text-sky-500 animate-spin flex-shrink-0" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="bottom"
+                      align="start"
+                      className="rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-xs text-neutral-700 shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
+                    >
+                      AI review in progress...
+                    </TooltipContent>
+                  </Tooltip>
+                ) : null}
               </span>
             </div>
 
