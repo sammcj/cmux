@@ -8,12 +8,14 @@ import {
   useRef,
   useState,
   useId,
+  useDeferredValue,
 } from "react";
 import type {
   ReactElement,
   ReactNode,
   KeyboardEvent as ReactKeyboardEvent,
   CSSProperties,
+  ChangeEvent,
 } from "react";
 import {
   ChevronLeft,
@@ -65,9 +67,11 @@ import {
   MaterialSymbolsFolderSharp,
 } from "../icons/material-symbols";
 import {
-  buildDiffHeatmap,
   parseReviewHeatmap,
+  prepareDiffHeatmapArtifacts,
+  renderDiffHeatmapFromArtifacts,
   type DiffHeatmap,
+  type DiffHeatmapArtifacts,
   type ReviewHeatmapLine,
   type ResolvedHeatmapLine,
 } from "./heatmap";
@@ -243,7 +247,7 @@ type FileDiffViewModel = {
   entry: ParsedFileDiff;
   review: FileOutput | null;
   reviewHeatmap: ReviewHeatmapLine[];
-  diffHeatmap: DiffHeatmap | null;
+  diffHeatmapArtifacts: DiffHeatmapArtifacts | null;
   changeKeyByLine: Map<string, string>;
 };
 
@@ -568,6 +572,9 @@ export function PullRequestDiffViewer({
     return Math.max(totalFileCount - processedFileCount, 0);
   }, [processedFileCount, totalFileCount]);
 
+  const [heatmapThresholdInput, setHeatmapThresholdInput] = useState(0);
+  const heatmapThreshold = useDeferredValue(heatmapThresholdInput);
+
   const [isNotificationSupported, setIsNotificationSupported] = useState(false);
   const [notificationPermission, setNotificationPermission] =
     useState<NotificationPermission | null>(null);
@@ -755,25 +762,39 @@ export function PullRequestDiffViewer({
       const reviewHeatmap = review
         ? parseReviewHeatmap(review.codexReviewOutput)
         : [];
-      const diffHeatmap =
+      const diffHeatmapArtifacts =
         entry.diff && reviewHeatmap.length > 0
-          ? buildDiffHeatmap(entry.diff, reviewHeatmap)
+          ? prepareDiffHeatmapArtifacts(entry.diff, reviewHeatmap)
           : null;
 
       return {
         entry,
         review,
         reviewHeatmap,
-        diffHeatmap,
+        diffHeatmapArtifacts,
         changeKeyByLine: buildChangeKeyIndex(entry.diff),
       };
     });
   }, [parsedDiffs, fileOutputIndex]);
 
+  const thresholdedFileEntries = useMemo(
+    () =>
+      fileEntries.map((fileEntry) => ({
+        ...fileEntry,
+        diffHeatmap: fileEntry.diffHeatmapArtifacts
+          ? renderDiffHeatmapFromArtifacts(
+              fileEntry.diffHeatmapArtifacts,
+              heatmapThreshold
+            )
+          : null,
+      })),
+    [fileEntries, heatmapThreshold]
+  );
+
   const errorTargets = useMemo<ReviewErrorTarget[]>(() => {
     const targets: ReviewErrorTarget[] = [];
 
-    for (const fileEntry of fileEntries) {
+    for (const fileEntry of thresholdedFileEntries) {
       const { entry, diffHeatmap, changeKeyByLine } = fileEntry;
       if (!diffHeatmap || diffHeatmap.totalEntries === 0) {
         continue;
@@ -811,7 +832,7 @@ export function PullRequestDiffViewer({
     }
 
     return targets;
-  }, [fileEntries]);
+  }, [thresholdedFileEntries]);
 
   const targetCount = errorTargets.length;
 
@@ -1451,6 +1472,10 @@ export function PullRequestDiffViewer({
             {notificationCardState ? (
               <ReviewCompletionNotificationCard state={notificationCardState} />
             ) : null}
+            <HeatmapThresholdControl
+              value={heatmapThresholdInput}
+              onChange={setHeatmapThresholdInput}
+            />
             {targetCount > 0 ? (
               <div className="flex justify-center">
                 <ErrorNavigator
@@ -1511,7 +1536,7 @@ export function PullRequestDiffViewer({
         </div>
 
         <div className="flex-1 min-w-0 space-y-3">
-          {fileEntries.map(({ entry, review, diffHeatmap }) => {
+          {thresholdedFileEntries.map(({ entry, review, diffHeatmap }) => {
             const isFocusedFile =
               focusedError?.filePath === entry.file.filename;
             const focusedLine = isFocusedFile
@@ -1656,6 +1681,67 @@ function ReviewProgressIndicator({
           aria-valuenow={processedFileCount ?? 0}
         />
       </div>
+    </div>
+  );
+}
+
+function HeatmapThresholdControl({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (next: number) => void;
+}) {
+  const sliderId = useId();
+  const descriptionId = `${sliderId}-description`;
+  const percent = Math.round(Math.min(Math.max(value, 0), 1) * 100);
+
+  const handleSliderChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const numeric = Number.parseInt(event.target.value, 10);
+      if (Number.isNaN(numeric)) {
+        return;
+      }
+      const normalized = Math.min(Math.max(numeric / 100, 0), 1);
+      onChange(normalized);
+    },
+    [onChange]
+  );
+
+  return (
+    <div className="rounded border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-700">
+      <div className="flex items-center justify-between gap-3">
+        <label
+          htmlFor={sliderId}
+          className="font-medium text-neutral-700"
+        >
+          &ldquo;Should review&rdquo; threshold
+        </label>
+        <span className="text-xs font-semibold text-neutral-600">
+          ≥ <span className="tabular-nums">{percent}%</span>
+        </span>
+      </div>
+      <input
+        id={sliderId}
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={percent}
+        onChange={handleSliderChange}
+        className="mt-3 w-full accent-sky-500"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-valuetext={`Highlight threshold ${percent} percent`}
+        aria-describedby={descriptionId}
+      />
+      <p
+        id={descriptionId}
+        className="mt-2 text-xs text-neutral-500"
+      >
+        Only show heatmap highlights with a score at or above this value.
+      </p>
     </div>
   );
 }
