@@ -30,7 +30,15 @@ export type GithubPullRequest = PullRequestResponse["data"];
 export type GithubPullRequestFile =
   PullRequestFilesResponse["data"][number];
 
-export type RepoVisibility = "public" | "private" | "unknown";
+export type GithubComparison = CompareCommitsResponse["data"];
+
+type FetchPullRequestOptions = {
+  authToken?: string | null;
+};
+
+type FetchPullRequestFilesOptions = {
+  authToken?: string | null;
+};
 
 function toGithubApiError(error: unknown): GithubApiError {
   if (error instanceof GithubApiError) {
@@ -68,10 +76,6 @@ function isRequestErrorShape(error: unknown): error is RequestErrorShape {
     "documentation_url" in maybeShape
   );
 }
-
-type FetchPullRequestOptions = {
-  authToken?: string | null;
-};
 
 function buildAuthCandidates(
   token: string | null | undefined,
@@ -164,10 +168,6 @@ export async function fetchPullRequest(
   }
 }
 
-type FetchPullRequestFilesOptions = {
-  authToken?: string | null;
-};
-
 export async function fetchPullRequestFiles(
   owner: string,
   repo: string,
@@ -242,8 +242,6 @@ export async function fetchPullRequestFiles(
 
 type GithubComparisonFile = NonNullable<CompareCommitsResponse["data"]["files"]>[number];
 
-export type GithubComparison = CompareCommitsResponse["data"];
-
 export type GithubFileChange = {
   filename: GithubPullRequestFile["filename"];
   status: GithubPullRequestFile["status"];
@@ -266,44 +264,6 @@ export function toGithubFileChange(
     previous_filename: file.previous_filename,
     patch: file.patch,
   };
-}
-
-export async function fetchRepositoryVisibility(
-  owner: string,
-  repo: string,
-): Promise<RepoVisibility> {
-  try {
-    const octokit = createGitHubClient();
-    const response = await octokit.rest.repos.get({ owner, repo });
-    const repository = response.data;
-
-    if (repository.private) {
-      return "private";
-    }
-
-    if (repository.visibility === "private") {
-      return "private";
-    }
-
-    if (repository.visibility === "public") {
-      return "public";
-    }
-
-    return "public";
-  } catch (error) {
-    if (isRequestErrorShape(error)) {
-      if (error.status === 404) {
-        // GitHub returns 404 for private repositories when unauthenticated.
-        return "private";
-      }
-
-      if (error.status === 403) {
-        return "unknown";
-      }
-    }
-
-    return "unknown";
-  }
 }
 
 export async function fetchComparison(
