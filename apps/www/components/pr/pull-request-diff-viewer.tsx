@@ -1464,16 +1464,14 @@ export function PullRequestDiffViewer({
           }
         >
           <div className="flex flex-col gap-3">
-            <div className="lg:sticky lg:top-0 lg:z-10 lg:bg-white">
-              <div className="flex flex-col gap-3">
-                <ReviewProgressIndicator
-                  totalFileCount={totalFileCount}
-                  processedFileCount={processedFileCount}
-                  isLoading={isLoadingFileOutputs}
-                />
-                <CmuxPromoCard />
-              </div>
+            <div className="lg:sticky lg:top-0 lg:z-10 lg:bg-white lg:pb-3">
+              <ReviewProgressIndicator
+                totalFileCount={totalFileCount}
+                processedFileCount={processedFileCount}
+                isLoading={isLoadingFileOutputs}
+              />
             </div>
+            <CmuxPromoCard />
             {notificationCardState ? (
               <ReviewCompletionNotificationCard state={notificationCardState} />
             ) : null}
@@ -1715,7 +1713,7 @@ function CmuxPromoCard() {
         </div>
         <div className="space-y-2">
           <p className="text-xs font-mono leading-relaxed text-neutral-500">
-            AI coding agent manager that spins up isolated VS Code instances, git diff view, terminal, and dev server so parallel agent work stays verifiable, fast, and ready to ship.
+            We also made a Claude Code/Codex manager! Check out cmux if you want heatmaps for your vibe coded diffs (coming soon)!
           </p>
         </div>
         <div className="flex flex-wrap gap-2 pt-1">
