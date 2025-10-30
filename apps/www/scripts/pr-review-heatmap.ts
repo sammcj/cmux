@@ -44,18 +44,27 @@ export interface HeatmapJobResult {
 const DEFAULT_GITHUB_API_BASE_URL = "https://api.github.com";
 const GITHUB_USER_AGENT = "cmux-pr-review-heatmap";
 
-// Hardcoded GitHub tokens for avoiding rate limiting
-const HARDCODED_GITHUB_TOKENS = [
-  "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",
-  "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",
-  "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"
-];
+// Load GitHub tokens from environment variables
+function loadGitHubTokensFromEnv(): string[] {
+  const tokens: string[] = [];
+  for (let i = 1; i <= 3; i++) {
+    const token = process.env[`GITHUB_TOKEN_${i}`];
+    if (token) {
+      tokens.push(token);
+    }
+  }
+  return tokens;
+}
 
 let currentTokenIndex = 0;
 
-function getNextGitHubToken(): string {
-  const token = HARDCODED_GITHUB_TOKENS[currentTokenIndex];
-  currentTokenIndex = (currentTokenIndex + 1) % HARDCODED_GITHUB_TOKENS.length;
+function getNextGitHubToken(): string | null {
+  const tokens = loadGitHubTokensFromEnv();
+  if (tokens.length === 0) {
+    return null;
+  }
+  const token = tokens[currentTokenIndex % tokens.length];
+  currentTokenIndex = (currentTokenIndex + 1) % tokens.length;
   return token;
 }
 
@@ -687,7 +696,7 @@ function resolveGithubToken(token?: string | null, isPrivateRepo = false): strin
     return token;
   }
 
-  // Try environment variables
+  // Try standard environment variables
   const envToken =
     process.env.GITHUB_TOKEN ??
     process.env.GH_TOKEN ??
@@ -699,17 +708,23 @@ function resolveGithubToken(token?: string | null, isPrivateRepo = false): strin
     return envToken;
   }
 
-  // For private repos, don't use hardcoded tokens
+  // For private repos, don't use rotating tokens
   if (isPrivateRepo) {
     console.warn("[heatmap] No token provided for private repository access");
     return null;
   }
 
-  // Fall back to hardcoded tokens with rotation (public repos only)
+  // Fall back to rotating tokens from GITHUB_TOKEN_1, GITHUB_TOKEN_2, etc. (public repos only)
   const nextToken = getNextGitHubToken();
-  const tokenPrefix = nextToken.substring(0, 20);
-  console.log(`[heatmap] Using hardcoded GitHub token for public repo (${tokenPrefix}...) [${currentTokenIndex}/${HARDCODED_GITHUB_TOKENS.length}]`);
-  return nextToken;
+  if (nextToken) {
+    const tokenPrefix = nextToken.substring(0, 20);
+    const tokenCount = loadGitHubTokensFromEnv().length;
+    console.log(`[heatmap] Using rotating GitHub token for public repo (${tokenPrefix}...) [${currentTokenIndex}/${tokenCount}]`);
+    return nextToken;
+  }
+
+  console.warn("[heatmap] No GitHub tokens available (set GITHUB_TOKEN_1, GITHUB_TOKEN_2, etc.)");
+  return null;
 }
 
 function normalizeGithubApiBaseUrl(custom?: string): string {
