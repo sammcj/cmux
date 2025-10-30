@@ -3,6 +3,6 @@ import { env } from "../_shared/convex-env";
 
 export default {
   providers: getConvexProvidersConfig({
-    projectId: env.NEXT_PUBLIC_STACK_PROJECT_ID,
+    projectId: env.NEXT_PUBLIC_STACK_PROJECT_ID ?? "",
   }),
 };

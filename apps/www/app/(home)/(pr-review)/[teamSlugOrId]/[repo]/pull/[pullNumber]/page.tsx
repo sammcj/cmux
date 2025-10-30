@@ -1,6 +1,6 @@
 import { Suspense, use } from "react";
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { waitUntil } from "@vercel/functions";
 import { type Team } from "@stackframe/stack";
 
@@ -12,12 +12,14 @@ import {
   type GithubFileChange,
 } from "@/lib/github/fetch-pull-request";
 import { isGithubApiError } from "@/lib/github/errors";
+import { isRepoPublic } from "@/lib/github/check-repo-visibility";
 import { cn } from "@/lib/utils";
 import { stackServerApp } from "@/lib/utils/stack";
 import {
   getConvexHttpActionBaseUrl,
   startCodeReviewJob,
 } from "@/lib/services/code-review/start-code-review";
+import { getInstallationForRepo } from "@/lib/utils/github-app-token";
 import {
   DiffViewerSkeleton,
   ErrorPanel,
@@ -71,36 +73,6 @@ async function resolveGithubAccessToken(
   return accessToken;
 }
 
-function buildPullRequestPath({
-  teamSlugOrId,
-  repo,
-  pullNumber,
-}: PageParams): string {
-  return `/${encodeURIComponent(teamSlugOrId)}/${encodeURIComponent(repo)}/pull/${encodeURIComponent(pullNumber)}`;
-}
-
-function redirectToSignIn(returnPath: string): never {
-  const normalizedPath = returnPath.startsWith("/")
-    ? returnPath
-    : `/${returnPath}`;
-  const searchParams = new URLSearchParams({
-    after_auth_return_to: normalizedPath,
-  });
-  const signInUrl = `${stackServerApp.urls.signIn}?${searchParams.toString()}`;
-
-  redirect(signInUrl);
-}
-
-async function requireSignedInUser(returnPath: string) {
-  const user = await stackServerApp.getUser({ or: "return-null" });
-
-  if (!user) {
-    redirectToSignIn(returnPath);
-  }
-
-  return user;
-}
-
 async function getFirstTeam(): Promise<Team | null> {
   const teams = await stackServerApp.listTeams();
   const firstTeam = teams[0];
@@ -114,12 +86,6 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const resolvedParams = await params;
-  const returnPath = buildPullRequestPath(resolvedParams);
-  const user = await requireSignedInUser(returnPath);
-  const selectedTeam = user.selectedTeam || (await getFirstTeam());
-  if (!selectedTeam) {
-    throw notFound();
-  }
   const {
     teamSlugOrId: githubOwner,
     repo,
@@ -133,7 +99,20 @@ export async function generateMetadata({
     };
   }
 
-  const githubAccessToken = await resolveGithubAccessToken(user);
+  // Check if repo is public
+  const repoIsPublic = await isRepoPublic(githubOwner, repo);
+
+  // Get user if available
+  const user = await stackServerApp.getUser({ or: "anonymous" });
+
+  // For private repos without user, or if user doesn't have a team, return basic metadata
+  if (!repoIsPublic && !user) {
+    return {
+      title: `${githubOwner}/${repo} · #${pullNumber}`,
+    };
+  }
+
+  const githubAccessToken = user ? await resolveGithubAccessToken(user) : null;
 
   try {
     const pullRequest = await fetchPullRequest(githubOwner, repo, pullNumber, {
@@ -157,18 +136,6 @@ export async function generateMetadata({
 
 export default async function PullRequestPage({ params }: PageProps) {
   const resolvedParams = await params;
-  const returnPath = buildPullRequestPath(resolvedParams);
-  const user = await requireSignedInUser(returnPath);
-  const selectedTeam = user.selectedTeam || (await getFirstTeam());
-  if (!selectedTeam) {
-    return (
-      <TeamOnboardingPrompt
-        githubOwner={resolvedParams.teamSlugOrId}
-        repo={resolvedParams.repo}
-        pullNumber={parsePullNumber(resolvedParams.pullNumber) ?? 0}
-      />
-    );
-  }
 
   const {
     teamSlugOrId: githubOwner,
@@ -181,7 +148,42 @@ export default async function PullRequestPage({ params }: PageProps) {
     notFound();
   }
 
-  const githubAccessToken = await resolveGithubAccessToken(user);
+  // Check if the repository is public
+  const repoIsPublic = await isRepoPublic(githubOwner, repo);
+
+  // Get user (including anonymous users) - middleware has already checked for cookies
+  const user = await stackServerApp.getUser({
+    or: "anonymous"
+  });
+
+  console.log("[PullRequestPage] user:", user?.id, "repoIsPublic:", repoIsPublic);
+
+  // For private repos, reject anonymous users and redirect to auth
+  if (!repoIsPublic && user && !user.primaryEmail) {
+    const { redirect } = await import("next/navigation");
+    redirect(`/${githubOwner}/${repo}/pull/${pullNumber}/auth`);
+  }
+
+  // For private repos, require a team. For public repos, teams are optional.
+  let selectedTeam: Team | null = null;
+  if (!repoIsPublic) {
+    // Private repos require authentication and a team
+    selectedTeam = user!.selectedTeam || (await getFirstTeam());
+    if (!selectedTeam) {
+      return (
+        <TeamOnboardingPrompt
+          githubOwner={resolvedParams.teamSlugOrId}
+          repo={resolvedParams.repo}
+          pullNumber={parsePullNumber(resolvedParams.pullNumber) ?? 0}
+        />
+      );
+    }
+  } else {
+    // Public repos: try to get a team but don't require it (for anonymous users)
+    selectedTeam = user!.selectedTeam || (await getFirstTeam());
+  }
+
+  const githubAccessToken = await resolveGithubAccessToken(user!);
 
   let initialPullRequest: GithubPullRequest;
   try {
@@ -190,14 +192,29 @@ export default async function PullRequestPage({ params }: PageProps) {
     });
   } catch (error) {
     if (isGithubApiError(error) && error.status === 404) {
-      return (
-        <PrivateRepoPrompt
-          teamSlugOrId={selectedTeam.id}
-          repo={repo}
-          githubOwner={githubOwner}
-          githubAppSlug={env.NEXT_PUBLIC_GITHUB_APP_SLUG}
-        />
-      );
+      // For private repos, check if app is installed
+      if (!repoIsPublic && selectedTeam) {
+        // Check if GitHub app is installed for this repo
+        const installationId = await getInstallationForRepo(
+          `${githubOwner}/${repo}`
+        );
+
+        // If app is NOT installed, show install prompt
+        // If app IS installed, the PR simply doesn't exist
+        if (!installationId) {
+          return (
+            <PrivateRepoPrompt
+              teamSlugOrId={selectedTeam.id}
+              repo={repo}
+              githubOwner={githubOwner}
+              githubAppSlug={env.NEXT_PUBLIC_GITHUB_APP_SLUG}
+            />
+          );
+        }
+      }
+
+      // App is installed but PR doesn't exist, or public repo PR not found
+      notFound();
     }
     throw error;
   }
@@ -210,13 +227,16 @@ export default async function PullRequestPage({ params }: PageProps) {
     { authToken: githubAccessToken }
   ).then((files) => files.map(toGithubFileChange));
 
-  scheduleCodeReviewStart({
-    teamSlugOrId: selectedTeam.id,
-    githubOwner,
-    repo,
-    pullNumber,
-    pullRequestPromise,
-  });
+  // Schedule code review in background (non-blocking)
+  if (selectedTeam) {
+    scheduleCodeReviewStart({
+      teamSlugOrId: selectedTeam.id,
+      githubOwner,
+      repo,
+      pullNumber,
+      pullRequestPromise,
+    });
+  }
 
   return (
     <div className="min-h-dvh bg-neutral-50 text-neutral-900">
@@ -233,7 +253,7 @@ export default async function PullRequestPage({ params }: PageProps) {
           <PullRequestDiffSection
             filesPromise={pullRequestFilesPromise}
             pullRequestPromise={pullRequestPromise}
-            teamSlugOrId={selectedTeam.id}
+            teamSlugOrId={selectedTeam?.id ?? ""}
             githubOwner={githubOwner}
             repo={repo}
             pullNumber={pullNumber}
@@ -315,30 +335,40 @@ function scheduleCodeReviewStart({
           return;
         }
 
-        const user = await stackServerApp.getUser({ or: "return-null" });
+        const user = await stackServerApp.getUser({ or: "anonymous" });
         if (!user) {
+          console.warn("[code-review] No user found; skipping callback");
           return;
         }
 
-        const [{ accessToken }, githubAccount] = await Promise.all([
-          user.getAuthJson(),
-          user.getConnectedAccount("github"),
-        ]);
-        if (!accessToken) {
-          return;
-        }
-        if (!githubAccount) {
-          console.warn(
-            "[code-review] Skipping auto-start: GitHub account not connected"
-          );
-          return;
-        }
-        const { accessToken: githubAccessToken } =
-          await githubAccount.getAccessToken();
-        if (!githubAccessToken) {
-          console.warn(
-            "[code-review] Skipping auto-start: GitHub access token unavailable"
-          );
+        let accessToken: string | null = null;
+        let githubAccessToken: string | null = null;
+
+        try {
+          const authJson = await user.getAuthJson();
+          accessToken = authJson.accessToken ?? null;
+
+          if (!accessToken) {
+            console.warn("[code-review] No access token available; skipping callback");
+            return;
+          }
+
+          const githubAccount = await user.getConnectedAccount("github");
+          if (!githubAccount) {
+            console.warn(
+              "[code-review] GitHub account not connected, proceeding without token"
+            );
+          } else {
+            const tokenResult = await githubAccount.getAccessToken();
+            githubAccessToken = tokenResult.accessToken ?? null;
+            if (!githubAccessToken) {
+              console.warn(
+                "[code-review] GitHub access token unavailable, proceeding without token"
+              );
+            }
+          }
+        } catch (error) {
+          console.warn("[code-review] Failed to get user auth info; skipping callback", error);
           return;
         }
 
@@ -713,13 +743,13 @@ function formatRelativeTimeFromNow(date: Date): string {
     divisor: number;
     unit: Intl.RelativeTimeFormatUnit;
   }[] = [
-    { threshold: 45, divisor: 1, unit: "second" },
-    { threshold: 2700, divisor: 60, unit: "minute" }, // 45 minutes
-    { threshold: 64_800, divisor: 3_600, unit: "hour" }, // 18 hours
-    { threshold: 561_600, divisor: 86_400, unit: "day" }, // 6.5 days
-    { threshold: 2_419_200, divisor: 604_800, unit: "week" }, // 4 weeks
-    { threshold: 28_512_000, divisor: 2_629_746, unit: "month" }, // 11 months
-  ];
+      { threshold: 45, divisor: 1, unit: "second" },
+      { threshold: 2700, divisor: 60, unit: "minute" }, // 45 minutes
+      { threshold: 64_800, divisor: 3_600, unit: "hour" }, // 18 hours
+      { threshold: 561_600, divisor: 86_400, unit: "day" }, // 6.5 days
+      { threshold: 2_419_200, divisor: 604_800, unit: "week" }, // 4 weeks
+      { threshold: 28_512_000, divisor: 2_629_746, unit: "month" }, // 11 months
+    ];
 
   const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 
