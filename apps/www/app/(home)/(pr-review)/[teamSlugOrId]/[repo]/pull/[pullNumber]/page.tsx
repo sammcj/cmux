@@ -18,6 +18,7 @@ import {
   getConvexHttpActionBaseUrl,
   startCodeReviewJob,
 } from "@/lib/services/code-review/start-code-review";
+import { runSimpleAnthropicReviewStream } from "@/lib/services/code-review/run-simple-anthropic-review";
 import {
   DiffViewerSkeleton,
   ErrorPanel,
@@ -342,6 +343,41 @@ function scheduleCodeReviewStart({
           return;
         }
 
+        let simpleReviewPromise: Promise<unknown> | null = null;
+
+        if (githubAccessToken) {
+          console.info("[simple-review][page] Starting background stream", {
+            githubLink,
+            pullNumber,
+          });
+          simpleReviewPromise = runSimpleAnthropicReviewStream({
+            prIdentifier: githubLink,
+            githubToken: githubAccessToken,
+            onChunk: async (chunk) => {
+              const collapsed = chunk.replace(/\s+/g, " ").trim();
+              if (collapsed.length > 0) {
+                const snippet =
+                  collapsed.length > 160
+                    ? `${collapsed.slice(0, 157)}...`
+                    : collapsed;
+                console.info("[simple-review][page][chunk]", snippet);
+              }
+            },
+          }).catch((error) => {
+            const message =
+              error instanceof Error ? error.message : String(error ?? "");
+            console.error("[simple-review][page] Stream failed", {
+              githubLink,
+              message,
+            });
+          });
+        } else {
+          console.warn("[simple-review][page] Skipping stream; no token", {
+            githubLink,
+            pullNumber,
+          });
+        }
+
         const { job, deduplicated, backgroundTask } = await startCodeReviewJob({
           accessToken,
           githubAccessToken,
@@ -367,8 +403,15 @@ function scheduleCodeReviewStart({
           teamId: job.teamId,
         });
 
+        const pending: Promise<unknown>[] = [];
         if (backgroundTask) {
-          await backgroundTask;
+          pending.push(backgroundTask);
+        }
+        if (simpleReviewPromise) {
+          pending.push(simpleReviewPromise);
+        }
+        if (pending.length > 0) {
+          await Promise.allSettled(pending);
         }
       } catch (error) {
         const context = {

@@ -442,6 +442,142 @@ export function PullRequestDiffViewer({
   const normalizedJobType: "pull_request" | "comparison" =
     jobType ?? (comparisonSlug ? "comparison" : "pull_request");
 
+  useEffect(() => {
+    if (normalizedJobType !== "pull_request") {
+      return;
+    }
+    if (typeof prNumber !== "number" || Number.isNaN(prNumber)) {
+      return;
+    }
+    if (!repoFullName) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      repoFullName,
+      prNumber: String(prNumber),
+    });
+
+    const logChunk = (label: string, text: string | undefined) => {
+      if (!text) {
+        return;
+      }
+      const collapsed = text.replace(/\s+/g, " ").trim();
+      if (collapsed.length === 0) {
+        return;
+      }
+      const snippet =
+        collapsed.length > 160 ? `${collapsed.slice(0, 157)}...` : collapsed;
+      console.info(label, snippet);
+    };
+
+    (async () => {
+      try {
+        const response = await fetch(
+          `/api/pr-review/simple?${params.toString()}`,
+          {
+            signal: controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          console.error(
+            "[simple-review][frontend] Failed to start stream",
+            response.status
+          );
+          return;
+        }
+
+        const body = response.body;
+        if (!body) {
+          console.error(
+            "[simple-review][frontend] Response body missing for stream"
+          );
+          return;
+        }
+
+        const reader = body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) {
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+
+          let separatorIndex = buffer.indexOf("\n\n");
+          while (separatorIndex !== -1) {
+            const rawEvent = buffer.slice(0, separatorIndex);
+            buffer = buffer.slice(separatorIndex + 2);
+            separatorIndex = buffer.indexOf("\n\n");
+
+            const lines = rawEvent.split("\n");
+            for (const line of lines) {
+              if (!line.startsWith("data:")) {
+                continue;
+              }
+              const data = line.slice(5).trim();
+              if (data.length === 0) {
+                continue;
+              }
+              try {
+                const payload = JSON.parse(data) as {
+                  type: string;
+                  text?: string;
+                  message?: string;
+                };
+
+                switch (payload.type) {
+                  case "status":
+                    logChunk("[simple-review][frontend][status]", payload.message);
+                    break;
+                  case "delta":
+                    logChunk("[simple-review][frontend][chunk]", payload.text);
+                    break;
+                  case "error":
+                    console.error(
+                      "[simple-review][frontend] Stream error",
+                      payload.message
+                    );
+                    break;
+                  case "done":
+                    console.info("[simple-review][frontend] Stream completed");
+                    break;
+                  default:
+                    console.info(
+                      "[simple-review][frontend] Stream event",
+                      payload
+                    );
+                }
+              } catch (error) {
+                console.warn(
+                  "[simple-review][frontend] Failed to parse SSE data",
+                  { data, error }
+                );
+              }
+            }
+          }
+        }
+
+        if (buffer.trim().length > 0) {
+          console.debug("[simple-review][frontend] Remaining buffer", buffer);
+        }
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        console.error("[simple-review][frontend] Stream failed", error);
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [normalizedJobType, prNumber, repoFullName]);
+
   const prQueryArgs = useMemo(
     () =>
       normalizedJobType !== "pull_request" ||
