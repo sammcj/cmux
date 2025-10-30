@@ -15,6 +15,7 @@ Every run spins up an isolated VS Code workspace either in the cloud or in a loc
 ![cmux screenshot](./docs/assets/cmux1.png)
 ![cmux screenshot](./docs/assets/cmux2.png)
 ![cmux screenshot](./docs/assets/cmux3.png)
+![cmux screenshot](./docs/assets/cmux4.png)
 
 ## Install
 
