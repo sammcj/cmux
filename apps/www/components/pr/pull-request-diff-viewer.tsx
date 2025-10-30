@@ -1694,7 +1694,7 @@ function CmuxPromoCard() {
   return (
     <div className="border border-neutral-200 bg-white p-5 pt-4 text-sm text-neutral-700">
       <div className="flex flex-col gap-3">
-        <div className="flex flex-row items-center justify-center gap-2 text-center">
+        <div className="flex flex-row items-center justify-start gap-2 text-center">
           <p className="text-xs font-mono leading-relaxed text-neutral-900 font-bold">
             From the creators of 
           </p>
