@@ -12,6 +12,8 @@ import {
 } from "@/lib/utils/mac-architecture";
 import { trackDirectDownloadPageView } from "@/lib/analytics/track-direct-download";
 
+export const dynamic = "force-dynamic";
+
 const pageContainerClasses =
   "min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center px-6 py-12";
 const cardClasses =
