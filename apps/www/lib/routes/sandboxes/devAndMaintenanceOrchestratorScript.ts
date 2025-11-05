@@ -142,30 +142,42 @@ const config = {
   taskRunJwt: requireEnv("CMUX_ORCH_TASK_RUN_JWT"),
 };
 
-async function waitForTmuxSession(): Promise<void> {
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const result = await runCommand("tmux has-session -t cmux 2>/dev/null", {
-      throwOnError: false,
-    });
-    if (result.exitCode === 0) {
-      console.log("[ORCHESTRATOR] tmux session found");
-      return;
-    }
-
-    await delay(500);
-  }
-
-  const finalAttempt = await runCommand("tmux has-session -t cmux 2>/dev/null", {
+async function ensureTmuxSession(): Promise<void> {
+  // Check if session already exists
+  const checkResult = await runCommand("tmux has-session -t cmux 2>/dev/null", {
     throwOnError: false,
   });
 
-  if (finalAttempt.exitCode !== 0) {
-    throw new Error("Error: cmux session does not exist");
+  if (checkResult.exitCode === 0) {
+    console.log("[ORCHESTRATOR] tmux session 'cmux' already exists");
+    return;
+  }
+
+  console.log("[ORCHESTRATOR] tmux session 'cmux' not found, creating it...");
+
+  // Create a new tmux session
+  await runCommand(
+    "tmux new-session -d -s cmux -c /root/workspace -n main",
+    { throwOnError: true }
+  );
+
+  console.log("[ORCHESTRATOR] tmux session 'cmux' created successfully");
+
+  // Wait a moment for the session to be fully initialized
+  await delay(500);
+
+  // Verify the session exists
+  const verifyResult = await runCommand("tmux has-session -t cmux 2>/dev/null", {
+    throwOnError: false,
+  });
+
+  if (verifyResult.exitCode !== 0) {
+    throw new Error("Failed to create tmux session 'cmux'");
   }
 }
 
 async function createWindows(): Promise<void> {
-  await waitForTmuxSession();
+  await ensureTmuxSession();
 
   if (config.hasMaintenanceScript) {
     console.log(`[ORCHESTRATOR] Creating ${config.maintenanceWindowName} window...`);
