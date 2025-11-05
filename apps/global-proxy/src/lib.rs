@@ -1,4 +1,8 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    io::{self, Cursor, Read},
+    net::SocketAddr,
+    sync::Arc,
+};
 
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
@@ -16,9 +20,12 @@ use hyper::{
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_tungstenite::{HyperWebsocket, is_upgrade_request};
 use lol_html::{HtmlRewriter, Settings, element, html_content::ContentType};
+use flate2::read::{GzDecoder, ZlibDecoder};
+use brotli::Decompressor;
 use tokio::{sync::oneshot, task::JoinHandle};
 use tokio_tungstenite::{connect_async, tungstenite::client::IntoClientRequest};
 use tracing::error;
+use zstd::stream::read::Decoder as ZstdDecoder;
 
 use chrono::Utc;
 use serde_json::{Value, json};
@@ -712,6 +719,10 @@ async fn transform_response(response: Response<Body>, behavior: ProxyBehavior) -
     let status = response.status();
     let version = response.version();
     let headers = response.headers().clone();
+    let content_encoding = headers
+        .get(header::CONTENT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
 
     let content_type = headers
         .get(header::CONTENT_TYPE)
@@ -720,34 +731,46 @@ async fn transform_response(response: Response<Body>, behavior: ProxyBehavior) -
 
     if content_type.contains("text/html") {
         match body::to_bytes(response.into_body()).await {
-            Ok(bytes) => match rewrite_html(bytes, behavior.skip_service_worker) {
-                Ok(body) => {
-                    let mut builder = Response::builder().status(status).version(version);
-                    let mut new_headers =
-                        sanitize_headers(&headers, /* strip_payload_headers */ true);
-                    strip_csp_headers(&mut new_headers);
-                    if behavior.strip_cors_headers {
-                        strip_cors_headers(&mut new_headers);
-                    } else if behavior.add_cors {
-                        add_cors_headers(&mut new_headers);
+            Ok(bytes) => {
+                let decoded = match decode_body_with_encoding(bytes.as_ref(), content_encoding.as_deref()) {
+                    Ok(body) => Bytes::from(body),
+                    Err(err) => {
+                        error!(%err, "failed to decode upstream body");
+                        return text_response(
+                            StatusCode::BAD_GATEWAY,
+                            "Failed to decode upstream body",
+                        );
                     }
-                    if let Some(frame_ancestors) = behavior.frame_ancestors {
-                        if let Ok(value) = HeaderValue::from_str(frame_ancestors) {
-                            new_headers.insert("content-security-policy", value);
+                };
+                match rewrite_html(decoded, behavior.skip_service_worker) {
+                    Ok(body) => {
+                        let mut builder = Response::builder().status(status).version(version);
+                        let mut new_headers =
+                            sanitize_headers(&headers, /* strip_payload_headers */ true);
+                        strip_csp_headers(&mut new_headers);
+                        if behavior.strip_cors_headers {
+                            strip_cors_headers(&mut new_headers);
+                        } else if behavior.add_cors {
+                            add_cors_headers(&mut new_headers);
                         }
+                        if let Some(frame_ancestors) = behavior.frame_ancestors {
+                            if let Ok(value) = HeaderValue::from_str(frame_ancestors) {
+                                new_headers.insert("content-security-policy", value);
+                            }
+                        }
+                        new_headers.insert(
+                            header::CONTENT_LENGTH,
+                            HeaderValue::from_str(&body.len().to_string()).unwrap(),
+                        );
+                        let headers_mut = builder.headers_mut().unwrap();
+                        for (name, value) in new_headers.iter() {
+                            headers_mut.insert(name, value.clone());
+                        }
+                        builder.body(Body::from(body)).unwrap()
                     }
-                    new_headers.insert(
-                        header::CONTENT_LENGTH,
-                        HeaderValue::from_str(&body.len().to_string()).unwrap(),
-                    );
-                    let headers_mut = builder.headers_mut().unwrap();
-                    for (name, value) in new_headers.iter() {
-                        headers_mut.insert(name, value.clone());
-                    }
-                    builder.body(Body::from(body)).unwrap()
+                    Err(_) => text_response(StatusCode::INTERNAL_SERVER_ERROR, "HTML rewrite failed"),
                 }
-                Err(_) => text_response(StatusCode::INTERNAL_SERVER_ERROR, "HTML rewrite failed"),
-            },
+            }
             Err(_) => text_response(StatusCode::BAD_GATEWAY, "Failed to read upstream body"),
         }
     } else {
@@ -769,6 +792,43 @@ async fn transform_response(response: Response<Body>, behavior: ProxyBehavior) -
             headers_mut.insert(name, value.clone());
         }
         builder.body(response.into_body()).unwrap()
+    }
+}
+
+fn decode_body_with_encoding(bytes: &[u8], encoding: Option<&str>) -> io::Result<Vec<u8>> {
+    match encoding.map(|enc| enc.trim().to_ascii_lowercase()) {
+        None => Ok(bytes.to_vec()),
+        Some(enc) => match enc.as_str() {
+            "" | "identity" => Ok(bytes.to_vec()),
+            "gzip" => {
+                let mut decoder = GzDecoder::new(Cursor::new(bytes));
+                let mut out = Vec::new();
+                decoder.read_to_end(&mut out)?;
+                Ok(out)
+            }
+            "deflate" => {
+                let mut decoder = ZlibDecoder::new(Cursor::new(bytes));
+                let mut out = Vec::new();
+                decoder.read_to_end(&mut out)?;
+                Ok(out)
+            }
+            "br" => {
+                let mut decoder = Decompressor::new(Cursor::new(bytes), 4096);
+                let mut out = Vec::new();
+                decoder.read_to_end(&mut out)?;
+                Ok(out)
+            }
+            "zstd" => {
+                let mut decoder = ZstdDecoder::new(Cursor::new(bytes))?;
+                let mut out = Vec::new();
+                decoder.read_to_end(&mut out)?;
+                Ok(out)
+            }
+            other => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("unsupported content-encoding: {}", other),
+            )),
+        },
     }
 }
 
