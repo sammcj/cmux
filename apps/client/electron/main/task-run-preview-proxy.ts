@@ -315,13 +315,19 @@ function handleConnect(req: IncomingMessage, socket: Socket, head: Buffer) {
     return;
   }
 
+  const targetUrl = new URL(`https://${target.hostname}`);
+  targetUrl.port = String(target.port);
+  const rewritten = rewriteTarget(targetUrl, context);
+
   proxyLog("connect-request", {
     username: context.username,
-    hostname: target.hostname,
-    port: target.port,
+    requestedHost: target.hostname,
+    requestedPort: target.port,
+    rewrittenHost: rewritten.url.hostname,
+    rewrittenPort: rewritten.connectPort,
     persistKey: context.persistKey,
   });
-  const upstream = net.connect(target.port, target.hostname, () => {
+  const upstream = net.connect(rewritten.connectPort, rewritten.url.hostname, () => {
     socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
     if (head.length > 0) {
       upstream.write(head);
