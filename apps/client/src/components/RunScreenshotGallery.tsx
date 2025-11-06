@@ -47,24 +47,6 @@ const STATUS_STYLES: Record<ScreenshotStatus, string> = {
 
 export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
   const { screenshotSets, highlightedSetId } = props;
-  if (!screenshotSets || screenshotSets.length === 0) {
-    return null;
-  }
-  return (
-    <RunScreenshotGalleryContent
-      screenshotSets={screenshotSets}
-      highlightedSetId={highlightedSetId}
-    />
-  );
-}
-
-interface RunScreenshotGalleryContentProps {
-  screenshotSets: RunScreenshotSet[];
-  highlightedSetId?: Id<"taskRunScreenshotSets"> | null;
-}
-
-function RunScreenshotGalleryContent(props: RunScreenshotGalleryContentProps) {
-  const { screenshotSets, highlightedSetId } = props;
   const sortedScreenshotSets = useMemo(
     () =>
       [...screenshotSets].sort((a, b) => {
@@ -101,6 +83,11 @@ function RunScreenshotGalleryContent(props: RunScreenshotGalleryContentProps) {
     activeImageIndex >= 0 &&
     activeImageIndex < flattenedImages.length
       ? flattenedImages[activeImageIndex]
+      : null;
+
+  const activeOverallIndex =
+    activeImageIndex !== null && activeImageIndex >= 0
+      ? activeImageIndex + 1
       : null;
 
   const effectiveHighlight =
@@ -174,6 +161,10 @@ function RunScreenshotGalleryContent(props: RunScreenshotGalleryContentProps) {
 
   let runningImageIndex = -1;
 
+  if (sortedScreenshotSets.length === 0) {
+    return null;
+  }
+
   return (
     <section className="border-b border-neutral-200 bg-neutral-50/60 dark:border-neutral-800 dark:bg-neutral-950/40">
       <div className="px-3.5 pt-3 pb-2 flex items-center justify-between gap-3">
@@ -187,21 +178,29 @@ function RunScreenshotGalleryContent(props: RunScreenshotGalleryContentProps) {
       </div>
       <div className="px-3.5 pb-4 space-y-4">
         {currentEntry ? (
-          <Dialog.Root open={isSlideshowOpen} onOpenChange={(open) => !open && closeSlideshow()}>
+          <Dialog.Root
+            open={isSlideshowOpen}
+            onOpenChange={(open) => !open && closeSlideshow()}
+            modal={false}
+          >
             <Dialog.Portal>
-              <Dialog.Overlay className="fixed inset-0 bg-neutral-950/70 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in data-[state=closed]:fade-out" />
-              <Dialog.Content className="fixed inset-0 flex items-center justify-center p-6 focus:outline-none">
-                <div className="relative flex w-full max-w-5xl flex-col gap-4 rounded-2xl border border-neutral-200 bg-white/95 p-4 shadow-2xl backdrop-blur-md focus:outline-none dark:border-neutral-800 dark:bg-neutral-950/90 sm:p-6">
+              <Dialog.Overlay className="pointer-events-none fixed inset-0 bg-neutral-950/70 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in data-[state=closed]:fade-out" />
+              <Dialog.Content className="pointer-events-none fixed inset-0 flex items-center justify-center p-6 focus:outline-none">
+                <div className="pointer-events-auto relative flex w-full max-w-5xl flex-col gap-4 rounded-2xl border border-neutral-200 bg-white/95 p-4 shadow-2xl backdrop-blur-md focus:outline-none dark:border-neutral-800 dark:bg-neutral-950/90 sm:p-6">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-1">
                       <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+                        {activeOverallIndex !== null
+                          ? `${activeOverallIndex}. `
+                          : ""}
                         {currentEntry.image.fileName ?? "Screenshot"}
                       </Dialog.Title>
                       <Dialog.Description className="text-xs text-neutral-600 dark:text-neutral-400">
-                        Image {currentEntry.indexInSet + 1} of {currentEntry.set.images.length} in this capture
-                        {activeImageIndex !== null
-                          ? ` • ${activeImageIndex + 1} of ${flattenedImages.length} overall`
-                          : null}
+                        Image {currentEntry.indexInSet + 1} of {currentEntry.set.images.length}
+                        <span className="px-1 text-neutral-400 dark:text-neutral-600">-</span>
+                        {formatDistanceToNow(new Date(currentEntry.set.capturedAt), {
+                          addSuffix: true,
+                        })}
                       </Dialog.Description>
                     </div>
                     <Dialog.Close asChild>
@@ -220,7 +219,7 @@ function RunScreenshotGalleryContent(props: RunScreenshotGalleryContentProps) {
                       <button
                         type="button"
                         onClick={goPrev}
-                        className="flex h-11 w-11 items-center justify-center rounded-full border border-neutral-300 bg-neutral-50 text-neutral-700 shadow transition hover:border-neutral-400 hover:bg-neutral-200 hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:border-neutral-500 dark:hover:bg-neutral-800"
+                        className="p-1 text-neutral-600 transition hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:text-neutral-300 dark:hover:text-neutral-100"
                         aria-label="Previous screenshot"
                       >
                         <ChevronLeft className="h-5 w-5" />
@@ -237,27 +236,12 @@ function RunScreenshotGalleryContent(props: RunScreenshotGalleryContentProps) {
                       <button
                         type="button"
                         onClick={goNext}
-                        className="flex h-11 w-11 items-center justify-center rounded-full border border-neutral-300 bg-neutral-50 text-neutral-700 shadow transition hover:border-neutral-400 hover:bg-neutral-200 hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:border-neutral-500 dark:hover:bg-neutral-800"
+                        className="p-1 text-neutral-600 transition hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:text-neutral-300 dark:hover:text-neutral-100"
                         aria-label="Next screenshot"
                       >
                         <ChevronRight className="h-5 w-5" />
                       </button>
                     ) : null}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
-                    <span>
-                      Captured {formatDistanceToNow(new Date(currentEntry.set.capturedAt), { addSuffix: true })}
-                    </span>
-                    {currentEntry.set.commitSha ? (
-                      <>
-                        <span className="text-neutral-300 dark:text-neutral-600">•</span>
-                        <span className="font-mono uppercase text-neutral-500 dark:text-neutral-400">
-                          {currentEntry.set.commitSha.slice(0, 12)}
-                        </span>
-                      </>
-                    ) : null}
-                    <span className="text-neutral-300 dark:text-neutral-600">•</span>
-                    <span>{STATUS_LABELS[currentEntry.set.status]}</span>
                   </div>
                 </div>
               </Dialog.Content>
@@ -335,6 +319,7 @@ function RunScreenshotGalleryContent(props: RunScreenshotGalleryContentProps) {
                     }
                     runningImageIndex += 1;
                     const flatIndex = runningImageIndex;
+                    const humanIndex = flatIndex + 1;
 
                     return (
                       <button
@@ -359,7 +344,7 @@ function RunScreenshotGalleryContent(props: RunScreenshotGalleryContentProps) {
                           <Maximize2 className="h-3.5 w-3.5" />
                         </div>
                         <div className="border-t border-neutral-200 px-2 py-1 text-xs text-neutral-600 dark:border-neutral-700 dark:text-neutral-300 truncate">
-                          {displayName}
+                          {humanIndex}. {displayName}
                         </div>
                       </button>
                     );
