@@ -47,9 +47,7 @@ const STATUS_STYLES: Record<ScreenshotStatus, string> = {
 
 export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
   const { screenshotSets, highlightedSetId } = props;
-  if (!screenshotSets || screenshotSets.length === 0) {
-    return null;
-  }
+  const hasScreenshots = screenshotSets.length > 0;
 
   const flattenedImages = useMemo(
     () =>
@@ -81,7 +79,7 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
   const effectiveHighlight =
     highlightedSetId ??
     currentEntry?.set._id ??
-    (screenshotSets.length > 0 ? screenshotSets[0]._id : null);
+    (hasScreenshots ? screenshotSets[0]._id : null);
 
   useEffect(() => {
     if (activeImageIndex === null) {
@@ -147,6 +145,10 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
     };
   }, [goNext, goPrev, isSlideshowOpen]);
 
+  if (!hasScreenshots) {
+    return null;
+  }
+
   let runningImageIndex = -1;
 
   return (
@@ -190,33 +192,33 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
                       </button>
                     </Dialog.Close>
                   </div>
-                  <div className="relative flex flex-1 items-center justify-center overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900">
-                    <img
-                      src={currentEntry.image.url ?? undefined}
-                      alt={currentEntry.image.fileName ?? "Screenshot"}
-                      className="max-h-[70vh] w-full object-contain"
-                    />
+                  <div className="flex flex-1 items-center justify-center gap-4">
                     {flattenedImages.length > 1 ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={goPrev}
-                          className="group absolute left-2 top-1/2 -translate-y-1/2 rounded-full border border-neutral-200 bg-white/80 p-2 text-neutral-700 backdrop-blur transition hover:bg-white hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-950/80 dark:text-neutral-200 dark:hover:bg-neutral-900"
-                          aria-label="Previous screenshot"
-                          disabled={flattenedImages.length <= 1}
-                        >
-                          <ChevronLeft className="h-5 w-5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={goNext}
-                          className="group absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-neutral-200 bg-white/80 p-2 text-neutral-700 backdrop-blur transition hover:bg-white hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-950/80 dark:text-neutral-200 dark:hover:bg-neutral-900"
-                          aria-label="Next screenshot"
-                          disabled={flattenedImages.length <= 1}
-                        >
-                          <ChevronRight className="h-5 w-5" />
-                        </button>
-                      </>
+                      <button
+                        type="button"
+                        onClick={goPrev}
+                        className="flex h-11 w-11 items-center justify-center rounded-full border border-neutral-300 bg-neutral-50 text-neutral-700 shadow transition hover:border-neutral-400 hover:bg-neutral-200 hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:border-neutral-500 dark:hover:bg-neutral-800"
+                        aria-label="Previous screenshot"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                    ) : null}
+                    <div className="relative flex max-h-[70vh] flex-1 items-center justify-center overflow-hidden border border-neutral-200 bg-neutral-50 p-2 dark:border-neutral-800 dark:bg-neutral-900">
+                      <img
+                        src={currentEntry.image.url ?? undefined}
+                        alt={currentEntry.image.fileName ?? "Screenshot"}
+                        className="max-h-full w-full object-contain"
+                      />
+                    </div>
+                    {flattenedImages.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={goNext}
+                        className="flex h-11 w-11 items-center justify-center rounded-full border border-neutral-300 bg-neutral-50 text-neutral-700 shadow transition hover:border-neutral-400 hover:bg-neutral-200 hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:border-neutral-500 dark:hover:bg-neutral-800"
+                        aria-label="Next screenshot"
+                      >
+                        <ChevronRight className="h-5 w-5" />
+                      </button>
                     ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
