@@ -314,6 +314,7 @@ sandboxesRouter.openapi(
             identifiers: scriptIdentifiers ?? undefined,
             convexUrl: env.NEXT_PUBLIC_CONVEX_URL,
             taskRunJwt: body.taskRunJwt || undefined,
+            isCloudWorkspace: !body.taskRunId, // Cloud workspaces have no taskRunId; agent tasks do
           });
         })().catch((error) => {
           console.error(
