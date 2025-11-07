@@ -589,7 +589,7 @@ export function CommandBar({
         slug,
         teamSlugOrId: teamSlugOrIdTarget,
         isCurrent: selectedTeamId === team.id,
-        keywords: compactStrings([label, slug, team.id, teamSlugOrIdTarget]),
+        keywords: compactStrings([label, slug]),
       });
     }
 
@@ -608,8 +608,6 @@ export function CommandBar({
         value: `team:${item.id}:${item.teamSlugOrId}`,
         searchText: buildSearchText(item.label, item.keywords, [
           item.slug,
-          item.teamSlugOrId,
-          item.id,
           item.isCurrent ? "current" : undefined,
         ]),
         item,
@@ -1776,12 +1774,10 @@ export function CommandBar({
               title,
               task.text,
               task.pullRequestTitle,
-              String(task._id),
               `task ${index + 1}`,
             ]);
             const baseSearch = buildSearchText(title, keywords, [
               `${index + 1}`,
-              `task:${task._id}`,
             ]);
             const statusLabel = task.isCompleted ? "completed" : "in progress";
             const statusClassName = task.isCompleted
@@ -1817,7 +1813,8 @@ export function CommandBar({
                 keywords: vsKeywords,
                 searchText: buildSearchText(`${title} VS`, vsKeywords, [
                   `${index + 1} vs`,
-                  `task:${task._id}:vs`,
+                  `${index + 1}vs`,
+                  `${index + 1}v`,
                 ]),
                 className: taskCommandItemClassName,
                 execute: () => handleSelect(`task:${task._id}:vs`),
@@ -1839,7 +1836,8 @@ export function CommandBar({
                 keywords: diffKeywords,
                 searchText: buildSearchText(`${title} git diff`, diffKeywords, [
                   `${index + 1} git diff`,
-                  `task:${task._id}:gitdiff`,
+                  `${index + 1}gitdiff`,
+                  `${index + 1}gd`,
                 ]),
                 className: taskCommandItemClassName,
                 execute: () => handleSelect(`task:${task._id}:gitdiff`),
@@ -1958,9 +1956,7 @@ export function CommandBar({
           value,
           label: option.name,
           keywords: option.keywords,
-          searchText: buildSearchText(option.name, option.keywords, [
-            option.environmentId,
-          ]),
+          searchText: buildSearchText(option.name, option.keywords),
           className: baseCommandItemClassName,
           disabled: isCreatingCloudWorkspace,
           execute: () => handleCloudWorkspaceSelect(option),
@@ -2515,7 +2511,7 @@ export function CommandBar({
             <CommandHighlightListener onHighlight={handleHighlight} />
             <Command.List
               ref={commandListRef}
-              className="flex-1 min-h-0 overflow-y-auto px-1 pb-2 flex flex-col gap-2 pt-1"
+              className="flex-1 min-h-0 overflow-y-auto px-1 mb-2 flex flex-col gap-2 mt-1"
             >
             <Command.Empty className="py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
               {activePage === "teams"
