@@ -109,10 +109,17 @@ export const DashboardInput = memo(
         return `${target.tagName.toLowerCase()}${id}${className}${title}`;
       };
 
+      const isCommandPaletteOpen = () =>
+        document.body?.dataset?.cmuxCommandPaletteOpen === "true";
+
       const scheduleRefocus = () => {
         clearPendingRefocus();
         pendingRefocusTimeoutRef.current = window.setTimeout(() => {
           pendingRefocusTimeoutRef.current = null;
+          if (isCommandPaletteOpen()) {
+            console.log("[DashboardInput] skip refocus due to command palette");
+            return;
+          }
           internalApiRef.current?.focus?.();
         }, 0);
       };
@@ -122,6 +129,10 @@ export const DashboardInput = memo(
         candidateActiveElement: Element | null
       ) => {
         if (!document.hasFocus()) {
+          return false;
+        }
+
+        if (isCommandPaletteOpen()) {
           return false;
         }
 
@@ -195,8 +206,10 @@ export const DashboardInput = memo(
           }
         }
 
-        if (shouldRefocusImmediately) {
+        if (shouldRefocusImmediately && !isCommandPaletteOpen()) {
           scheduleRefocus();
+        } else if (shouldRefocusImmediately) {
+          console.log("[DashboardInput] skip immediate refocus, palette open");
         }
 
         queueMicrotask(() => {
@@ -222,8 +235,10 @@ export const DashboardInput = memo(
             );
           }
 
-          if (shouldRefocusAfterMicrotask) {
+          if (shouldRefocusAfterMicrotask && !isCommandPaletteOpen()) {
             scheduleRefocus();
+          } else if (shouldRefocusAfterMicrotask) {
+            console.log("[DashboardInput] skip microtask refocus, palette open");
           }
         });
       };

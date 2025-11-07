@@ -19,7 +19,6 @@ import type {
   CreateCloudWorkspaceResponse,
 } from "@cmux/shared";
 import { deriveRepoBaseName } from "@cmux/shared";
-import * as Dialog from "@radix-ui/react-dialog";
 import { useUser, type Team } from "@stackframe/react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
@@ -46,6 +45,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -148,6 +148,21 @@ type CommandListEntry = {
   className?: string;
   dataValue?: string;
   trackUsage?: boolean;
+};
+
+type FocusSnapshot = {
+  element: HTMLElement;
+  selection?: {
+    start: number;
+    end: number;
+    direction?: "forward" | "backward" | "none";
+  };
+  contentEditableRange?: {
+    startPath: number[];
+    startOffset: number;
+    endPath: number[];
+    endOffset: number;
+  };
 };
 
 function VirtualizedCommandItems({
@@ -254,7 +269,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
   const previousSearchRef = useRef(search);
   const skipNextCloseRef = useRef(false);
   // Used only in non-Electron fallback
-  const prevFocusedElRef = useRef<HTMLElement | null>(null);
+  const prevFocusSnapshotRef = useRef<FocusSnapshot | null>(null);
   const navigate = useNavigate();
   const router = useRouter();
   const { setTheme, theme } = useTheme();
@@ -271,6 +286,96 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     },
     [router]
   );
+
+  const captureFocusBeforeOpen = useCallback(() => {
+    if (typeof document === "undefined") return;
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) {
+      prevFocusSnapshotRef.current = null;
+      console.log("[CommandBar] capture skipped; no HTMLElement active");
+      return;
+    }
+
+    console.log("[CommandBar] capturing focus", {
+      tag: active.tagName,
+      isContentEditable: active.isContentEditable,
+      hasSelection:
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement
+          ? typeof active.selectionStart === "number" &&
+            typeof active.selectionEnd === "number"
+          : undefined,
+    });
+
+    const snapshot: FocusSnapshot = { element: active };
+    if (
+      active instanceof HTMLInputElement ||
+      active instanceof HTMLTextAreaElement
+    ) {
+      try {
+        const { selectionStart, selectionEnd, selectionDirection } = active;
+        if (
+          typeof selectionStart === "number" &&
+          typeof selectionEnd === "number"
+        ) {
+          snapshot.selection = {
+            start: selectionStart,
+            end: selectionEnd,
+            direction: selectionDirection ?? "none",
+          };
+        }
+      } catch {
+        // Ignore selection capture failures (e.g. unsupported input type)
+      }
+    }
+
+    if (active.isContentEditable) {
+      try {
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          if (
+            active.contains(range.startContainer) &&
+            active.contains(range.endContainer)
+          ) {
+            const startPath = buildNodePath(active, range.startContainer);
+            const endPath = buildNodePath(active, range.endContainer);
+            if (startPath && endPath) {
+              snapshot.contentEditableRange = {
+                startPath,
+                startOffset: range.startOffset,
+                endPath,
+                endOffset: range.endOffset,
+              };
+              console.log("[CommandBar] captured contenteditable range", {
+                startPath,
+                endPath,
+                startOffset: range.startOffset,
+                endOffset: range.endOffset,
+              });
+            } else {
+              console.log(
+                "[CommandBar] failed to derive paths for contenteditable range"
+              );
+            }
+          } else {
+            console.log("[CommandBar] contenteditable range outside element, skip");
+          }
+        } else {
+          console.log("[CommandBar] contenteditable has no selection to capture");
+        }
+      } catch {
+        // ignore contenteditable selection capture failures
+      }
+    }
+
+    prevFocusSnapshotRef.current = snapshot;
+    console.log("[CommandBar] stored focus snapshot", {
+      tag: snapshot.element.tagName,
+      hasSelection: Boolean(snapshot.selection),
+      hasRange: Boolean(snapshot.contentEditableRange),
+    });
+  }, []);
 
   const closeCommand = useCallback(() => {
     skipNextCloseRef.current = false;
@@ -479,6 +584,28 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
 
   useEffect(() => {
     openRef.current = open;
+  }, [open]);
+
+  useEffect(() => {
+    console.log("[CommandBar] component mounted");
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      console.log("[CommandBar] palette visible");
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (open) {
+      document.body.dataset.cmuxCommandPaletteOpen = "true";
+    } else {
+      delete document.body.dataset.cmuxCommandPaletteOpen;
+    }
+    return () => {
+      delete document.body.dataset.cmuxCommandPaletteOpen;
+    };
   }, [open]);
 
   const createLocalWorkspace = useCallback(
@@ -829,6 +956,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     // In Electron, prefer global shortcut from main via cmux event.
     if (isElectron) {
       const off = window.cmux.on("shortcut:cmd-k", () => {
+        console.log("[CommandBar] Cmd+K detected via Electron shortcut");
         // Only handle Cmd+K (no shift/ctrl variations)
         setOpenedWithShift(false);
         setActivePage("root");
@@ -836,6 +964,9 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
           // About to CLOSE via toggle: normalize state like Esc path
           setSearch("");
           setOpenedWithShift(false);
+        }
+        if (!openRef.current) {
+          captureFocusBeforeOpen();
         }
         setOpen((cur) => !cur);
       });
@@ -855,6 +986,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
         !e.altKey &&
         !e.ctrlKey
       ) {
+        console.log("[CommandBar] Cmd+K detected via web shortcut");
         e.preventDefault();
         setActivePage("root");
         if (openRef.current) {
@@ -862,16 +994,14 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
           setSearch("");
         } else {
           setOpenedWithShift(false);
-          // Capture the currently focused element before opening (web only)
-          prevFocusedElRef.current =
-            document.activeElement as HTMLElement | null;
+          captureFocusBeforeOpen();
         }
         setOpen((cur) => !cur);
       }
     };
     document.addEventListener("keydown", down);
     return () => document.removeEventListener("keydown", down);
-  }, []);
+  }, [captureFocusBeforeOpen]);
 
   // Track and restore focus across open/close, including iframes/webviews.
   useEffect(() => {
@@ -880,30 +1010,127 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
       void window.cmux.ui.setCommandPaletteOpen(open);
     }
 
-    if (!open) {
-      if (isElectron && window.cmux?.ui?.restoreLastFocus) {
-        // Ask main to restore using stored info for this window
-        void window.cmux.ui.restoreLastFocus();
-      } else {
-        // Web-only fallback: restore previously focused element in same doc
-        const el = prevFocusedElRef.current;
-        if (el) {
-          const id = window.setTimeout(() => {
-            try {
-              el.focus({ preventScroll: true });
-              if ((el as HTMLIFrameElement).tagName === "IFRAME") {
-                try {
-                  (el as HTMLIFrameElement).contentWindow?.focus?.();
-                } catch {
-                  // ignore
-                }
+  if (!open) {
+    console.log("[CommandBar] palette closing; attempting to restore focus");
+      const snapshot = prevFocusSnapshotRef.current;
+      console.log("[CommandBar] current snapshot details", {
+        hasSnapshot: Boolean(snapshot),
+        tag: snapshot?.element?.tagName,
+        hasSelection: Boolean(snapshot?.selection),
+        hasRange: Boolean(snapshot?.contentEditableRange),
+      });
+    if (
+      isElectron &&
+      !snapshot?.contentEditableRange &&
+      window.cmux?.ui?.restoreLastFocus
+    ) {
+      console.log("[CommandBar] no contenteditable range; clearing snapshot");
+      prevFocusSnapshotRef.current = null;
+      console.log("[CommandBar] delegating focus restore to Electron");
+      void window.cmux.ui.restoreLastFocus();
+      } else if (snapshot) {
+        const { element, selection, contentEditableRange } = snapshot;
+        const id = window.setTimeout(() => {
+          try {
+            console.log("[CommandBar] restoring focus", {
+              tag: element.tagName,
+              isContentEditable: element.isContentEditable,
+              hasSelection: Boolean(selection),
+              hasRange: Boolean(contentEditableRange),
+            });
+            element.focus({ preventScroll: true });
+            if (
+              selection &&
+              (element instanceof HTMLInputElement ||
+                element instanceof HTMLTextAreaElement) &&
+              typeof element.setSelectionRange === "function"
+            ) {
+              try {
+                element.setSelectionRange(
+                  selection.start,
+                  selection.end,
+                  selection.direction
+                );
+              } catch {
+                console.warn("[CommandBar] failed to restore input selection");
               }
-            } catch {
-              // ignore
+            } else if (contentEditableRange && element.isContentEditable) {
+              try {
+                const selectionObj = window.getSelection();
+                if (selectionObj) {
+                  const startNode = resolveNodePath(
+                    element,
+                    contentEditableRange.startPath
+                  );
+                  const endNode = resolveNodePath(
+                    element,
+                    contentEditableRange.endPath
+                  );
+                  if (startNode && endNode) {
+                    const newRange = document.createRange();
+                    const clampOffset = (node: Node, offset: number) => {
+                      if (
+                        node.nodeType === Node.TEXT_NODE &&
+                        typeof node.textContent === "string"
+                      ) {
+                        return Math.min(Math.max(offset, 0), node.textContent.length);
+                      }
+                      if (node.childNodes.length > 0) {
+                        return Math.min(Math.max(offset, 0), node.childNodes.length);
+                      }
+                      return Math.max(offset, 0);
+                    };
+                    newRange.setStart(
+                      startNode,
+                      clampOffset(startNode, contentEditableRange.startOffset)
+                    );
+                    newRange.setEnd(
+                      endNode,
+                      clampOffset(endNode, contentEditableRange.endOffset)
+                    );
+                    selectionObj.removeAllRanges();
+                    selectionObj.addRange(newRange);
+                    console.log("[CommandBar] restored contenteditable range", {
+                      startPath: contentEditableRange.startPath,
+                      endPath: contentEditableRange.endPath,
+                      startOffset: newRange.startOffset,
+                      endOffset: newRange.endOffset,
+                    });
+                  } else {
+                    console.warn(
+                      "[CommandBar] failed to resolve nodes for contenteditable range",
+                      {
+                        startPath: contentEditableRange.startPath,
+                        endPath: contentEditableRange.endPath,
+                      }
+                    );
+                  }
+                }
+              } catch {
+                console.warn("[CommandBar] failed to restore contenteditable range");
+              }
+            } else if (element.tagName === "IFRAME") {
+              try {
+                (element as HTMLIFrameElement).contentWindow?.focus?.();
+              } catch {
+                // ignore iframe focus errors
+              }
             }
-          }, 0);
-          return () => window.clearTimeout(id);
-        }
+            if (prevFocusSnapshotRef.current === snapshot) {
+              prevFocusSnapshotRef.current = null;
+            }
+          } catch {
+            console.warn("[CommandBar] focus restore failed");
+          }
+        }, 0);
+        return () => {
+          window.clearTimeout(id);
+          if (prevFocusSnapshotRef.current === snapshot) {
+            prevFocusSnapshotRef.current = null;
+          }
+        };
+      } else {
+        console.log("[CommandBar] no focus snapshot available to restore");
       }
     }
     return undefined;
@@ -913,6 +1140,15 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     if (!open || !openedWithShift) return;
     setCommandValue("new-task");
   }, [open, openedWithShift]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (typeof window === "undefined") return;
+    const id = window.setTimeout(() => {
+      inputRef.current?.focus({ preventScroll: true });
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [open]);
 
   const handleHighlight = useCallback(
     async (value: string) => {
@@ -2104,6 +2340,11 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     ]
   );
 
+  useLayoutEffect(() => {
+    if (!open) return;
+    scrollCommandItemIntoView(commandValue);
+  }, [commandValue, open, scrollCommandItemIntoView]);
+
   useEffect(() => {
     if (!open) return;
     let availableValues: string[] = [];
@@ -2180,69 +2421,63 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     teamVisibleValues,
   ]);
 
-  if (!open) return null;
-
   return (
     <>
       <div
-        className="fixed inset-0 z-[var(--z-commandbar)]"
+        className={`fixed inset-0 z-[var(--z-commandbar)] ${
+          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+        aria-hidden={!open}
         onClick={closeCommand}
       />
-      <Command.Dialog
-        open={open}
-        value={commandValue}
-        shouldFilter={false}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) {
-            if (skipNextCloseRef.current) {
-              skipNextCloseRef.current = false;
-              return;
-            }
-            closeCommand();
-          } else {
-            setActivePage("root");
-            setOpen(true);
-          }
-        }}
-        onValueChange={(value) => {
-          setCommandValue(value || undefined);
-        }}
-        label="Command Menu"
-        title="Command Menu"
-        loop
-        className="fixed inset-x-0 top-[230px] z-[var(--z-commandbar)] flex items-start justify-center pointer-events-none"
-        onKeyDownCapture={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            e.stopPropagation();
-            handleEscape();
-          } else if (
-            e.key === "Backspace" &&
-            activePage !== "root" &&
-            search.length === 0 &&
-            inputRef.current &&
-            e.target === inputRef.current
-          ) {
-            e.preventDefault();
-            setActivePage("root");
-          }
-        }}
+      <div
+        className={`fixed inset-x-0 top-[230px] z-[var(--z-commandbar)] flex items-start justify-center pointer-events-none ${
+          open ? "opacity-100" : "opacity-0"
+        }`}
       >
-        <Dialog.Title className="sr-only">Command Menu</Dialog.Title>
-
-        <div className="w-full max-w-2xl h-[475px] bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-700 overflow-hidden pointer-events-auto flex flex-col">
-          <Command.Input
-            value={search}
-            onValueChange={setSearch}
-            placeholder="Type a command or search..."
-            ref={inputRef}
-            className="w-full px-4 py-3 text-sm bg-transparent border-b border-neutral-200 dark:border-neutral-700 outline-none placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
-          />
-          <CommandHighlightListener onHighlight={handleHighlight} />
-          <Command.List
-            ref={commandListRef}
-            className="flex-1 min-h-0 overflow-y-auto px-1 pb-2 flex flex-col gap-2 pt-1"
+        <div
+          className={`w-full max-w-2xl h-[475px] bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-700 overflow-hidden flex flex-col ${
+            open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          }`}
+        >
+          <Command
+            value={commandValue}
+            shouldFilter={false}
+            onValueChange={(value) => {
+              setCommandValue(value || undefined);
+            }}
+            label="Command Menu"
+            className="flex h-full flex-col"
+            onKeyDownCapture={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                handleEscape();
+              } else if (
+                e.key === "Backspace" &&
+                activePage !== "root" &&
+                search.length === 0 &&
+                inputRef.current &&
+                e.target === inputRef.current
+              ) {
+                e.preventDefault();
+                setActivePage("root");
+              }
+            }}
           >
+            <h2 className="sr-only">Command Menu</h2>
+            <Command.Input
+              value={search}
+              onValueChange={setSearch}
+              placeholder="Type a command or search..."
+              ref={inputRef}
+              className="w-full px-4 py-3 text-sm bg-transparent border-b border-neutral-200 dark:border-neutral-700 outline-none placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
+            />
+            <CommandHighlightListener onHighlight={handleHighlight} />
+            <Command.List
+              ref={commandListRef}
+              className="flex-1 min-h-0 overflow-y-auto px-1 pb-2 flex flex-col gap-2 pt-1"
+            >
             <Command.Empty className="py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
               {activePage === "teams"
                 ? "No matching teams."
@@ -2417,8 +2652,34 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
               </>
             ) : null}
           </Command.List>
-        </div>
-      </Command.Dialog>
-    </>
+        </Command>
+      </div>
+    </div>
+  </>
   );
 }
+const buildNodePath = (root: HTMLElement, target: Node | null): number[] | null => {
+  if (!target) return null;
+  const path: number[] = [];
+  let current: Node | null = target;
+  while (current && current !== root && current.parentNode) {
+    const parent = current.parentNode as Node | null;
+    if (!parent) return null;
+    const index = Array.prototype.indexOf.call(parent.childNodes, current);
+    if (index === -1) return null;
+    path.unshift(index);
+    current = parent;
+  }
+  return current === root ? path : null;
+};
+
+const resolveNodePath = (root: HTMLElement, path: number[]): Node | null => {
+  let current: Node | null = root;
+  for (const index of path) {
+    if (!current || !current.childNodes[index]) {
+      return null;
+    }
+    current = current.childNodes[index];
+  }
+  return current;
+};
