@@ -642,6 +642,17 @@ function DashboardComponent() {
     return selectedProject[0];
   }, [selectedProject, isEnvSelected]);
 
+  const selectedRepoInfo = useMemo(() => {
+    if (!selectedRepoFullName) return null;
+    for (const repos of Object.values(reposByOrg || {})) {
+      const match = repos.find((repo) => repo.fullName === selectedRepoFullName);
+      if (match) {
+        return match;
+      }
+    }
+    return null;
+  }, [selectedRepoFullName, reposByOrg]);
+
   const shouldShowCloudRepoOnboarding =
     !!selectedRepoFullName && isCloudMode && !isEnvSelected;
 
@@ -652,12 +663,15 @@ function DashboardComponent() {
             step: "select" as const,
             selectedRepos: [selectedRepoFullName],
             instanceId: undefined,
-            connectionLogin: undefined,
+            connectionLogin:
+              selectedRepoInfo?.org ??
+              selectedRepoInfo?.ownerLogin ??
+              undefined,
             repoSearch: undefined,
             snapshotId: undefined,
           })
         : undefined,
-    [selectedRepoFullName],
+    [selectedRepoFullName, selectedRepoInfo],
   );
 
   const handleStartEnvironmentSetup = useCallback(() => {
