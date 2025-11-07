@@ -508,20 +508,6 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                 <Server className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
                 <span className="select-none">Create environment</span>
               </Link>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setShowCustomRepoInput((prev) => !prev);
-                  setCustomRepoError(null);
-                }}
-                className="w-full px-2 h-8 flex items-center gap-2 text-[13.5px] text-neutral-800 dark:text-neutral-200 rounded-md hover:bg-neutral-50 dark:hover:bg-neutral-900"
-              >
-                <Link2 className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
-                <span className="select-none">
-                  {showCustomRepoInput ? "Hide custom URL" : "Add repos from link"}
-                </span>
-              </button>
               {env.NEXT_PUBLIC_GITHUB_APP_SLUG ? (
                 <button
                   type="button"
@@ -554,6 +540,20 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                   <span className="select-none">Add repos from GitHub</span>
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setShowCustomRepoInput((prev) => !prev);
+                  setCustomRepoError(null);
+                }}
+                className="w-full px-2 h-8 flex items-center gap-2 text-[13.5px] text-neutral-800 dark:text-neutral-200 rounded-md hover:bg-neutral-50 dark:hover:bg-neutral-900"
+              >
+                <Link2 className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
+                <span className="select-none">
+                  {showCustomRepoInput ? "Hide GitHub link menu" : "Add repos from link"}
+                </span>
+              </button>
               {showCustomRepoInput ? (
                 <div className="px-2 pb-2 pt-1">
                   <div className="flex gap-1">
@@ -609,7 +609,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                     </p>
                   ) : (
                     <p className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-1 px-1">
-                      Enter any GitHub repository URL or owner/repo
+                      Enter any GitHub repository link
                     </p>
                   )}
                 </div>
