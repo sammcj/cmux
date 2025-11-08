@@ -623,6 +623,20 @@ export type LocalWorkspaceConfigBody = {
     envVarsContent?: string;
 };
 
+export type CloudRepoConfigResponse = {
+    projectFullName: string;
+    maintenanceScript?: string;
+    envVarsContent: string;
+    updatedAt?: number;
+} | null;
+
+export type CloudRepoConfigBody = {
+    teamSlugOrId: string;
+    projectFullName: string;
+    maintenanceScript?: string;
+    envVarsContent?: string;
+};
+
 export type GetApiHealthData = {
     body?: never;
     path?: never;
@@ -2284,6 +2298,59 @@ export type PostApiLocalWorkspaceConfigsResponses = {
 };
 
 export type PostApiLocalWorkspaceConfigsResponse = PostApiLocalWorkspaceConfigsResponses[keyof PostApiLocalWorkspaceConfigsResponses];
+
+export type GetApiCloudRepoConfigsData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+        projectFullName: string;
+    };
+    url: '/api/cloud-repo-configs';
+};
+
+export type GetApiCloudRepoConfigsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiCloudRepoConfigsResponses = {
+    /**
+     * Configuration retrieved
+     */
+    200: CloudRepoConfigResponse;
+};
+
+export type GetApiCloudRepoConfigsResponse = GetApiCloudRepoConfigsResponses[keyof GetApiCloudRepoConfigsResponses];
+
+export type PostApiCloudRepoConfigsData = {
+    body: CloudRepoConfigBody;
+    path?: never;
+    query?: never;
+    url: '/api/cloud-repo-configs';
+};
+
+export type PostApiCloudRepoConfigsErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiCloudRepoConfigsResponses = {
+    /**
+     * Configuration saved
+     */
+    200: CloudRepoConfigResponse;
+};
+
+export type PostApiCloudRepoConfigsResponse = PostApiCloudRepoConfigsResponses[keyof PostApiCloudRepoConfigsResponses];
 
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});

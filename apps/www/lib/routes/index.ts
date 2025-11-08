@@ -20,3 +20,4 @@ export { usersRouter } from "./users.route";
 export { branchRouter } from "./branch.route";
 export { codeReviewRouter } from "./code-review.route";
 export { localWorkspaceConfigsRouter } from "./local-workspace-configs.route";
+export { cloudRepoConfigsRouter } from "./cloud-repo-configs.route";

@@ -10,6 +10,7 @@
 
 import type * as apiKeys from "../apiKeys.js";
 import type * as backfill from "../backfill.js";
+import type * as cloudRepoConfigs from "../cloudRepoConfigs.js";
 import type * as codeReview from "../codeReview.js";
 import type * as codeReviewActions from "../codeReviewActions.js";
 import type * as codeReview_http from "../codeReview_http.js";
@@ -68,6 +69,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   apiKeys: typeof apiKeys;
   backfill: typeof backfill;
+  cloudRepoConfigs: typeof cloudRepoConfigs;
   codeReview: typeof codeReview;
   codeReviewActions: typeof codeReviewActions;
   codeReview_http: typeof codeReview_http;
