@@ -68,6 +68,7 @@ export function LocalWorkspaceSetupPanel({
     const parsedEnvVars =
       envContent.trim().length > 0
         ? parseEnvBlock(envContent).map((row) => ({
+            id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
             name: row.name,
             value: row.value,
             isSecret: true,
@@ -94,7 +95,16 @@ export function LocalWorkspaceSetupPanel({
       setEnvVars((prev) => {
         const updated = updater(prev);
         // Always ensure at least 1 row exists
-        return updated.length === 0 ? [{ name: "", value: "", isSecret: true }] : updated;
+        return updated.length === 0
+          ? [
+              {
+                id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+                name: "",
+                value: "",
+                isSecret: true,
+              },
+            ]
+          : updated;
       });
     },
     [],
@@ -177,7 +187,9 @@ export function LocalWorkspaceSetupPanel({
         );
         for (const entry of entries) {
           if (!entry.name) continue;
+          const existing = map.get(entry.name);
           map.set(entry.name, {
+            id: existing?.id || `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
             name: entry.name,
             value: entry.value,
             isSecret: true,
@@ -276,7 +288,7 @@ export function LocalWorkspaceSetupPanel({
                   <div className="space-y-2.5">
                     {envVars.map((row, idx) => (
                       <div
-                        key={idx}
+                        key={row.id}
                         className="grid gap-3 items-center"
                         style={{
                           gridTemplateColumns: "1fr 1fr 36px",
@@ -334,7 +346,12 @@ export function LocalWorkspaceSetupPanel({
                       onClick={() =>
                         updateEnvVars((prev) => [
                           ...prev,
-                          { name: "", value: "", isSecret: true },
+                          {
+                            id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+                            name: "",
+                            value: "",
+                            isSecret: true,
+                          },
                         ])
                       }
                     >

@@ -49,6 +49,10 @@ import {
 import TextareaAutosize from "react-textarea-autosize";
 import { toast } from "sonner";
 
+const generateId = (): string => {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+};
+
 export function EnvironmentConfiguration({
   selectedRepos,
   teamSlugOrId,
@@ -793,6 +797,7 @@ export function EnvironmentConfiguration({
                           });
                         } else {
                           map.set(it.name, {
+                            id: generateId(),
                             name: it.name,
                             value: it.value,
                             isSecret: true,
@@ -800,7 +805,12 @@ export function EnvironmentConfiguration({
                         }
                       }
                       const next = Array.from(map.values());
-                      next.push({ name: "", value: "", isSecret: true });
+                      next.push({
+                        id: generateId(),
+                        name: "",
+                        value: "",
+                        isSecret: true,
+                      });
                       setPendingFocusIndex(next.length - 1);
                       return next;
                     });
@@ -822,7 +832,7 @@ export function EnvironmentConfiguration({
               <div className="space-y-2">
                 {envVars.map((row, idx) => (
                   <div
-                    key={idx}
+                    key={row.id}
                     className="grid gap-3 items-center"
                     style={{
                       gridTemplateColumns:
@@ -869,7 +879,14 @@ export function EnvironmentConfiguration({
                             const next = prev.filter((_, i) => i !== idx);
                             return next.length > 0
                               ? next
-                              : [{ name: "", value: "", isSecret: true }];
+                              : [
+                                  {
+                                    id: generateId(),
+                                    name: "",
+                                    value: "",
+                                    isSecret: true,
+                                  },
+                                ];
                           });
                         }}
                         className="h-10 w-[44px] rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 grid place-items-center hover:bg-neutral-50 dark:hover:bg-neutral-900"
@@ -888,7 +905,12 @@ export function EnvironmentConfiguration({
                   onClick={() =>
                     updateEnvVars((prev) => [
                       ...prev,
-                      { name: "", value: "", isSecret: true },
+                      {
+                        id: generateId(),
+                        name: "",
+                        value: "",
+                        isSecret: true,
+                      },
                     ])
                   }
                   className="inline-flex items-center gap-2 rounded-md border border-neutral-200 dark:border-neutral-800 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-900"
