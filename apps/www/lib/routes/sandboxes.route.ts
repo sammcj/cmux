@@ -166,32 +166,32 @@ sandboxesRouter.openapi(
         ? loadEnvironmentEnvVars(environmentDataVaultKey)
         : Promise.resolve<string | null>(null);
 
+      // Parse repo URL once if provided
+      const parsedRepoUrl = body.repoUrl ? parseGithubRepoUrl(body.repoUrl) : null;
+
       // Load workspace config if we're in cloud mode with a repository (not an environment)
       let workspaceConfig: { maintenanceScript?: string; envVarsContent?: string } | null = null;
-      if (body.repoUrl && !body.environmentId) {
-        const parsed = parseGithubRepoUrl(body.repoUrl);
-        if (parsed) {
-          try {
-            const config = await convex.query(api.workspaceConfigs.get, {
-              teamSlugOrId: body.teamSlugOrId,
-              projectFullName: parsed.fullName,
+      if (parsedRepoUrl && !body.environmentId) {
+        try {
+          const config = await convex.query(api.workspaceConfigs.get, {
+            teamSlugOrId: body.teamSlugOrId,
+            projectFullName: parsedRepoUrl.fullName,
+          });
+          if (config) {
+            const envVarsContent = config.dataVaultKey
+              ? await loadEnvironmentEnvVars(config.dataVaultKey)
+              : null;
+            workspaceConfig = {
+              maintenanceScript: config.maintenanceScript ?? undefined,
+              envVarsContent: envVarsContent ?? undefined,
+            };
+            console.log(`[sandboxes.start] Loaded workspace config for ${parsedRepoUrl.fullName}`, {
+              hasMaintenanceScript: Boolean(workspaceConfig.maintenanceScript),
+              hasEnvVars: Boolean(workspaceConfig.envVarsContent),
             });
-            if (config) {
-              const envVarsContent = config.dataVaultKey
-                ? await loadEnvironmentEnvVars(config.dataVaultKey)
-                : null;
-              workspaceConfig = {
-                maintenanceScript: config.maintenanceScript ?? undefined,
-                envVarsContent: envVarsContent ?? undefined,
-              };
-              console.log(`[sandboxes.start] Loaded workspace config for ${parsed.fullName}`, {
-                hasMaintenanceScript: Boolean(workspaceConfig.maintenanceScript),
-                hasEnvVars: Boolean(workspaceConfig.envVarsContent),
-              });
-            }
-          } catch (error) {
-            console.error(`[sandboxes.start] Failed to load workspace config for ${parsed.fullName}`, error);
           }
+        } catch (error) {
+          console.error(`[sandboxes.start] Failed to load workspace config for ${parsedRepoUrl.fullName}`, error);
         }
       }
 
@@ -309,18 +309,17 @@ sandboxesRouter.openapi(
       let repoConfig: HydrateRepoConfig | undefined;
       if (body.repoUrl) {
         console.log(`[sandboxes.start] Hydrating repo for ${instance.id}`);
-        const parsed = parseGithubRepoUrl(body.repoUrl);
-        if (!parsed) {
+        if (!parsedRepoUrl) {
           return c.text("Unsupported repo URL; expected GitHub URL", 400);
         }
-        console.log(`[sandboxes.start] Parsed owner/repo: ${parsed.fullName}`);
+        console.log(`[sandboxes.start] Parsed owner/repo: ${parsedRepoUrl.fullName}`);
 
         repoConfig = {
-          owner: parsed.owner,
-          name: parsed.repo,
-          repoFull: parsed.fullName,
-          cloneUrl: parsed.gitUrl,
-          maskedCloneUrl: parsed.gitUrl,
+          owner: parsedRepoUrl.owner,
+          name: parsedRepoUrl.repo,
+          repoFull: parsedRepoUrl.fullName,
+          cloneUrl: parsedRepoUrl.gitUrl,
+          maskedCloneUrl: parsedRepoUrl.gitUrl,
           depth: Math.max(1, Math.floor(body.depth ?? 1)),
           baseBranch: body.branch || "main",
           newBranch: body.newBranch ?? "",

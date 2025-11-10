@@ -1505,7 +1505,7 @@ function TaskRunDetails({
       >
         <div className="space-y-1.5">
           <p className="font-medium text-sm text-neutral-200">
-            Environment Issue
+            Scripts error
           </p>
           {environmentError?.maintenanceError && (
             <p className="text-xs text-neutral-400">

@@ -76,6 +76,19 @@ import {
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
+interface ExecError extends Error {
+  stderr?: string;
+  stdout?: string;
+}
+
+function isExecError(error: unknown): error is ExecError {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    ("stderr" in error || "stdout" in error)
+  );
+}
+
 const GitSocketDiffRequestSchema = z.object({
   headRef: z.string(),
   baseRef: z.string().optional(),
@@ -680,7 +693,7 @@ export function setupSocketHandlers(
             : undefined);
         const branch = requestedBranch?.trim();
 
-        let workspaceConfig: WorkspaceConfigResponse = null;
+        let workspaceConfig: WorkspaceConfigResponse | null = null;
         if (projectFullName) {
           try {
             const { getApiWorkspaceConfigs } =
@@ -853,20 +866,9 @@ export function setupSocketHandlers(
                   `[create-local-workspace] Maintenance script completed successfully for ${workspaceName}`
                 );
               } catch (error) {
-                const stderr =
-                  error &&
-                    typeof error === "object" &&
-                    "stderr" in error &&
-                    typeof (error as { stderr?: unknown }).stderr === "string"
-                    ? (error as { stderr?: string }).stderr?.trim() ?? ""
-                    : "";
-                const stdout =
-                  error &&
-                    typeof error === "object" &&
-                    "stdout" in error &&
-                    typeof (error as { stdout?: unknown }).stdout === "string"
-                    ? (error as { stdout?: string }).stdout?.trim() ?? ""
-                    : "";
+                const execErr = isExecError(error) ? error : null;
+                const stderr = execErr?.stderr?.trim() ?? "";
+                const stdout = execErr?.stdout?.trim() ?? "";
                 const baseMessage =
                   stderr ||
                   stdout ||
@@ -960,16 +962,10 @@ export function setupSocketHandlers(
               if (cleanupWorkspace) {
                 await cleanupWorkspace();
               }
+              const execErr = isExecError(error) ? error : null;
               const message =
-                error &&
-                  typeof error === "object" &&
-                  "stderr" in error &&
-                  typeof (error as { stderr?: unknown }).stderr === "string"
-                  ? (error as { stderr: string }).stderr.trim() ||
-                  (error instanceof Error ? error.message : "")
-                  : error instanceof Error
-                    ? error.message
-                    : "Git clone failed";
+                execErr?.stderr?.trim() ||
+                (error instanceof Error ? error.message : "Git clone failed");
               throw new Error(
                 message ? `Git clone failed: ${message}` : "Git clone failed"
               );
