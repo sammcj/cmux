@@ -6,7 +6,7 @@ import {
   postApiWorkspaceConfigsMutation,
 } from "@cmux/www-openapi-client/react-query";
 import { useQuery, useMutation as useRQMutation } from "@tanstack/react-query";
-import { AlertTriangle, Check, ChevronDown, ChevronRight, Minus, Plus } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Eye, EyeOff, Minus, Plus } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -43,6 +43,7 @@ export function WorkspaceSetupPanel({
   const [envVars, setEnvVars] = useState<EnvVar[]>(() =>
     ensureInitialEnvVars(),
   );
+  const [areEnvValuesHidden, setAreEnvValuesHidden] = useState(true);
 
   const originalConfigRef = useRef<{ script: string; envContent: string }>({
     script: "",
@@ -304,14 +305,41 @@ export function WorkspaceSetupPanel({
 
                 {/* Environment Variables Section */}
                 <div className="space-y-1 pt-1" onPasteCapture={handleEnvPaste}>
-                  <div className="flex flex-col gap-0.5">
-                    <p className="text-xs font-medium text-neutral-900 dark:text-neutral-100">
-                      Environment variables
-                    </p>
-                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                      Stored securely and injected when your setup script runs.
-                      Paste directly from .env files.
-                    </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-xs font-medium text-neutral-900 dark:text-neutral-100">
+                        Environment variables
+                      </p>
+                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                        Stored securely and injected when your setup script runs.
+                        Paste directly from .env files.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-2 py-1 text-[11px] font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                      onClick={() =>
+                        setAreEnvValuesHidden((previous) => !previous)
+                      }
+                      aria-pressed={!areEnvValuesHidden}
+                      aria-label={
+                        areEnvValuesHidden
+                          ? "Show environment variable values"
+                          : "Hide environment variable values"
+                      }
+                    >
+                      {areEnvValuesHidden ? (
+                        <>
+                          <EyeOff className="h-3 w-3" />
+                          Reveal
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="h-3 w-3" />
+                          Hide
+                        </>
+                      )}
+                    </button>
                   </div>
 
                   <div className="space-y-1.5">
@@ -359,7 +387,7 @@ export function WorkspaceSetupPanel({
                               });
                             }}
                             placeholder="secret-value"
-                            className="w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:border-neutral-600"
+                            className={`w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:border-neutral-600 transition ${areEnvValuesHidden ? "blur-sm" : ""}`}
                           />
                           <button
                             type="button"

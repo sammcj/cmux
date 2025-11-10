@@ -31,6 +31,8 @@ import type { PersistentIframeStatus } from "@/components/persistent-iframe";
 import {
   ArrowLeft,
   Code2,
+  Eye,
+  EyeOff,
   Loader2,
   Minus,
   Monitor,
@@ -109,6 +111,7 @@ export function EnvironmentConfiguration({
   const [envVars, setEnvVars] = useState<EnvVar[]>(() =>
     ensureInitialEnvVars(persistedState?.envVars ?? initialEnvVars)
   );
+  const [areEnvValuesHidden, setAreEnvValuesHidden] = useState(true);
   const [maintenanceScript, setMaintenanceScript] = useState(
     () => persistedState?.maintenanceScript ?? initialMaintenanceScript
   );
@@ -808,6 +811,33 @@ export function EnvironmentConfiguration({
                 }
               }}
             >
+              <div className="flex items-center justify-end pb-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAreEnvValuesHidden((previous) => !previous)
+                  }
+                  className="inline-flex items-center gap-1 rounded-md border border-neutral-200 dark:border-neutral-800 px-2.5 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors"
+                  aria-pressed={!areEnvValuesHidden}
+                  aria-label={
+                    areEnvValuesHidden
+                      ? "Show environment variable values"
+                      : "Hide environment variable values"
+                  }
+                >
+                  {areEnvValuesHidden ? (
+                    <>
+                      <EyeOff className="h-3.5 w-3.5" />
+                      Reveal values
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="h-3.5 w-3.5" />
+                      Hide values
+                    </>
+                  )}
+                </button>
+              </div>
               <div
                 className="grid gap-3 text-xs text-neutral-500 dark:text-neutral-500 items-center pb-1"
                 style={{
@@ -859,7 +889,10 @@ export function EnvironmentConfiguration({
                       placeholder="I9JU23NF394R6HH"
                       minRows={1}
                       maxRows={10}
-                      className="w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none"
+                      className={clsx(
+                        "w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none transition",
+                        areEnvValuesHidden && "blur-sm"
+                      )}
                     />
                     <div className="self-start flex items-center justify-end w-[44px]">
                       <button
