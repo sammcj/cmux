@@ -355,58 +355,64 @@ export function WorkspaceSetupPanel({
                     </div>
 
                     <div className="space-y-1.5">
-                      {envVars.map((row, idx) => (
-                        <div
-                          key={idx}
-                          className="grid gap-2 items-center"
-                          style={{
-                            gridTemplateColumns: "3fr 7fr 36px",
-                          }}
-                        >
-                          <input
-                            type="text"
-                            value={row.name}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              updateEnvVars((prev) => {
-                                const next = [...prev];
-                                next[idx] = { ...next[idx]!, name: value };
-                                return next;
-                              });
+                      {envVars.map((row, idx) => {
+                        const shouldMaskValue =
+                          areEnvValuesHidden && row.value.trim().length > 0;
+                        return (
+                          <div
+                            key={idx}
+                            className="grid gap-2 items-center"
+                            style={{
+                              gridTemplateColumns: "3fr 7fr 36px",
                             }}
-                            placeholder="EXAMPLE_KEY"
-                            className="w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:border-neutral-600"
-                          />
-                          <input
-                            type="text"
-                            value={areEnvValuesHidden ? MASKED_ENV_VALUE : row.value}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              updateEnvVars((prev) => {
-                                const next = [...prev];
-                                next[idx] = { ...next[idx]!, value };
-                                return next;
-                              });
-                            }}
-                            placeholder="secret-value"
-                            readOnly={areEnvValuesHidden}
-                            aria-readonly={areEnvValuesHidden || undefined}
-                            className="w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:border-neutral-600 transition"
-                          />
-                          <button
-                            type="button"
-                            className="inline-flex h-6 w-6 items-center justify-center text-neutral-400 transition-colors hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300"
-                            onClick={() =>
-                              updateEnvVars((prev) =>
-                                prev.filter((_, i) => i !== idx),
-                              )
-                            }
-                            aria-label="Remove variable"
                           >
-                            <Minus className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                            <input
+                              type="text"
+                              value={row.name}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                updateEnvVars((prev) => {
+                                  const next = [...prev];
+                                  next[idx] = { ...next[idx]!, name: value };
+                                  return next;
+                                });
+                              }}
+                              placeholder="EXAMPLE_KEY"
+                              className="w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:border-neutral-600"
+                            />
+                            <input
+                              type="text"
+                              value={
+                                shouldMaskValue ? MASKED_ENV_VALUE : row.value
+                              }
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                updateEnvVars((prev) => {
+                                  const next = [...prev];
+                                  next[idx] = { ...next[idx]!, value };
+                                  return next;
+                                });
+                              }}
+                              placeholder="secret-value"
+                              readOnly={shouldMaskValue}
+                              aria-readonly={shouldMaskValue || undefined}
+                              className="w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:border-neutral-600 transition"
+                            />
+                            <button
+                              type="button"
+                              className="inline-flex h-6 w-6 items-center justify-center text-neutral-400 transition-colors hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300"
+                              onClick={() =>
+                                updateEnvVars((prev) =>
+                                  prev.filter((_, i) => i !== idx),
+                                )
+                              }
+                              aria-label="Remove variable"
+                            >
+                              <Minus className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
