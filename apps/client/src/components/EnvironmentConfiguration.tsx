@@ -6,6 +6,7 @@ import { SCRIPT_COPY } from "@/components/scriptCopy";
 import { ResizableColumns } from "@/components/ResizableColumns";
 import { RenderPanel } from "@/components/TaskPanelFactory";
 import { parseEnvBlock } from "@/lib/parseEnvBlock";
+import type { PanelPosition, PanelType } from "@/lib/panel-config";
 import {
   TASK_RUN_IFRAME_ALLOW,
   TASK_RUN_IFRAME_SANDBOX,
@@ -50,6 +51,13 @@ import TextareaAutosize from "react-textarea-autosize";
 import { toast } from "sonner";
 
 type PreviewMode = "split" | "vscode" | "browser";
+type EnvPanelPosition = Extract<PanelPosition, "topLeft" | "bottomLeft">;
+type EnvPanelType = Extract<PanelType, "workspace" | "browser">;
+const ENV_PANEL_POSITIONS: EnvPanelPosition[] = ["topLeft", "bottomLeft"];
+const isEnvPanelPosition = (
+  position: PanelPosition | null
+): position is EnvPanelPosition =>
+  position === "topLeft" || position === "bottomLeft";
 
 export function EnvironmentConfiguration({
   selectedRepos,
@@ -193,6 +201,38 @@ export function EnvironmentConfiguration({
   });
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const splitDragRafRef = useRef<number | null>(null);
+  const [panelLayout, setPanelLayout] = useState<
+    Record<EnvPanelPosition, EnvPanelType>
+  >({
+    topLeft: "workspace",
+    bottomLeft: "browser",
+  });
+  const workspacePosition = useMemo<EnvPanelPosition | null>(() => {
+    return (
+      ENV_PANEL_POSITIONS.find(
+        (position) => panelLayout[position] === "workspace"
+      ) ?? null
+    );
+  }, [panelLayout]);
+  const browserPosition = useMemo<EnvPanelPosition | null>(() => {
+    return (
+      ENV_PANEL_POSITIONS.find(
+        (position) => panelLayout[position] === "browser"
+      ) ?? null
+    );
+  }, [panelLayout]);
+  const expandedPanelPosition = useMemo<PanelPosition | null>(() => {
+    if (previewMode === "split") {
+      return null;
+    }
+    if (previewMode === "vscode") {
+      return workspacePosition;
+    }
+    if (previewMode === "browser") {
+      return browserPosition;
+    }
+    return null;
+  }, [browserPosition, previewMode, workspacePosition]);
   const basePersistKey = useMemo(() => {
     if (instanceId) return `env-config:${instanceId}`;
     if (vscodeUrl) return `env-config:${vscodeUrl}`;
@@ -221,6 +261,62 @@ export function EnvironmentConfiguration({
       setPreviewMode("vscode");
     }
   }, [browserUrl, previewMode]);
+
+  const handlePanelSwap = useCallback(
+    (fromPosition: PanelPosition, toPosition: PanelPosition) => {
+      if (
+        !isEnvPanelPosition(fromPosition) ||
+        !isEnvPanelPosition(toPosition) ||
+        fromPosition === toPosition
+      ) {
+        return;
+      }
+      const fromKey = fromPosition;
+      const toKey = toPosition;
+      setPanelLayout((prev) => {
+        if (prev[fromKey] === prev[toKey]) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [fromKey]: prev[toKey],
+          [toKey]: prev[fromKey],
+        };
+      });
+    },
+    []
+  );
+
+  const handlePanelToggleExpand = useCallback(
+    (position: PanelPosition) => {
+      if (!isEnvPanelPosition(position)) {
+        return;
+      }
+      setPreviewMode((prev) => {
+        const targetType = panelLayout[position];
+        if (!targetType) {
+          return prev;
+        }
+        const currentlyExpanded =
+          prev === "vscode"
+            ? workspacePosition
+            : prev === "browser"
+              ? browserPosition
+              : null;
+        if (currentlyExpanded === position) {
+          return "split";
+        }
+        if (targetType === "workspace") {
+          return "vscode";
+        }
+        if (targetType === "browser") {
+          return "browser";
+        }
+        return prev;
+      });
+    },
+    [browserPosition, panelLayout, workspacePosition]
+  );
 
   const clampSplitRatio = useCallback(
     (value: number) => Math.min(Math.max(value, 0.2), 0.8),
@@ -574,50 +670,65 @@ export function EnvironmentConfiguration({
     [browserUrl, instanceId]
   );
 
-  const workspacePanel = (
-    <RenderPanel
-      key={`env-workspace-${vscodePersistKey}`}
-      type="workspace"
-      position="topLeft"
-      workspaceUrl={vscodeUrl ?? null}
-      workspacePersistKey={vscodePersistKey}
-      PersistentWebView={PersistentWebView}
-      WorkspaceLoadingIndicator={WorkspaceLoadingIndicator}
-      TASK_RUN_IFRAME_ALLOW={TASK_RUN_IFRAME_ALLOW}
-      TASK_RUN_IFRAME_SANDBOX={TASK_RUN_IFRAME_SANDBOX}
-      workspacePlaceholder={workspacePlaceholder}
-      editorLoadingFallback={
-        <WorkspaceLoadingIndicator variant="vscode" status="loading" />
-      }
-      editorErrorFallback={
-        <WorkspaceLoadingIndicator variant="vscode" status="error" />
-      }
-      isExpanded={previewMode === "vscode"}
-      isAnyPanelExpanded={previewMode !== "split"}
-    />
-  );
+  const renderEnvPanel = (position: EnvPanelPosition) => {
+    const type = panelLayout[position];
+    const commonPanelProps = {
+      position,
+      onSwap: handlePanelSwap,
+      onToggleExpand: handlePanelToggleExpand,
+      isExpanded: expandedPanelPosition === position,
+      isAnyPanelExpanded: expandedPanelPosition !== null,
+    };
 
-  const browserPanel = (
-    <RenderPanel
-      key={`env-browser-${browserPersistKey}`}
-      type="browser"
-      position="bottomLeft"
-      browserUrl={browserUrl ?? null}
-      browserPersistKey={browserPersistKey}
-      PersistentWebView={PersistentWebView}
-      WorkspaceLoadingIndicator={WorkspaceLoadingIndicator}
-      TASK_RUN_IFRAME_ALLOW={TASK_RUN_IFRAME_ALLOW}
-      TASK_RUN_IFRAME_SANDBOX={TASK_RUN_IFRAME_SANDBOX}
-      browserPlaceholder={browserPlaceholder}
-      isExpanded={previewMode === "browser"}
-      isAnyPanelExpanded={previewMode !== "split"}
-    />
-  );
+    if (type === "workspace") {
+      return (
+        <RenderPanel
+          key={`env-panel-${position}-workspace`}
+          type="workspace"
+          {...commonPanelProps}
+          workspaceUrl={vscodeUrl ?? null}
+          workspacePersistKey={vscodePersistKey}
+          PersistentWebView={PersistentWebView}
+          WorkspaceLoadingIndicator={WorkspaceLoadingIndicator}
+          TASK_RUN_IFRAME_ALLOW={TASK_RUN_IFRAME_ALLOW}
+          TASK_RUN_IFRAME_SANDBOX={TASK_RUN_IFRAME_SANDBOX}
+          workspacePlaceholder={workspacePlaceholder}
+          editorLoadingFallback={
+            <WorkspaceLoadingIndicator variant="vscode" status="loading" />
+          }
+          editorErrorFallback={
+            <WorkspaceLoadingIndicator variant="vscode" status="error" />
+          }
+          selectedRun={null}
+          rawWorkspaceUrl={null}
+        />
+      );
+    }
 
-  const workspacePanelNode = (
-    <div className="h-full min-h-0">{workspacePanel}</div>
-  );
-  const browserPanelNode = <div className="h-full min-h-0">{browserPanel}</div>;
+    return (
+      <RenderPanel
+        key={`env-panel-${position}-browser`}
+        type="browser"
+        {...commonPanelProps}
+        browserUrl={browserUrl ?? null}
+        browserPersistKey={browserPersistKey}
+        PersistentWebView={PersistentWebView}
+        WorkspaceLoadingIndicator={WorkspaceLoadingIndicator}
+        TASK_RUN_IFRAME_ALLOW={TASK_RUN_IFRAME_ALLOW}
+        TASK_RUN_IFRAME_SANDBOX={TASK_RUN_IFRAME_SANDBOX}
+        browserPlaceholder={browserPlaceholder}
+        selectedRun={null}
+        isMorphProvider={Boolean(instanceId)}
+      />
+    );
+  };
+
+  const activeSinglePosition: EnvPanelPosition = isEnvPanelPosition(
+    expandedPanelPosition
+  )
+    ? expandedPanelPosition
+    : "topLeft";
+
   const previewContent =
     previewMode === "split" ? (
       <div
@@ -630,7 +741,7 @@ export function EnvironmentConfiguration({
           gap: "8px",
         }}
       >
-        <div className="min-h-0">{workspacePanelNode}</div>
+        <div className="min-h-0 h-full">{renderEnvPanel("topLeft")}</div>
         <div
           role="separator"
           aria-label="Resize preview panels"
@@ -640,12 +751,10 @@ export function EnvironmentConfiguration({
         >
           <div className="h-1.5 w-16 rounded-full bg-neutral-200 transition-colors group-hover:bg-neutral-400 dark:bg-neutral-800 dark:group-hover:bg-neutral-500" />
         </div>
-        <div className="min-h-0">{browserPanelNode}</div>
+        <div className="min-h-0 h-full">{renderEnvPanel("bottomLeft")}</div>
       </div>
-    ) : previewMode === "browser" ? (
-      browserPanelNode
     ) : (
-      workspacePanelNode
+      <div className="h-full min-h-0">{renderEnvPanel(activeSinglePosition)}</div>
     );
 
   const previewButtonClass = useCallback(
