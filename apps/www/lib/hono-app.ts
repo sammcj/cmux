@@ -22,6 +22,8 @@ import {
   usersRouter,
   iframePreflightRouter,
   workspaceConfigsRouter,
+  previewRouter,
+  previewJobsRouter,
 } from "@/lib/routes/index";
 import { authAnonymousRouter } from "@/lib/routes/auth.anonymous.route";
 import { stackServerApp } from "@/lib/utils/stack";
@@ -122,6 +124,8 @@ app.route("/", teamsRouter);
 app.route("/", branchRouter);
 app.route("/", codeReviewRouter);
 app.route("/", workspaceConfigsRouter);
+app.route("/", previewRouter);
+app.route("/", previewJobsRouter);
 
 // OpenAPI documentation
 app.doc("/doc", {

@@ -514,6 +514,56 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
               });
             }
           }
+
+          const action = prPayload.action ?? "";
+          if (
+            ["opened", "reopened", "synchronize", "ready_for_review"].includes(
+              action,
+            )
+          ) {
+            const previewConfig = await _ctx.runQuery(
+              internal.previewConfigs.getByTeamAndRepo,
+              { teamId, repoFullName },
+            );
+
+            if (previewConfig) {
+              const prNumber = Number(prPayload.pull_request?.number ?? 0);
+              const prUrl = prPayload.pull_request?.html_url ?? null;
+              const headSha = prPayload.pull_request?.head?.sha ?? null;
+              const baseSha = prPayload.pull_request?.base?.sha ?? undefined;
+
+              if (prNumber && prUrl && headSha) {
+                try {
+                  const runId = await _ctx.runMutation(
+                    internal.previewRuns.enqueueFromWebhook,
+                    {
+                      previewConfigId: previewConfig._id,
+                      teamId,
+                      repoFullName,
+                      repoInstallationId: installation,
+                      providerConnectionId: previewConfig.providerConnectionId,
+                      prNumber,
+                      prUrl,
+                      headSha,
+                      baseSha,
+                    },
+                  );
+
+                  await _ctx.scheduler.runAfter(
+                    0,
+                    internal.preview_jobs.requestDispatch,
+                    { previewRunId: runId },
+                  );
+                } catch (error) {
+                  console.error("[preview-jobs] Failed to enqueue preview run", {
+                    repoFullName,
+                    prNumber,
+                    error,
+                  });
+                }
+              }
+            }
+          }
         } catch (err) {
           console.error("github_webhook pull_request handler failed", {
             err,
