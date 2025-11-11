@@ -41,9 +41,6 @@ const CATEGORY_META: Record<
   },
 };
 
-const READY_TO_REVIEW_STATUSES: ReadonlySet<Doc<"tasks">["mergeStatus"]> =
-  new Set(["pr_open", "pr_approved", "pr_changes_requested"]);
-
 const createEmptyCategoryBuckets = (): Record<
   TaskCategoryKey,
   Doc<"tasks">[]
@@ -61,7 +58,7 @@ const getTaskCategory = (task: Doc<"tasks">): TaskCategoryKey => {
   if (task.mergeStatus === "pr_merged") {
     return "merged";
   }
-  if (task.mergeStatus && READY_TO_REVIEW_STATUSES.has(task.mergeStatus)) {
+  if (task.crownEvaluationStatus === "succeeded") {
     return "ready_to_review";
   }
   return "in_progress";

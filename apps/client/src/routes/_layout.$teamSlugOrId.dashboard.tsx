@@ -985,7 +985,7 @@ function DashboardComponent() {
           </div>
 
           {/* Task List */}
-          <div className="mt-10 w-full">
+          <div className="w-full">
             <TaskList teamSlugOrId={teamSlugOrId} />
           </div>
         </div>

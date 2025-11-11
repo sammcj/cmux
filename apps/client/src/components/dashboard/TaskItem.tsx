@@ -27,6 +27,7 @@ import {
   Pin,
 } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
+import { EnvironmentName } from "./EnvironmentName";
 
 interface TaskItemProps {
   task: Doc<"tasks">;
@@ -66,6 +67,9 @@ export const TaskItem = memo(function TaskItem({
     api.taskRuns.getByTask,
     isFakeConvexId(task._id) ? "skip" : { teamSlugOrId, taskId: task._id }
   );
+
+  // Check if task has a crown based on crownEvaluationStatus
+  const hasCrown = task.crownEvaluationStatus === "succeeded";
 
   // Mutation for toggling keep-alive status
   const toggleKeepAlive = useMutation(api.taskRuns.toggleKeepAlive);
@@ -201,12 +205,10 @@ export const TaskItem = memo(function TaskItem({
             ) : (
               <div
                 className={clsx(
-                  "w-1.5 h-1.5 rounded-full flex-shrink-0",
-                  task.isCompleted
+                  "w-2 h-2 rounded-full flex-shrink-0",
+                  hasCrown
                     ? "bg-green-500"
-                    : isOptimisticUpdate
-                      ? "bg-yellow-500"
-                      : "bg-blue-500 animate-pulse"
+                    : "border border-neutral-400 dark:border-neutral-500 bg-transparent"
                 )}
               />
             )}
@@ -240,6 +242,12 @@ export const TaskItem = memo(function TaskItem({
                 <span className="text-[13px] font-medium truncate min-w-0">
                   {task.text}
                 </span>
+              )}
+              {task.environmentId && (
+                <EnvironmentName
+                  environmentId={task.environmentId}
+                  teamSlugOrId={teamSlugOrId}
+                />
               )}
               {(task.projectFullName ||
                 (task.baseBranch && task.baseBranch !== "main")) && (
