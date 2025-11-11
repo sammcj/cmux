@@ -12,7 +12,7 @@ import {
   useDeferredValue,
   useTransition,
 } from "react";
-import { useClipboard } from "@mantine/hooks";
+import { useClipboard, useLocalStorage } from "@mantine/hooks";
 import type {
   ReactElement,
   ReactNode,
@@ -53,6 +53,7 @@ import {
   type RenderToken,
 } from "react-diff-view";
 import "react-diff-view/style/index.css";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { api } from "@cmux/convex/api";
 import { useConvexQuery } from "@convex-dev/react-query";
@@ -203,6 +204,22 @@ const filenameLanguageMap: Record<string, string> = {
   "pnpm-lock.yaml": "yaml",
   "bun.lock": "toml",
 };
+
+const HEATMAP_MODEL_OPTIONS = [
+  {
+    value: "default",
+    label: "OpenAI GPT-5 (default)",
+    helper: "Balanced quality and latency.",
+  },
+  {
+    value: "ft0",
+    label: "Fine-tuned GPT-4.1 mini (experimental)",
+    helper: "SFT tuned for heatmap accuracy.",
+  },
+] as const;
+
+type HeatmapModelOptionValue =
+  (typeof HEATMAP_MODEL_OPTIONS)[number]["value"];
 
 type RefractorLike = {
   highlight(code: string, language: string): unknown;
@@ -539,12 +556,79 @@ export function PullRequestDiffViewer({
   pullRequestTitle,
   pullRequestUrl,
 }: PullRequestDiffViewerProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const normalizedJobType: "pull_request" | "comparison" =
     jobType ?? (comparisonSlug ? "comparison" : "pull_request");
+  const [heatmapModelPreference, setHeatmapModelPreference] =
+    useLocalStorage<HeatmapModelOptionValue>({
+      key: "cmux-heatmap-model",
+      defaultValue: "default",
+    });
+  const pendingModelPreferenceRef = useRef<HeatmapModelOptionValue | null>(
+    null
+  );
+  const urlModelValue: HeatmapModelOptionValue =
+    searchParams?.has("ft0") === true ? "ft0" : "default";
+  const isFineTunedModelSelected = heatmapModelPreference === "ft0";
 
   const [streamStateByFile, setStreamStateByFile] = useState<
     Map<string, StreamFileState>
   >(() => new Map());
+
+  useEffect(() => {
+    if (pendingModelPreferenceRef.current) {
+      if (urlModelValue === pendingModelPreferenceRef.current) {
+        pendingModelPreferenceRef.current = null;
+      }
+      return;
+    }
+    if (urlModelValue !== heatmapModelPreference) {
+      setHeatmapModelPreference(urlModelValue);
+    }
+  }, [
+    heatmapModelPreference,
+    setHeatmapModelPreference,
+    urlModelValue,
+  ]);
+
+  const handleHeatmapModelPreferenceChange = useCallback(
+    (value: HeatmapModelOptionValue) => {
+      if (value === heatmapModelPreference) {
+        return;
+      }
+      setHeatmapModelPreference(value);
+
+      const currentParams = new URLSearchParams(searchParams?.toString() ?? "");
+      const hasFt0 = currentParams.has("ft0");
+      const needsNavigation =
+        (value === "ft0" && !hasFt0) || (value === "default" && hasFt0);
+
+      if (needsNavigation) {
+        pendingModelPreferenceRef.current = value;
+        if (value === "ft0") {
+          currentParams.set("ft0", "1");
+        } else {
+          currentParams.delete("ft0");
+        }
+        const nextQuery = currentParams.toString();
+        const targetUrl =
+          nextQuery.length > 0 ? `${pathname}?${nextQuery}` : pathname;
+        router.replace(targetUrl);
+        router.refresh();
+      } else {
+        pendingModelPreferenceRef.current = null;
+      }
+    },
+    [
+      heatmapModelPreference,
+      pathname,
+      router,
+      searchParams,
+      setHeatmapModelPreference,
+    ]
+  );
 
   useEffect(() => {
     if (normalizedJobType !== "pull_request") {
@@ -563,6 +647,9 @@ export function PullRequestDiffViewer({
       repoFullName,
       prNumber: String(prNumber),
     });
+    if (isFineTunedModelSelected) {
+      params.set("ft0", "1");
+    }
 
     (async () => {
       try {
@@ -863,7 +950,13 @@ export function PullRequestDiffViewer({
     return () => {
       controller.abort();
     };
-  }, [normalizedJobType, prNumber, repoFullName, setStreamStateByFile]);
+  }, [
+    normalizedJobType,
+    prNumber,
+    repoFullName,
+    setStreamStateByFile,
+    isFineTunedModelSelected,
+  ]);
 
   const prQueryArgs = useMemo(
     () =>
@@ -2081,6 +2174,8 @@ export function PullRequestDiffViewer({
               onCopyStyles={handleCopyHeatmapConfig}
               onLoadConfig={handlePromptLoadColors}
               copyStatus={clipboard.copied}
+              selectedModel={heatmapModelPreference}
+              onModelChange={handleHeatmapModelPreferenceChange}
             />
             <CmuxPromoCard />
             {targetCount > 0 ? (
@@ -2382,6 +2477,8 @@ function HeatmapThresholdControl({
   onCopyStyles,
   onLoadConfig,
   copyStatus,
+  selectedModel,
+  onModelChange,
 }: {
   value: number;
   onChange: (next: number) => void;
@@ -2390,6 +2487,8 @@ function HeatmapThresholdControl({
   onCopyStyles: () => void;
   onLoadConfig: () => void;
   copyStatus: boolean;
+  selectedModel: HeatmapModelOptionValue;
+  onModelChange: (next: HeatmapModelOptionValue) => void;
 }) {
   const sliderId = useId();
   const descriptionId = `${sliderId}-description`;
@@ -2424,6 +2523,21 @@ function HeatmapThresholdControl({
       },
     [colors, onColorsChange]
   );
+
+  const handleModelSelectChange = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>) => {
+      const nextValue = event.target.value as HeatmapModelOptionValue;
+      onModelChange(nextValue);
+    },
+    [onModelChange]
+  );
+
+  const activeModelMeta = useMemo(() => {
+    return (
+      HEATMAP_MODEL_OPTIONS.find((option) => option.value === selectedModel) ??
+      HEATMAP_MODEL_OPTIONS[0]!
+    );
+  }, [selectedModel]);
 
   return (
     <div className="rounded border border-neutral-200 bg-white p-5 pt-4 text-sm text-neutral-700">
@@ -2504,6 +2618,35 @@ function HeatmapThresholdControl({
             Load config
           </button>
         </div>
+      </div>
+      <div className="mt-4 space-y-2">
+        <p className="text-xs font-semibold text-neutral-700">
+          Heatmap model
+        </p>
+        <p className="text-[11px] text-neutral-500">
+          Choose which model powers future runs (saved locally).
+        </p>
+        <div className="relative">
+          <select
+            value={selectedModel}
+            onChange={handleModelSelectChange}
+            aria-label="Heatmap model preference"
+            className="w-full appearance-none rounded border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-800 shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
+          >
+            {HEATMAP_MODEL_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500"
+            aria-hidden
+          />
+        </div>
+        <p className="text-[11px] text-neutral-500">
+          {activeModelMeta.helper}
+        </p>
       </div>
     </div>
   );
