@@ -19,10 +19,10 @@ import { useQuery as useConvexQuery, useMutation } from "convex/react";
 import {
   Archive,
   ArchiveRestore,
+  Box,
   Check,
   Copy,
   GitMerge,
-  Monitor,
   Pencil,
   Pin,
 } from "lucide-react";
@@ -190,7 +190,8 @@ export const TaskItem = memo(function TaskItem({
         <ContextMenu.Trigger>
           <div
             className={clsx(
-              "relative flex w-full items-center gap-2.5 pl-9 pr-3 py-2 cursor-default select-none",
+              "relative grid w-full items-center py-2 pr-3 cursor-default select-none",
+              "grid-cols-[24px_36px_1fr_120px_50px]",
               isOptimisticUpdate
                 ? "bg-white/50 dark:bg-neutral-900/30 animate-pulse"
                 : "bg-white dark:bg-neutral-900/50 hover:bg-neutral-50/90 dark:hover:bg-neutral-600/60",
@@ -198,21 +199,41 @@ export const TaskItem = memo(function TaskItem({
             )}
             onClick={handleClick}
           >
-            {task.mergeStatus === "pr_merged" ? (
-              <GitMerge className="w-3 h-3 text-purple-500 dark:text-purple-400 flex-shrink-0" />
-            ) : task.isCloudWorkspace || task.isLocalWorkspace ? (
-              <Monitor className="w-3 h-3 text-neutral-500 dark:text-neutral-400 flex-shrink-0" />
-            ) : (
-              <div
-                className={clsx(
-                  "w-2 h-2 rounded-full flex-shrink-0",
-                  hasCrown
-                    ? "bg-green-500"
-                    : "border border-neutral-400 dark:border-neutral-500 bg-transparent"
-                )}
+            <div className="flex items-center justify-center pl-1 -mr-2 relative">
+              <input
+                type="checkbox"
+                className="peer w-3 h-3 cursor-pointer border border-neutral-400 dark:border-neutral-500 rounded bg-white dark:bg-neutral-900 appearance-none checked:bg-neutral-500 checked:border-neutral-500 dark:checked:bg-neutral-400 dark:checked:border-neutral-400 invisible"
+                onClick={(e) => e.stopPropagation()}
+                onChange={() => {
+                  // TODO: Implement checkbox functionality
+                }}
               />
-            )}
-            <div className="flex-1 min-w-0 flex items-center gap-2">
+              <Check
+                className="absolute w-2.5 h-2.5 text-white pointer-events-none transition-opacity peer-checked:opacity-100 opacity-0"
+                style={{
+                  left: "57%",
+                  top: "50%",
+                  transform: "translate(-50%, -50%)",
+                }}
+              />
+            </div>
+            <div className="flex items-center justify-center">
+              {task.mergeStatus === "pr_merged" ? (
+                <GitMerge className="w-3.5 h-3.5 text-purple-500 dark:text-purple-400 flex-shrink-0" />
+              ) : task.isCloudWorkspace || task.isLocalWorkspace ? (
+                <Box className="w-3.5 h-3.5 text-neutral-500 dark:text-neutral-400 flex-shrink-0" />
+              ) : (
+                <div
+                  className={clsx(
+                    "w-2 h-2 rounded-full flex-shrink-0",
+                    hasCrown
+                      ? "bg-green-500"
+                      : "border border-neutral-400 dark:border-neutral-500 bg-transparent"
+                  )}
+                />
+              )}
+            </div>
+            <div className="min-w-0 flex items-center">
               {isRenaming ? (
                 <input
                   ref={renameInputRef}
@@ -243,6 +264,8 @@ export const TaskItem = memo(function TaskItem({
                   {task.text}
                 </span>
               )}
+            </div>
+            <div className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 text-right flex items-center justify-end gap-2">
               {task.environmentId && (
                 <EnvironmentName
                   environmentId={task.environmentId}
@@ -251,7 +274,7 @@ export const TaskItem = memo(function TaskItem({
               )}
               {(task.projectFullName ||
                 (task.baseBranch && task.baseBranch !== "main")) && (
-                <span className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 ml-auto mr-0">
+                <span>
                   {task.projectFullName && (
                     <span>{task.projectFullName.split("/")[1]}</span>
                   )}
@@ -265,33 +288,35 @@ export const TaskItem = memo(function TaskItem({
                 </span>
               )}
             </div>
-            {task.updatedAt &&
-              (() => {
-                const date = new Date(task.updatedAt);
-                const today = new Date();
-                const isToday =
-                  date.getDate() === today.getDate() &&
-                  date.getMonth() === today.getMonth() &&
-                  date.getFullYear() === today.getFullYear();
+            <div className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 tabular-nums text-right">
+              {task.updatedAt &&
+                (() => {
+                  const date = new Date(task.updatedAt);
+                  const today = new Date();
+                  const isToday =
+                    date.getDate() === today.getDate() &&
+                    date.getMonth() === today.getMonth() &&
+                    date.getFullYear() === today.getFullYear();
 
-                return (
-                  <span className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 ml-auto mr-0 tabular-nums min-w-[40px] text-right">
-                    {isToday
-                      ? date.toLocaleTimeString([], {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })
-                      : date.toLocaleDateString([], {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                  </span>
-                );
-              })()}
+                  return (
+                    <span>
+                      {isToday
+                        ? date.toLocaleTimeString([], {
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })
+                        : date.toLocaleDateString([], {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                    </span>
+                  );
+                })()}
+            </div>
           </div>
         </ContextMenu.Trigger>
         {renameError && (
-          <div className="mt-1 pl-9 pr-3 text-[11px] text-red-500 dark:text-red-400">
+          <div className="mt-1 pl-[76px] pr-3 text-[11px] text-red-500 dark:text-red-400">
             {renameError}
           </div>
         )}
