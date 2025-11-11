@@ -225,10 +225,10 @@ export const TaskItem = memo(function TaskItem({
               ) : (
                 <div
                   className={clsx(
-                    "w-2 h-2 rounded-full flex-shrink-0",
+                    "rounded-full flex-shrink-0",
                     hasCrown
-                      ? "bg-green-500"
-                      : "border border-neutral-400 dark:border-neutral-500 bg-transparent"
+                      ? "w-[8px] h-[8px] border border-transparent bg-green-500"
+                      : "w-[9.5px] h-[9.5px] border border-neutral-400 dark:border-neutral-500 bg-transparent"
                   )}
                 />
               )}
