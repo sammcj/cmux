@@ -31,6 +31,7 @@ import {
 import {
   TASK_RUN_IFRAME_ALLOW,
   TASK_RUN_IFRAME_SANDBOX,
+  preloadTaskRunBrowserIframe,
   preloadTaskRunIframes,
 } from "../lib/preloadTaskRunIframes";
 import {
@@ -42,7 +43,7 @@ import {
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery } from "convex/react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -126,6 +127,19 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
       const selectedRun = parsedRunId?.success
         ? (taskRunIndex.get(parsedRunId.data) ?? taskRuns[0])
         : taskRuns[0];
+
+      const rawBrowserUrl =
+        selectedRun?.vscode?.url ?? selectedRun?.vscode?.workspaceUrl ?? null;
+      if (selectedRun && rawBrowserUrl) {
+        const vncUrl = toMorphVncUrl(rawBrowserUrl);
+        if (vncUrl) {
+          void preloadTaskRunBrowserIframe(selectedRun._id, vncUrl).catch(
+            (error) => {
+              console.error("Failed to preload browser iframe", error);
+            }
+          );
+        }
+      }
 
       const rawWorkspaceUrl = selectedRun?.vscode?.workspaceUrl ?? null;
       if (!rawWorkspaceUrl) {
@@ -279,24 +293,18 @@ function TaskDetailPage() {
   const { taskId, teamSlugOrId } = Route.useParams();
   const search = Route.useSearch();
   const localServeWeb = useLocalVSCodeServeWebQuery();
-  const { data: task } = useSuspenseQuery(
-    convexQuery(api.tasks.getById, {
-      teamSlugOrId,
-      id: taskId,
-    })
-  );
-  const { data: taskRuns } = useSuspenseQuery(
-    convexQuery(api.taskRuns.getByTask, {
-      teamSlugOrId,
-      taskId,
-    })
-  );
-  const { data: crownEvaluation } = useSuspenseQuery(
-    convexQuery(api.crown.getCrownEvaluation, {
-      teamSlugOrId,
-      taskId,
-    })
-  );
+  const task = useQuery(api.tasks.getById, {
+    teamSlugOrId,
+    id: taskId,
+  });
+  const taskRuns = useQuery(api.taskRuns.getByTask, {
+    teamSlugOrId,
+    taskId,
+  });
+  const crownEvaluation = useQuery(api.crown.getCrownEvaluation, {
+    teamSlugOrId,
+    taskId,
+  });
 
   const [panelConfig, setPanelConfig] = useState<PanelConfig>(() =>
     loadPanelConfig()
