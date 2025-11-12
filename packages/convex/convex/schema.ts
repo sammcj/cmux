@@ -109,6 +109,7 @@ const convexSchema = defineSchema({
     userId: v.string(), // Link to user who created the task
     teamId: v.string(),
     environmentId: v.optional(v.id("environments")),
+    pinned: v.optional(v.boolean()),
     crownEvaluationStatus: v.optional(
       v.union(
         v.literal("pending"),
