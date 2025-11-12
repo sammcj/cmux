@@ -3,8 +3,8 @@ import { getTaskRunPreviewPersistKey } from "@/lib/persistent-webview-keys";
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery as useConvexQuery } from "convex/react";
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useQuery as useConvexQuery, useMutation } from "convex/react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import z from "zod";
 import { TaskRunTerminalSession } from "@/components/task-run-terminal-session";
 import { toMorphXtermBaseUrl } from "@/lib/toProxyWorkspaceUrl";
@@ -141,11 +141,58 @@ function PreviewPage() {
     teamSlugOrId,
     taskId,
   });
+  
+  const updatePreviewUrl = useMutation(api.taskRuns.updateCustomPreviewUrl).withOptimisticUpdate(
+    (localStore, args) => {
+      // Update all queries that might have this task run
+      const taskRunsQuery = localStore.getQuery(api.taskRuns.getByTask, {
+        teamSlugOrId: args.teamSlugOrId,
+        taskId,
+      });
+      
+      if (taskRunsQuery) {
+        localStore.setQuery(
+          api.taskRuns.getByTask,
+          { teamSlugOrId: args.teamSlugOrId, taskId },
+          taskRunsQuery.map((r) =>
+            r._id === args.runId
+              ? {
+                  ...r,
+                  customPreviews: (r.customPreviews || []).map((preview, i) =>
+                    i === args.index ? { ...preview, url: args.url } : preview
+                  ),
+                }
+              : r
+          )
+        );
+      }
+    }
+  );
 
   // Get the specific run
   const selectedRun = useMemo(() => {
     return taskRuns?.find((run) => run._id === runId);
   }, [runId, taskRuns]);
+  
+  // Check if this is a custom preview (not a port)
+  const isCustomPreview = useMemo(() => {
+    const index = Number.parseInt(previewId, 10);
+    return !Number.isNaN(index) && selectedRun?.customPreviews && index < selectedRun.customPreviews.length;
+  }, [previewId, selectedRun]);
+  
+  const handleUserNavigate = useCallback((url: string) => {
+    const index = Number.parseInt(previewId, 10);
+    if (!Number.isNaN(index) && isCustomPreview) {
+      void updatePreviewUrl({
+        teamSlugOrId,
+        runId,
+        index,
+        url,
+      }).catch((error) => {
+        console.error("Failed to update preview URL", error);
+      });
+    }
+  }, [previewId, isCustomPreview, updatePreviewUrl, teamSlugOrId, runId]);
 
   // Find the service URL - check if previewId is a port or custom preview
   const { previewUrl, displayUrl } = useMemo(() => {
@@ -280,6 +327,7 @@ function PreviewPage() {
             borderRadius={paneBorderRadius}
             terminalVisible={isTerminalVisible}
             onToggleTerminal={toggleTerminal}
+            onUserNavigate={handleUserNavigate}
             renderBelowAddressBar={() =>
               isTerminalVisible &&
               baseUrl &&

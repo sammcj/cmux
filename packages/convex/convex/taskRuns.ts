@@ -983,6 +983,39 @@ export const removeCustomPreview = authMutation({
   },
 });
 
+export const updateCustomPreviewUrl = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    runId: v.id("taskRuns"),
+    index: v.number(),
+    url: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const doc = await ctx.db.get(args.runId);
+    if (!doc || doc.teamId !== teamId || doc.userId !== userId) {
+      throw new Error("Task run not found or unauthorized");
+    }
+
+    const customPreviews = doc.customPreviews || [];
+    if (args.index < 0 || args.index >= customPreviews.length) {
+      throw new Error("Invalid preview index");
+    }
+
+    const updated = customPreviews.map((preview, i) =>
+      i === args.index
+        ? { ...preview, url: args.url }
+        : preview
+    );
+
+    await ctx.db.patch(args.runId, {
+      customPreviews: updated,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const listByTaskInternal = internalQuery({
   args: { taskId: v.id("tasks") },
   handler: async (ctx, args) => {
