@@ -3,6 +3,8 @@ import { TaskTreeSkeleton } from "@/components/TaskTreeSkeleton";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { isElectron } from "@/lib/electron";
 import { type Doc } from "@cmux/convex/dataModel";
+import { api } from "@cmux/convex/api";
+import { useQuery } from "convex/react";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { Home, Plus, Server, Settings } from "lucide-react";
@@ -80,6 +82,9 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
   });
 
   const { expandTaskIds } = useExpandTasks();
+
+  // Fetch pinned items
+  const pinnedData = useQuery(api.tasks.getPinned, { teamSlugOrId });
 
   useEffect(() => {
     localStorage.setItem("sidebarWidth", String(width));
@@ -268,6 +273,31 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
             ))}
           </ul>
 
+          {/* Pinned Items Section - only show if there are pinned items */}
+          {pinnedData && (pinnedData.tasks.length > 0 || pinnedData.taskRuns.length > 0) && (
+            <div className="mt-4 flex flex-col">
+              <SidebarSectionLink
+                to="/$teamSlugOrId/dashboard"
+                params={{ teamSlugOrId }}
+                exact={false}
+              >
+                Pinned
+              </SidebarSectionLink>
+              <div className="ml-2 pt-px">
+                <div className="space-y-px">
+                  {pinnedData.tasks.map((task) => (
+                    <TaskTree
+                      key={task._id}
+                      task={task}
+                      defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
+                      teamSlugOrId={teamSlugOrId}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mt-4 flex flex-col">
             <SidebarSectionLink
               to="/$teamSlugOrId/prs"
@@ -296,14 +326,16 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
               {tasks === undefined ? (
                 <TaskTreeSkeleton count={5} />
               ) : tasks && tasks.length > 0 ? (
-                tasks.map((task) => (
-                  <TaskTree
-                    key={task._id}
-                    task={task}
-                    defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
-                    teamSlugOrId={teamSlugOrId}
-                  />
-                ))
+                tasks
+                  .filter((task) => !task.pinned) // Filter out pinned tasks to avoid duplicates
+                  .map((task) => (
+                    <TaskTree
+                      key={task._id}
+                      task={task}
+                      defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
+                      teamSlugOrId={teamSlugOrId}
+                    />
+                  ))
               ) : (
                 <p className="pl-2 pr-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400 select-none">
                   No recent tasks

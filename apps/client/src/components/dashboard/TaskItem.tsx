@@ -25,6 +25,7 @@ import {
   GitMerge,
   Pencil,
   Pin,
+  PinOff,
 } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 import { EnvironmentName } from "./EnvironmentName";
@@ -72,6 +73,10 @@ export const TaskItem = memo(function TaskItem({
 
   // Mutation for toggling keep-alive status
   const toggleKeepAlive = useMutation(api.taskRuns.toggleKeepAlive);
+
+  // Mutations for pinning/unpinning tasks
+  const pinTask = useMutation(api.tasks.pin);
+  const unpinTask = useMutation(api.tasks.unpin);
 
   // Find the latest task run with a VSCode instance
   const getLatestVSCodeInstance = useCallback(() => {
@@ -188,6 +193,20 @@ export const TaskItem = memo(function TaskItem({
     },
     [unarchive, task._id]
   );
+
+  const handlePinFromMenu = useCallback(() => {
+    pinTask({
+      teamSlugOrId,
+      id: task._id,
+    });
+  }, [pinTask, teamSlugOrId, task._id]);
+
+  const handleUnpinFromMenu = useCallback(() => {
+    unpinTask({
+      teamSlugOrId,
+      id: task._id,
+    });
+  }, [unpinTask, teamSlugOrId, task._id]);
 
   return (
     <div className="relative group w-full">
@@ -347,6 +366,23 @@ export const TaskItem = memo(function TaskItem({
                   <span>Rename Task</span>
                 </ContextMenu.Item>
               ) : null}
+              {task.pinned ? (
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  onClick={handleUnpinFromMenu}
+                >
+                  <PinOff className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                  <span>Unpin Task</span>
+                </ContextMenu.Item>
+              ) : (
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  onClick={handlePinFromMenu}
+                >
+                  <Pin className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                  <span>Pin Task</span>
+                </ContextMenu.Item>
+              )}
               {task.isArchived ? (
                 <ContextMenu.Item
                   className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
