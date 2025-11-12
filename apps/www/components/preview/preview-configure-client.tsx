@@ -51,6 +51,66 @@ type PanelPosition = "topLeft" | "bottomLeft";
 type PanelType = "workspace" | "browser";
 type PreviewMode = "split" | "vscode" | "browser";
 
+function normalizeVncUrl(url: string): string | null {
+  try {
+    const target = new URL(url);
+    target.searchParams.set("autoconnect", "1");
+    target.searchParams.set("resize", "scale");
+    return target.toString();
+  } catch {
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}autoconnect=1&resize=scale`;
+  }
+}
+
+function resolveMorphHostId(
+  instanceId?: string,
+  workspaceUrl?: string
+): string | null {
+  if (instanceId && instanceId.trim().length > 0) {
+    return instanceId.trim().toLowerCase().replace(/_/g, "-");
+  }
+
+  if (!workspaceUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(workspaceUrl);
+    const directMatch = url.hostname.match(
+      /^port-\d+-(morphvm-[^.]+)\.http\.cloud\.morph\.so$/i
+    );
+    if (directMatch && directMatch[1]) {
+      return directMatch[1].toLowerCase();
+    }
+
+    const proxyMatch = url.hostname.match(
+      /^cmux-([^-]+)-[a-z0-9-]+-\d+\.cmux\.(?:app|dev|sh|local|localhost)$/i
+    );
+    if (proxyMatch && proxyMatch[1]) {
+      return `morphvm-${proxyMatch[1].toLowerCase()}`;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function deriveVncUrl(
+  instanceId?: string,
+  workspaceUrl?: string
+): string | null {
+  const morphHostId = resolveMorphHostId(instanceId, workspaceUrl);
+  if (!morphHostId) {
+    return null;
+  }
+
+  const hostname = `port-39380-${morphHostId}.http.cloud.morph.so`;
+  const baseUrl = `https://${hostname}/vnc.html`;
+  return normalizeVncUrl(baseUrl);
+}
+
 const PANEL_DRAG_START_EVENT = "cmux:panel-drag-start";
 const PANEL_DRAG_END_EVENT = "cmux:panel-drag-end";
 const PANEL_DRAGGING_CLASS = "cmux-panel-dragging";
@@ -517,12 +577,13 @@ function PreviewPanel({
           draggable
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
-          className="flex items-center gap-1.5 rounded px-1 py-0.5 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+          className={clsx(
+            "flex flex-1 items-center gap-1.5 cursor-move group transition-opacity",
+            isDraggingSelf && "opacity-60"
+          )}
         >
-          <GripVertical className="size-3.5" />
+          <GripVertical className="size-3.5 text-neutral-400 transition-colors group-hover:text-neutral-600 dark:text-neutral-500 dark:group-hover:text-neutral-300" />
           <span className="sr-only">Drag to reorder panels</span>
-        </div>
-        <div className="flex flex-1 items-center gap-1.5">
           <div className="flex size-5 items-center justify-center rounded-full text-neutral-700 dark:text-neutral-200">
             {icon}
           </div>
@@ -649,7 +710,14 @@ export function PreviewConfigureClient({
     return null;
   }, [browserPosition, previewMode, workspacePosition]);
 
-  const isBrowserAvailable = Boolean(instance?.vncUrl);
+  const resolvedVncUrl = useMemo(() => {
+    if (instance?.vncUrl) {
+      return normalizeVncUrl(instance.vncUrl) ?? instance.vncUrl;
+    }
+    return deriveVncUrl(instance?.instanceId, instance?.vscodeUrl);
+  }, [instance?.instanceId, instance?.vncUrl, instance?.vscodeUrl]);
+
+  const isBrowserAvailable = Boolean(resolvedVncUrl);
 
   const workspacePlaceholder = useMemo(
     () =>
@@ -668,7 +736,7 @@ export function PreviewConfigureClient({
 
   const browserPlaceholder = useMemo(
     () =>
-      instance?.vncUrl
+      resolvedVncUrl
         ? null
         : {
             title: instance?.instanceId
@@ -678,7 +746,7 @@ export function PreviewConfigureClient({
               ? "We'll embed the browser session as soon as the environment exposes it."
               : "Launch the workspace so the browser agent can stream the preview here.",
           },
-    [instance?.instanceId, instance?.vncUrl]
+    [instance?.instanceId, resolvedVncUrl]
   );
 
   const provisionVM = useCallback(async () => {
@@ -702,7 +770,16 @@ export function PreviewConfigureClient({
       }
 
       const data = (await response.json()) as SandboxInstance;
-      setInstance(data);
+      const normalizedFromResponse =
+        data.vncUrl && data.vncUrl.trim().length > 0
+          ? normalizeVncUrl(data.vncUrl) ?? data.vncUrl
+          : null;
+      const derived = normalizedFromResponse ?? deriveVncUrl(data.instanceId, data.vscodeUrl);
+
+      setInstance({
+        ...data,
+        vncUrl: derived ?? undefined,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to provision workspace";
       setErrorMessage(message);
@@ -784,10 +861,10 @@ export function PreviewConfigureClient({
   }, [previewMode]);
 
   useEffect(() => {
-    if (previewMode === "browser" && !instance?.vncUrl) {
+    if (previewMode === "browser" && !resolvedVncUrl) {
       setPreviewMode("vscode");
     }
-  }, [instance?.vncUrl, previewMode]);
+  }, [previewMode, resolvedVncUrl]);
 
 
   // Persist split ratio to localStorage
@@ -1216,12 +1293,8 @@ export function PreviewConfigureClient({
       }
     }
 
-    if (instance.vncUrl) {
-      // Add noVNC parameters for better viewing: autoconnect, view_only=false, resize=scale
-      const vncUrlWithParams = instance.vncUrl.includes('?')
-        ? `${instance.vncUrl}&autoconnect=true&resize=remote`
-        : `${instance.vncUrl}?autoconnect=true&resize=remote`;
-      iframeManager.getOrCreateIframe(browserPersistKey, vncUrlWithParams, true);
+    if (resolvedVncUrl) {
+      iframeManager.getOrCreateIframe(browserPersistKey, resolvedVncUrl, true);
       const target = document.querySelector(`[data-iframe-target="${browserPersistKey}"]`) as HTMLElement;
       if (target) {
         cleanupFunctions.push(iframeManager.mountIframe(browserPersistKey, target, true));
@@ -1234,6 +1307,7 @@ export function PreviewConfigureClient({
   }, [
     instance,
     vscodePersistKey,
+    resolvedVncUrl,
     browserPersistKey,
     panelLayout,
     previewMode,
@@ -1260,7 +1334,7 @@ export function PreviewConfigureClient({
     })();
 
     const browserVisible = (() => {
-      if (!instance?.vncUrl) {
+      if (!resolvedVncUrl) {
         return false;
       }
       if (previewMode === "split") {
@@ -1279,7 +1353,7 @@ export function PreviewConfigureClient({
     browserPosition,
     expandedPanelInSplit,
     iframeManager,
-    instance?.vncUrl,
+    resolvedVncUrl,
     instance?.vscodeUrl,
     previewMode,
     vscodePersistKey,
