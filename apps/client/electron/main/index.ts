@@ -94,7 +94,14 @@ let rendererLoaded = false;
 let pendingProtocolUrl: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 let previewReloadMenuItem: MenuItem | null = null;
+let previewBackMenuItem: MenuItem | null = null;
+let previewForwardMenuItem: MenuItem | null = null;
+let previewFocusAddressMenuItem: MenuItem | null = null;
 let previewReloadMenuVisible = false;
+let historyBackMenuItem: MenuItem | null = null;
+let historyForwardMenuItem: MenuItem | null = null;
+const previewWebContentsIds = new Set<number>();
+const altGrActivePreviewContents = new Set<number>();
 
 function getTimestamp(): string {
   return new Date().toISOString();
@@ -129,6 +136,55 @@ function writeRendererLogLine(
     `[${getTimestamp()}] [RENDERER] [${level.toUpperCase()}] ${line}\n`,
     LOG_ROTATION
   );
+}
+
+function getActiveBrowserWindow(): BrowserWindow | null {
+  const target =
+    BrowserWindow.getFocusedWindow() ??
+    mainWindow ??
+    BrowserWindow.getAllWindows()[0] ??
+    null;
+  if (!target || target.isDestroyed()) {
+    return null;
+  }
+  return target;
+}
+
+function updateHistoryMenuState(target?: BrowserWindow | null): void {
+  if (!historyBackMenuItem && !historyForwardMenuItem) return;
+  const focusableTarget =
+    target && !target.isDestroyed() && target.isFocused() ? target : null;
+  const window = focusableTarget ?? getActiveBrowserWindow();
+  const contents = window && !window.isDestroyed() ? window.webContents : null;
+  const canGoBack = Boolean(contents?.canGoBack?.());
+  const canGoForward = Boolean(contents?.canGoForward?.());
+  if (historyBackMenuItem) {
+    historyBackMenuItem.enabled = canGoBack;
+  }
+  if (historyForwardMenuItem) {
+    historyForwardMenuItem.enabled = canGoForward;
+  }
+}
+
+function navigateHistory(direction: "back" | "forward"): void {
+  const target = getActiveBrowserWindow();
+  if (!target) return;
+  const contents = target.webContents;
+  if (direction === "back") {
+    if (contents.canGoBack()) {
+      contents.goBack();
+    }
+  } else if (direction === "forward" && contents.canGoForward()) {
+    contents.goForward();
+  }
+  updateHistoryMenuState(target);
+}
+
+function getPreviewNavigationAccelerator(key: string): string {
+  if (process.platform === "darwin") {
+    return `Command+Control+${key}`;
+  }
+  return `Control+Alt+${key}`;
 }
 
 function setupConsoleFileMirrors(): void {
@@ -228,12 +284,8 @@ function sendShortcutToFocusedWindow(
   payload?: unknown
 ): boolean {
   try {
-    const target =
-      BrowserWindow.getFocusedWindow() ??
-      mainWindow ??
-      BrowserWindow.getAllWindows()[0] ??
-      null;
-    if (!target || target.isDestroyed()) {
+    const target = getActiveBrowserWindow();
+    if (!target) {
       return false;
     }
     target.webContents.send(`cmux:event:shortcut:${eventName}`, payload);
@@ -246,9 +298,15 @@ function sendShortcutToFocusedWindow(
 
 function setPreviewReloadMenuVisibility(visible: boolean): void {
   previewReloadMenuVisible = visible;
-  if (previewReloadMenuItem) {
-    previewReloadMenuItem.visible = visible;
-  }
+  const applyVisibility = (item: MenuItem | null) => {
+    if (item) {
+      item.visible = visible;
+    }
+  };
+  applyVisibility(previewReloadMenuItem);
+  applyVisibility(previewBackMenuItem);
+  applyVisibility(previewForwardMenuItem);
+  applyVisibility(previewFocusAddressMenuItem);
 }
 
 ipcMain.on("cmux:get-current-webcontents-id", (event) => {
@@ -687,6 +745,19 @@ function createWindow(): void {
   }
 }
 
+app.on("browser-window-created", (_event, window) => {
+  const updateForWindow = () => updateHistoryMenuState(window);
+  window.webContents.on("did-navigate", updateForWindow);
+  window.webContents.on("did-navigate-in-page", updateForWindow);
+  window.on("focus", updateForWindow);
+  window.on("closed", () => updateHistoryMenuState());
+  updateHistoryMenuState(window);
+});
+
+app.on("browser-window-focus", (_event, window) => {
+  updateHistoryMenuState(window);
+});
+
 app.on("login", (event, webContents, _request, authInfo, callback) => {
   if (!authInfo.isProxy) {
     return;
@@ -734,40 +805,63 @@ app.whenReady().then(async () => {
   // These fire before web content sees them, so they work even in WebContentsViews
   app.on("web-contents-created", (_event, contents) => {
     contents.on("before-input-event", (e, input) => {
+      if (!previewWebContentsIds.has(contents.id)) return;
+
+      const isMac = process.platform === "darwin";
+      if (!isMac) {
+        const isAltGrKey =
+          input.code === "AltRight" || input.key === "AltGraph";
+        if (isAltGrKey) {
+          if (input.type === "keyDown") {
+            altGrActivePreviewContents.add(contents.id);
+          } else if (input.type === "keyUp") {
+            altGrActivePreviewContents.delete(contents.id);
+          }
+        }
+      }
+
       if (input.type !== "keyDown") return;
 
       // Only handle preview shortcuts when preview is visible
       if (!previewReloadMenuVisible) return;
 
-      const isMac = process.platform === "darwin";
-      const modKey = isMac ? input.meta : input.control;
-      if (!modKey || input.alt || input.shift) return;
-
       const key = input.key.toLowerCase();
+      const primaryModifierActive = isMac
+        ? input.meta && !input.control && !input.alt && !input.shift
+        : input.control && !input.meta && !input.alt && !input.shift;
+      const isAltGrActive =
+        !isMac && altGrActivePreviewContents.has(contents.id);
+      const previewNavModifierActive = isMac
+        ? input.meta && input.control && !input.alt && !input.shift
+        : input.control &&
+          input.alt &&
+          !input.meta &&
+          !input.shift &&
+          !isAltGrActive;
 
-      // cmd+l: focus address bar
-      if (key === "l") {
+      // cmd+l / ctrl+l: focus address bar
+      if (primaryModifierActive && key === "l") {
         e.preventDefault();
         sendShortcutToFocusedWindow("preview-focus-address");
         return;
       }
 
-      // cmd+[: go back
-      if (input.key === "[") {
+      // cmd+ctrl+[: go back (mac) / ctrl+alt+[ (others)
+      if (previewNavModifierActive && input.key === "[") {
         e.preventDefault();
         sendShortcutToFocusedWindow("preview-back");
         return;
       }
 
-      // cmd+]: go forward
-      if (input.key === "]") {
+      // cmd+ctrl+]: go forward (mac) / ctrl+alt+] (others)
+      if (previewNavModifierActive && input.key === "]") {
         e.preventDefault();
         sendShortcutToFocusedWindow("preview-forward");
         return;
       }
 
-      // cmd+r: reload
-      if (key === "r") {
+      // cmd+r / ctrl+r: reload
+      if (primaryModifierActive && key === "r") {
         e.preventDefault();
         sendShortcutToFocusedWindow("preview-reload");
         return;
@@ -787,6 +881,14 @@ app.whenReady().then(async () => {
     },
     maxSuspendedEntries: resolveMaxSuspendedWebContents(),
     rendererBaseUrl,
+    onPreviewWebContentsChange: ({ webContentsId, present }) => {
+      if (present) {
+        previewWebContentsIds.add(webContentsId);
+      } else {
+        previewWebContentsIds.delete(webContentsId);
+        altGrActivePreviewContents.delete(webContentsId);
+      }
+    },
   });
 
   // Ensure macOS menu and About panel use "cmux" instead of package.json name
@@ -887,11 +989,6 @@ app.whenReady().then(async () => {
     } else {
       template.push({ label: "File", submenu: [{ role: "quit" }] });
     }
-    const resolveTargetWindow = () =>
-      BrowserWindow.getFocusedWindow() ??
-      mainWindow ??
-      BrowserWindow.getAllWindows()[0] ??
-      null;
     const viewMenu: MenuItemConstructorOptions = {
       label: "View",
       submenu: [
@@ -913,7 +1010,7 @@ app.whenReady().then(async () => {
           id: "cmux-preview-back",
           visible: previewReloadMenuVisible,
           label: "Back",
-          accelerator: "CommandOrControl+[",
+          accelerator: getPreviewNavigationAccelerator("["),
           click: () => {
             sendShortcutToFocusedWindow("preview-back");
           },
@@ -922,7 +1019,7 @@ app.whenReady().then(async () => {
           id: "cmux-preview-forward",
           visible: previewReloadMenuVisible,
           label: "Forward",
-          accelerator: "CommandOrControl+]",
+          accelerator: getPreviewNavigationAccelerator("]"),
           click: () => {
             sendShortcutToFocusedWindow("preview-forward");
           },
@@ -939,7 +1036,7 @@ app.whenReady().then(async () => {
         {
           label: "Reload Application",
           click: () => {
-            const target = resolveTargetWindow();
+            const target = getActiveBrowserWindow();
             target?.webContents.reload();
           },
         },
@@ -952,8 +1049,32 @@ app.whenReady().then(async () => {
         { role: "toggleDevTools" },
       ],
     };
+    const historyMenu: MenuItemConstructorOptions = {
+      label: "History",
+      submenu: [
+        {
+          id: "cmux-history-back",
+          label: "Back",
+          accelerator: "CommandOrControl+[",
+          enabled: false,
+          click: () => {
+            navigateHistory("back");
+          },
+        },
+        {
+          id: "cmux-history-forward",
+          label: "Forward",
+          accelerator: "CommandOrControl+]",
+          enabled: false,
+          click: () => {
+            navigateHistory("forward");
+          },
+        },
+      ],
+    };
     template.push(
       { role: "editMenu" },
+      historyMenu,
       {
         label: "Commands",
         submenu: [
@@ -962,7 +1083,7 @@ app.whenReady().then(async () => {
             accelerator: "CommandOrControl+K",
             click: () => {
               try {
-                const target = resolveTargetWindow();
+                const target = getActiveBrowserWindow();
                 keyDebug("menu-accelerator-cmdk", {
                   to: target?.webContents.id,
                 });
@@ -1021,8 +1142,19 @@ app.whenReady().then(async () => {
       ],
     });
     const menu = Menu.buildFromTemplate(template);
-    previewReloadMenuItem = menu.getMenuItemById("cmux-preview-reload") ?? null;
+    previewReloadMenuItem =
+      menu.getMenuItemById("cmux-preview-reload") ?? null;
+    previewBackMenuItem =
+      menu.getMenuItemById("cmux-preview-back") ?? null;
+    previewForwardMenuItem =
+      menu.getMenuItemById("cmux-preview-forward") ?? null;
+    previewFocusAddressMenuItem =
+      menu.getMenuItemById("cmux-preview-focus-address") ?? null;
+    historyBackMenuItem = menu.getMenuItemById("cmux-history-back") ?? null;
+    historyForwardMenuItem =
+      menu.getMenuItemById("cmux-history-forward") ?? null;
     setPreviewReloadMenuVisibility(previewReloadMenuVisible);
+    updateHistoryMenuState();
     Menu.setApplicationMenu(menu);
   } catch (e) {
     mainWarn("Failed to set application menu", e);
