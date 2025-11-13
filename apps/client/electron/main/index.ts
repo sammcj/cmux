@@ -101,6 +101,7 @@ let previewReloadMenuVisible = false;
 let historyBackMenuItem: MenuItem | null = null;
 let historyForwardMenuItem: MenuItem | null = null;
 const previewWebContentsIds = new Set<number>();
+const altGrActivePreviewContents = new Set<number>();
 
 function getTimestamp(): string {
   return new Date().toISOString();
@@ -178,7 +179,7 @@ function navigateHistory(direction: "back" | "forward"): void {
   updateHistoryMenuState(target);
 }
 
-function getPreviewAccelerator(key: string): string {
+function getPreviewNavigationAccelerator(key: string): string {
   if (process.platform === "darwin") {
     return `Command+Control+${key}`;
   }
@@ -804,43 +805,62 @@ app.whenReady().then(async () => {
   app.on("web-contents-created", (_event, contents) => {
     contents.on("before-input-event", (e, input) => {
       if (!previewWebContentsIds.has(contents.id)) return;
+
+      const isMac = process.platform === "darwin";
+      if (!isMac) {
+        const isAltGrKey =
+          input.code === "AltRight" || input.key === "AltGraph";
+        if (isAltGrKey) {
+          if (input.type === "keyDown") {
+            altGrActivePreviewContents.add(contents.id);
+          } else if (input.type === "keyUp") {
+            altGrActivePreviewContents.delete(contents.id);
+          }
+        }
+      }
+
       if (input.type !== "keyDown") return;
 
       // Only handle preview shortcuts when preview is visible
       if (!previewReloadMenuVisible) return;
 
-      const isMac = process.platform === "darwin";
-      // Preview shortcuts now require dual modifiers so Cmd+[ stays global.
-      const hasPreviewModifiers = isMac
-        ? input.meta && input.control && !input.alt && !input.shift
-        : input.control && input.alt && !input.meta && !input.shift;
-      if (!hasPreviewModifiers) return;
-
       const key = input.key.toLowerCase();
+      const primaryModifierActive = isMac
+        ? input.meta && !input.control && !input.alt && !input.shift
+        : input.control && !input.meta && !input.alt && !input.shift;
+      const isAltGrActive =
+        !isMac && altGrActivePreviewContents.has(contents.id);
+      const previewNavModifierActive = isMac
+        ? input.meta && input.control && !input.alt && !input.shift
+        : input.control &&
+          input.alt &&
+          !input.meta &&
+          !input.shift &&
+          !isAltGrActive;
 
-      // cmd+l: focus address bar
-      if (key === "l") {
+      // cmd+l / ctrl+l: focus address bar
+      if (primaryModifierActive && key === "l") {
         e.preventDefault();
         sendShortcutToFocusedWindow("preview-focus-address");
         return;
       }
 
-      // cmd+[: go back
-      if (input.key === "[") {
+      // cmd+ctrl+[: go back (mac) / ctrl+alt+[ (others)
+      if (previewNavModifierActive && input.key === "[") {
         e.preventDefault();
         sendShortcutToFocusedWindow("preview-back");
         return;
       }
 
-      // cmd+]: go forward
-      if (input.key === "]") {
+      // cmd+ctrl+]: go forward (mac) / ctrl+alt+] (others)
+      if (previewNavModifierActive && input.key === "]") {
         e.preventDefault();
         sendShortcutToFocusedWindow("preview-forward");
         return;
       }
 
-      // cmd+r: reload
-      if (key === "r") {
+      // cmd+r / ctrl+r: reload
+      if (primaryModifierActive && key === "r") {
         e.preventDefault();
         sendShortcutToFocusedWindow("preview-reload");
         return;
@@ -865,6 +885,7 @@ app.whenReady().then(async () => {
         previewWebContentsIds.add(webContentsId);
       } else {
         previewWebContentsIds.delete(webContentsId);
+        altGrActivePreviewContents.delete(webContentsId);
       }
     },
   });
@@ -974,7 +995,7 @@ app.whenReady().then(async () => {
           id: "cmux-preview-reload",
           visible: previewReloadMenuVisible,
           label: "Reload Preview",
-          accelerator: getPreviewAccelerator("R"),
+          accelerator: "CommandOrControl+R",
           click: () => {
             const dispatched = sendShortcutToFocusedWindow("preview-reload");
             if (!dispatched) {
@@ -988,7 +1009,7 @@ app.whenReady().then(async () => {
           id: "cmux-preview-back",
           visible: previewReloadMenuVisible,
           label: "Back",
-          accelerator: getPreviewAccelerator("["),
+          accelerator: getPreviewNavigationAccelerator("["),
           click: () => {
             sendShortcutToFocusedWindow("preview-back");
           },
@@ -997,7 +1018,7 @@ app.whenReady().then(async () => {
           id: "cmux-preview-forward",
           visible: previewReloadMenuVisible,
           label: "Forward",
-          accelerator: getPreviewAccelerator("]"),
+          accelerator: getPreviewNavigationAccelerator("]"),
           click: () => {
             sendShortcutToFocusedWindow("preview-forward");
           },
@@ -1006,7 +1027,7 @@ app.whenReady().then(async () => {
           id: "cmux-preview-focus-address",
           visible: previewReloadMenuVisible,
           label: "Focus Address Bar",
-          accelerator: getPreviewAccelerator("L"),
+          accelerator: "CommandOrControl+L",
           click: () => {
             sendShortcutToFocusedWindow("preview-focus-address");
           },
