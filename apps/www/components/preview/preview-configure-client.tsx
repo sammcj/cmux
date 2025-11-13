@@ -1316,7 +1316,9 @@ export function PreviewConfigureClient({
     const cleanupFunctions: Array<() => void> = [];
 
     if (instance.vscodeUrl) {
-      iframeManager.getOrCreateIframe(vscodePersistKey, `${instance.vscodeUrl}?folder=/root/workspace`);
+      const vscodeUrl = new URL(instance.vscodeUrl);
+      vscodeUrl.searchParams.set('folder', '/root/workspace');
+      iframeManager.getOrCreateIframe(vscodePersistKey, vscodeUrl.toString());
       const target = document.querySelector(`[data-iframe-target="${vscodePersistKey}"]`) as HTMLElement;
       if (target) {
         cleanupFunctions.push(iframeManager.mountIframe(vscodePersistKey, target));

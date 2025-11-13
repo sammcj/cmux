@@ -320,16 +320,24 @@ export async function runPreviewJob(
       throw new Error("Worker service not found on instance");
     }
 
+    const vscodeService = instance.networking?.http_services?.find(
+      (service: { port?: number }) => service.port === 39378,
+    );
+    const vscodeUrl = vscodeService?.url
+      ? `${vscodeService.url}?folder=/root/workspace`
+      : null;
+
     console.log("[preview-jobs] Worker service ready", {
       previewRunId,
       instanceId: instance.id,
+      vscodeUrl,
       workerUrl: workerService.url,
       workerHealthUrl: `${workerService.url}/health`,
       screenshotLogUrl: `${workerService.url.replace(':39377', ':39376')}/file?path=/root/.cmux/screenshot-collector/screenshot-collector.log`,
     });
 
     // Step 2: Fetch latest changes and checkout PR
-    // Preview environment snapshots have the repo pre-cloned under /root/workspace
+    // Preview environment snapshots have the repo pre-cloned at /root/workspace
     const repoSearchRoot = "/root/workspace";
 
     await ctx.runMutation(internal.previewRuns.updateStatus, {
