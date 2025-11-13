@@ -28,6 +28,10 @@ interface RegisterOptions {
   logger: Logger;
   maxSuspendedEntries?: number;
   rendererBaseUrl: string;
+  onPreviewWebContentsChange?: (payload: {
+    webContentsId: number;
+    present: boolean;
+  }) => void;
 }
 
 interface CreateOptions {
@@ -74,6 +78,7 @@ interface Entry {
   eventCleanup: Array<() => void>;
   previewProxyCleanup?: () => void;
   previewPartition?: string | null;
+  isPreview: boolean;
 }
 
 const viewEntries = new Map<number, Entry>();
@@ -85,6 +90,9 @@ const suspendedByKey = new Map<string, Entry>();
 let suspendedCount = 0;
 let maxSuspendedEntries = 25;
 let rendererBaseUrl = "";
+let previewWebContentsChangeHandler:
+  | ((payload: { webContentsId: number; present: boolean }) => void)
+  | null = null;
 
 const validDevToolsModes: ReadonlySet<ElectronDevToolsMode> = new Set([
   "bottom",
@@ -95,6 +103,23 @@ const validDevToolsModes: ReadonlySet<ElectronDevToolsMode> = new Set([
 
 function eventChannelFor(id: number): string {
   return `cmux:webcontents:event:${id}`;
+}
+
+function notifyPreviewWebContentsPresence(
+  entry: Entry,
+  present: boolean
+): void {
+  if (!entry.isPreview || !previewWebContentsChangeHandler) {
+    return;
+  }
+  try {
+    previewWebContentsChangeHandler({
+      webContentsId: entry.view.webContents.id,
+      present,
+    });
+  } catch (error) {
+    console.warn("Failed to notify preview WebContents change", error);
+  }
 }
 
 function buildErrorUrl(params: {
@@ -448,6 +473,7 @@ function suspendEntriesForDestroyedOwner(
 function destroyView(id: number): boolean {
   const entry = viewEntries.get(id);
   if (!entry) return false;
+  notifyPreviewWebContentsPresence(entry, false);
   entriesByWebContentsId.delete(entry.view.webContents.id);
   try {
     if (entry.previewProxyCleanup) {
@@ -587,9 +613,11 @@ export function registerWebContentsViewHandlers({
   logger,
   maxSuspendedEntries: providedMax,
   rendererBaseUrl: providedBaseUrl,
+  onPreviewWebContentsChange,
 }: RegisterOptions): void {
   setMaxSuspendedEntries(providedMax);
   rendererBaseUrl = providedBaseUrl;
+  previewWebContentsChangeHandler = onPreviewWebContentsChange ?? null;
 
   ipcMain.handle(
     "cmux:webcontents:create",
@@ -790,6 +818,7 @@ export function registerWebContentsViewHandlers({
         );
 
         const id = nextViewId++;
+        const isPreview = isTaskRunPreviewPersistKey(persistKey);
         const entry: Entry = {
           id,
           view,
@@ -803,11 +832,13 @@ export function registerWebContentsViewHandlers({
           eventCleanup: [],
           previewProxyCleanup,
           previewPartition,
+          isPreview,
         };
         viewEntries.set(id, entry);
         setupEventForwarders(entry, logger);
         entry.eventCleanup.push(disposeContextMenu);
         sendState(entry, logger, "created");
+        notifyPreviewWebContentsPresence(entry, true);
 
         if (!windowCleanupRegistered.has(win.id)) {
           windowCleanupRegistered.add(win.id);

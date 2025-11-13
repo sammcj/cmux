@@ -94,9 +94,13 @@ let rendererLoaded = false;
 let pendingProtocolUrl: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 let previewReloadMenuItem: MenuItem | null = null;
+let previewBackMenuItem: MenuItem | null = null;
+let previewForwardMenuItem: MenuItem | null = null;
+let previewFocusAddressMenuItem: MenuItem | null = null;
 let previewReloadMenuVisible = false;
 let historyBackMenuItem: MenuItem | null = null;
 let historyForwardMenuItem: MenuItem | null = null;
+const previewWebContentsIds = new Set<number>();
 
 function getTimestamp(): string {
   return new Date().toISOString();
@@ -172,6 +176,13 @@ function navigateHistory(direction: "back" | "forward"): void {
     contents.goForward();
   }
   updateHistoryMenuState(target);
+}
+
+function getPreviewAccelerator(key: string): string {
+  if (process.platform === "darwin") {
+    return `Command+Control+${key}`;
+  }
+  return `Control+Alt+${key}`;
 }
 
 function setupConsoleFileMirrors(): void {
@@ -285,9 +296,15 @@ function sendShortcutToFocusedWindow(
 
 function setPreviewReloadMenuVisibility(visible: boolean): void {
   previewReloadMenuVisible = visible;
-  if (previewReloadMenuItem) {
-    previewReloadMenuItem.visible = visible;
-  }
+  const applyVisibility = (item: MenuItem | null) => {
+    if (item) {
+      item.visible = visible;
+    }
+  };
+  applyVisibility(previewReloadMenuItem);
+  applyVisibility(previewBackMenuItem);
+  applyVisibility(previewForwardMenuItem);
+  applyVisibility(previewFocusAddressMenuItem);
 }
 
 ipcMain.on("cmux:get-current-webcontents-id", (event) => {
@@ -786,14 +803,18 @@ app.whenReady().then(async () => {
   // These fire before web content sees them, so they work even in WebContentsViews
   app.on("web-contents-created", (_event, contents) => {
     contents.on("before-input-event", (e, input) => {
+      if (!previewWebContentsIds.has(contents.id)) return;
       if (input.type !== "keyDown") return;
 
       // Only handle preview shortcuts when preview is visible
       if (!previewReloadMenuVisible) return;
 
       const isMac = process.platform === "darwin";
-      const modKey = isMac ? input.meta : input.control;
-      if (!modKey || input.alt || input.shift) return;
+      // Preview shortcuts now require dual modifiers so Cmd+[ stays global.
+      const hasPreviewModifiers = isMac
+        ? input.meta && input.control && !input.alt && !input.shift
+        : input.control && input.alt && !input.meta && !input.shift;
+      if (!hasPreviewModifiers) return;
 
       const key = input.key.toLowerCase();
 
@@ -839,6 +860,13 @@ app.whenReady().then(async () => {
     },
     maxSuspendedEntries: resolveMaxSuspendedWebContents(),
     rendererBaseUrl,
+    onPreviewWebContentsChange: ({ webContentsId, present }) => {
+      if (present) {
+        previewWebContentsIds.add(webContentsId);
+      } else {
+        previewWebContentsIds.delete(webContentsId);
+      }
+    },
   });
 
   // Ensure macOS menu and About panel use "cmux" instead of package.json name
@@ -946,7 +974,7 @@ app.whenReady().then(async () => {
           id: "cmux-preview-reload",
           visible: previewReloadMenuVisible,
           label: "Reload Preview",
-          accelerator: "CommandOrControl+R",
+          accelerator: getPreviewAccelerator("R"),
           click: () => {
             const dispatched = sendShortcutToFocusedWindow("preview-reload");
             if (!dispatched) {
@@ -960,7 +988,7 @@ app.whenReady().then(async () => {
           id: "cmux-preview-back",
           visible: previewReloadMenuVisible,
           label: "Back",
-          accelerator: "CommandOrControl+[",
+          accelerator: getPreviewAccelerator("["),
           click: () => {
             sendShortcutToFocusedWindow("preview-back");
           },
@@ -969,7 +997,7 @@ app.whenReady().then(async () => {
           id: "cmux-preview-forward",
           visible: previewReloadMenuVisible,
           label: "Forward",
-          accelerator: "CommandOrControl+]",
+          accelerator: getPreviewAccelerator("]"),
           click: () => {
             sendShortcutToFocusedWindow("preview-forward");
           },
@@ -978,7 +1006,7 @@ app.whenReady().then(async () => {
           id: "cmux-preview-focus-address",
           visible: previewReloadMenuVisible,
           label: "Focus Address Bar",
-          accelerator: "CommandOrControl+L",
+          accelerator: getPreviewAccelerator("L"),
           click: () => {
             sendShortcutToFocusedWindow("preview-focus-address");
           },
@@ -1094,6 +1122,12 @@ app.whenReady().then(async () => {
     const menu = Menu.buildFromTemplate(template);
     previewReloadMenuItem =
       menu.getMenuItemById("cmux-preview-reload") ?? null;
+    previewBackMenuItem =
+      menu.getMenuItemById("cmux-preview-back") ?? null;
+    previewForwardMenuItem =
+      menu.getMenuItemById("cmux-preview-forward") ?? null;
+    previewFocusAddressMenuItem =
+      menu.getMenuItemById("cmux-preview-focus-address") ?? null;
     historyBackMenuItem = menu.getMenuItemById("cmux-history-back") ?? null;
     historyForwardMenuItem =
       menu.getMenuItemById("cmux-history-forward") ?? null;
