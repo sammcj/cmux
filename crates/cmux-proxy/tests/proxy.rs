@@ -290,19 +290,11 @@ fn new_test_client() -> Client<HttpConnector, TestRequestBody> {
     Client::builder(TokioExecutor::new()).build(connector)
 }
 
-fn next_port() -> u16 {
-    std::net::TcpListener::bind(("127.0.0.1", 0))
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_http_proxy_routes_by_header() {
     let upstream_addr = start_upstream_http().await;
     let (proxy_addr, shutdown, handle) = start_proxy(
-        SocketAddr::from((Ipv4Addr::LOCALHOST, next_port())),
+        SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
         "127.0.0.1",
         false,
     )
@@ -364,7 +356,7 @@ async fn test_http_proxy_routes_by_header() {
 async fn test_wildcard_bind_accepts_localhost_clients() {
     let upstream_addr = start_upstream_http().await;
     let (proxy_addr, shutdown, handle) = start_proxy(
-        SocketAddr::from((Ipv4Addr::UNSPECIFIED, next_port())),
+        SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
         "127.0.0.1",
         false,
     )
@@ -394,7 +386,7 @@ async fn test_wildcard_bind_accepts_localhost_clients() {
 async fn test_websocket_proxy_upgrade() {
     let ws_addr = start_upstream_ws_like_upgrade_echo().await;
     let (proxy_addr, shutdown, handle) = start_proxy(
-        SocketAddr::from((Ipv4Addr::LOCALHOST, next_port())),
+        SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
         "127.0.0.1",
         false,
     )
@@ -443,7 +435,7 @@ async fn test_websocket_proxy_upgrade() {
 async fn test_connect_tcp_tunnel() {
     let (echo_addr, _echo_handle) = start_upstream_tcp_echo().await;
     let (proxy_addr, shutdown, handle) = start_proxy(
-        SocketAddr::from((Ipv4Addr::LOCALHOST, next_port())),
+        SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
         "127.0.0.1",
         false,
     )
@@ -500,7 +492,7 @@ async fn test_websocket_end_to_end_frames() {
     // Start real WebSocket upstream and proxy
     let (ws_addr, _ws_handle) = start_upstream_real_ws_echo().await;
     let (proxy_addr, shutdown, handle) = start_proxy(
-        SocketAddr::from((Ipv4Addr::LOCALHOST, next_port())),
+        SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
         "127.0.0.1",
         false,
     )
@@ -558,7 +550,7 @@ async fn test_websocket_ping_pong_forwarding() {
 
     let (ws_addr, _ws_handle) = start_upstream_real_ws_echo().await;
     let (proxy_addr, shutdown, handle) = start_proxy(
-        SocketAddr::from((Ipv4Addr::LOCALHOST, next_port())),
+        SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
         "127.0.0.1",
         false,
     )
@@ -600,7 +592,7 @@ async fn test_concurrent_websocket_connections() {
 
     let (ws_addr, ws_handle) = start_upstream_real_ws_echo_multi().await;
     let (proxy_addr, shutdown, handle) = start_proxy(
-        SocketAddr::from((Ipv4Addr::LOCALHOST, next_port())),
+        SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
         "127.0.0.1",
         false,
     )
@@ -658,7 +650,7 @@ async fn test_concurrent_websocket_connections() {
 async fn test_http2_clients_are_supported() {
     let upstream_addr = start_upstream_http().await;
     let (proxy_addr, shutdown, handle) = start_proxy(
-        SocketAddr::from((Ipv4Addr::LOCALHOST, next_port())),
+        SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
         "127.0.0.1",
         true,
     )
@@ -708,7 +700,7 @@ async fn test_http2_clients_are_supported() {
 async fn test_host_override_header_sets_host() {
     let upstream_addr = start_upstream_host_echo().await;
     let (proxy_addr, shutdown, handle) = start_proxy(
-        SocketAddr::from((Ipv4Addr::LOCALHOST, next_port())),
+        SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
         "127.0.0.1",
         true,
     )
