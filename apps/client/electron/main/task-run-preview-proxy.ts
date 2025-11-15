@@ -4,6 +4,7 @@ import http, {
   type ServerResponse,
 } from "node:http";
 import https from "node:https";
+import http2 from "node:http2";
 import net, { type Socket } from "node:net";
 import tls, { type TLSSocket } from "node:tls";
 import { randomBytes, createHash } from "node:crypto";
@@ -13,6 +14,23 @@ import { isLoopbackHostname } from "@cmux/shared";
 import type { Logger } from "./chrome-camouflage";
 
 type ProxyServer = http.Server;
+type ClientHttp2Session = http2.ClientHttp2Session;
+type ClientHttp2Stream = http2.ClientHttp2Stream;
+
+const CMUX_PROXY_PORT = 39379;
+const DEFAULT_MORPH_DOMAIN_SUFFIX = ".http.cloud.morph.so";
+const HTTP2_CANCEL_CODE = http2.constants.NGHTTP2_CANCEL;
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "proxy-connection",
+  "te",
+  "trailers",
+  "transfer-encoding",
+  "upgrade",
+]);
 
 const TASK_RUN_PREVIEW_PREFIX = "task-run-preview:";
 const DEFAULT_PROXY_LOGGING_ENABLED = false;
@@ -29,6 +47,7 @@ interface ProxyRoute {
   morphId: string;
   scope: string;
   domainSuffix: (typeof CMUX_DOMAINS)[number];
+  cmuxProxyOrigin?: string;
 }
 
 interface ProxyContext {
@@ -40,10 +59,17 @@ interface ProxyContext {
   persistKey?: string;
 }
 
+interface CmuxProxyMetadata {
+  hostOverride: string;
+  upstreamPort: number;
+  workspaceHeader: string | null;
+}
+
 interface ProxyTarget {
   url: URL;
   secure: boolean;
   connectPort: number;
+  cmuxProxy?: CmuxProxyMetadata;
 }
 
 interface ConfigureOptions {
@@ -58,6 +84,8 @@ let proxyPort: number | null = null;
 let proxyLogger: Logger | null = null;
 let startingProxy: Promise<number> | null = null;
 let proxyLoggingEnabled = DEFAULT_PROXY_LOGGING_ENABLED;
+const http2Sessions = new Map<string, ClientHttp2Session>();
+const pendingHttp2Sessions = new Map<string, Promise<ClientHttp2Session>>();
 
 export function setPreviewProxyLoggingEnabled(enabled: boolean): void {
   proxyLoggingEnabled = Boolean(enabled);
@@ -268,6 +296,86 @@ function attachServerHandlers(server: ProxyServer) {
   });
 }
 
+async function getHttp2SessionFor(target: ProxyTarget): Promise<ClientHttp2Session> {
+  const originKey = target.url.origin;
+  const existing = http2Sessions.get(originKey);
+  if (existing && !existing.closed && !existing.destroyed) {
+    return existing;
+  }
+  const pending = pendingHttp2Sessions.get(originKey);
+  if (pending) {
+    return pending;
+  }
+
+  const creating = createHttp2Session(target.url);
+  pendingHttp2Sessions.set(originKey, creating);
+  try {
+    const session = await creating;
+    http2Sessions.set(originKey, session);
+    monitorHttp2Session(originKey, session);
+    return session;
+  } finally {
+    pendingHttp2Sessions.delete(originKey);
+  }
+}
+
+function createHttp2Session(url: URL): Promise<ClientHttp2Session> {
+  return new Promise((resolve, reject) => {
+    const session = http2.connect(url.origin);
+    let settled = false;
+
+    const handleConnect = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      session.removeListener("error", handleError);
+      resolve(session);
+    };
+
+    const handleError = (error: Error) => {
+      if (settled) {
+        proxyLogger?.warn("HTTP/2 session error", {
+          origin: url.origin,
+          error,
+        });
+        return;
+      }
+      settled = true;
+      session.removeListener("connect", handleConnect);
+      session.destroy();
+      reject(error);
+    };
+
+    session.once("connect", handleConnect);
+    session.once("error", handleError);
+  });
+}
+
+function monitorHttp2Session(originKey: string, session: ClientHttp2Session) {
+  const handleTeardown = () => {
+    const existing = http2Sessions.get(originKey);
+    if (existing === session) {
+      http2Sessions.delete(originKey);
+    }
+  };
+
+  session.on("close", handleTeardown);
+  session.on("goaway", () => {
+    handleTeardown();
+    if (!session.closed && !session.destroyed) {
+      session.close();
+    }
+  });
+  session.on("error", (error) => {
+    proxyLogger?.warn("HTTP/2 session runtime error", {
+      origin: originKey,
+      error,
+    });
+    handleTeardown();
+  });
+}
+
 function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
   const context = authenticateRequest(req.headers);
   if (!context) {
@@ -295,7 +403,16 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
     rewrittenPort: rewritten.connectPort,
     persistKey: context.persistKey,
   });
-  forwardHttpRequest(req, res, rewritten, context);
+  void forwardHttpRequest(req, res, rewritten, context).catch((error) => {
+    proxyWarn("http-forward-error", {
+      error,
+      persistKey: context.persistKey,
+    });
+    if (!res.headersSent) {
+      res.writeHead(502);
+    }
+    res.end("Bad Gateway");
+  });
 }
 
 function handleConnect(req: IncomingMessage, socket: Socket, head: Buffer) {
@@ -327,6 +444,10 @@ function handleConnect(req: IncomingMessage, socket: Socket, head: Buffer) {
     rewrittenPort: rewritten.connectPort,
     persistKey: context.persistKey,
   });
+  if (rewritten.cmuxProxy) {
+    establishCmuxProxyConnect(socket, head, rewritten);
+    return;
+  }
   const upstream = net.connect(rewritten.connectPort, rewritten.url.hostname, () => {
     socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
     if (head.length > 0) {
@@ -444,17 +565,25 @@ function parseConnectTarget(
 }
 
 function rewriteTarget(url: URL, context: ProxyContext): ProxyTarget {
-  const rewritten = new URL(url.toString());
-  let secure = rewritten.protocol === "https:";
-
-  if (context.route && isLoopbackHostname(rewritten.hostname)) {
-    const requestedPort = determineRequestedPort(url);
+  const requestedPort = determineRequestedPort(url);
+  if (context.route && isLoopbackHostname(url.hostname)) {
+    const proxyTarget = buildCmuxProxyTarget(url, requestedPort, context.route);
+    if (proxyTarget) {
+      return proxyTarget;
+    }
+    const rewritten = new URL(url.toString());
     rewritten.protocol = "https:";
     rewritten.hostname = buildCmuxHost(context.route, requestedPort);
     rewritten.port = "";
-    secure = true;
+    return {
+      url: rewritten,
+      secure: true,
+      connectPort: 443,
+    };
   }
 
+  const rewritten = new URL(url.toString());
+  const secure = rewritten.protocol === "https:";
   const connectPort = Number.parseInt(rewritten.port, 10);
   const resolvedPort = Number.isNaN(connectPort)
     ? secure
@@ -467,6 +596,44 @@ function rewriteTarget(url: URL, context: ProxyContext): ProxyTarget {
     secure,
     connectPort: resolvedPort,
   };
+}
+
+function buildCmuxProxyTarget(
+  original: URL,
+  requestedPort: number,
+  route: ProxyRoute
+): ProxyTarget | null {
+  if (!route.cmuxProxyOrigin) {
+    return null;
+  }
+  try {
+    const rewritten = new URL(route.cmuxProxyOrigin);
+    rewritten.pathname = original.pathname;
+    rewritten.search = original.search;
+    rewritten.hash = "";
+    const connectPort = Number.parseInt(rewritten.port, 10);
+    const resolvedPort = Number.isNaN(connectPort)
+      ? rewritten.protocol === "https:"
+        ? 443
+        : 80
+      : connectPort;
+    const hostOverride = formatHostOverride(original.hostname, requestedPort);
+    const workspaceHeader =
+      route.scope && route.scope.toLowerCase() !== "base" ? route.scope : null;
+    return {
+      url: rewritten,
+      secure: rewritten.protocol === "https:",
+      connectPort: resolvedPort,
+      cmuxProxy: {
+        hostOverride,
+        upstreamPort: requestedPort,
+        workspaceHeader,
+      },
+    };
+  } catch (error) {
+    console.error("Failed to build cmux proxy target", error);
+    return null;
+  }
 }
 
 function determineRequestedPort(url: URL): number {
@@ -482,67 +649,211 @@ function determineRequestedPort(url: URL): number {
   return 80;
 }
 
+function formatHostOverride(hostname: string, port: number): string {
+  if (hostname.includes(":")) {
+    if (hostname.startsWith("[") && hostname.endsWith("]")) {
+      return `${hostname}:${port}`;
+    }
+    return `[${hostname}]:${port}`;
+  }
+  return `${hostname}:${port}`;
+}
+
 function buildCmuxHost(route: ProxyRoute, port: number): string {
   const safePort = Number.isFinite(port) && port > 0 ? Math.floor(port) : 80;
   return `cmux-${route.morphId}-${route.scope}-${safePort}.${route.domainSuffix}`;
 }
 
-function forwardHttpRequest(
+async function forwardHttpRequest(
   clientReq: IncomingMessage,
   clientRes: ServerResponse,
   target: ProxyTarget,
   context: ProxyContext
-) {
-  const { url, secure, connectPort } = target;
-  const requestHeaders: Record<string, string> = {};
-
-  for (const [key, value] of Object.entries(clientReq.headers)) {
-    if (!value) continue;
-    if (key.toLowerCase() === "proxy-authorization") continue;
-    if (Array.isArray(value)) {
-      requestHeaders[key] = value.join(", ");
-    } else {
-      requestHeaders[key] = value;
+): Promise<void> {
+  if (target.cmuxProxy) {
+    try {
+      await forwardHttpRequestViaHttp2(clientReq, clientRes, target);
+      return;
+    } catch (error) {
+      proxyWarn("http2-forward-failed", {
+        error,
+        persistKey: context.persistKey,
+        username: context.username,
+      });
+      if (clientRes.writableEnded) {
+        return;
+      }
     }
   }
-  requestHeaders.host = url.host;
+  await forwardHttpRequestViaHttp1(clientReq, clientRes, target, context);
+}
 
-  const requestOptions = {
-    protocol: secure ? "https:" : "http:",
-    hostname: url.hostname,
-    port: connectPort,
-    method: clientReq.method,
-    path: url.pathname + url.search,
-    headers: requestHeaders,
-  };
+function forwardHttpRequestViaHttp1(
+  clientReq: IncomingMessage,
+  clientRes: ServerResponse,
+  target: ProxyTarget,
+  context: ProxyContext
+): Promise<void> {
+  return new Promise((resolve) => {
+    const { url, secure, connectPort } = target;
+    const requestHeaders: Record<string, string> = {};
 
-  const httpModule = secure ? https : http;
-  const proxyReq = httpModule.request(requestOptions, (proxyRes) => {
-    clientRes.writeHead(
-      proxyRes.statusCode ?? 500,
-      proxyRes.statusMessage ?? "",
-      proxyRes.headers
-    );
-    proxyRes.pipe(clientRes);
-  });
-
-  proxyReq.on("error", (error) => {
-    proxyWarn("http-upstream-error", {
-      error,
-      persistKey: context.persistKey,
-      username: context.username,
-      host: url.hostname,
-    });
-    if (!clientRes.headersSent) {
-      clientRes.writeHead(502);
+    for (const [key, value] of Object.entries(clientReq.headers)) {
+      if (!value) continue;
+      if (key.toLowerCase() === "proxy-authorization") continue;
+      if (Array.isArray(value)) {
+        requestHeaders[key] = value.join(", ");
+      } else {
+        requestHeaders[key] = value;
+      }
     }
-    clientRes.end("Bad Gateway");
-  });
+    requestHeaders.host = url.host;
+    injectCmuxProxyHeaders(requestHeaders, target.cmuxProxy);
 
-  clientReq.pipe(proxyReq);
-  clientReq.on("aborted", () => {
-    proxyReq.destroy();
+    const requestOptions = {
+      protocol: secure ? "https:" : "http:",
+      hostname: url.hostname,
+      port: connectPort,
+      method: clientReq.method,
+      path: url.pathname + url.search,
+      headers: requestHeaders,
+    };
+
+    const httpModule = secure ? https : http;
+    const proxyReq = httpModule.request(requestOptions, (proxyRes) => {
+      if (!clientRes.headersSent) {
+        clientRes.writeHead(
+          proxyRes.statusCode ?? 500,
+          proxyRes.statusMessage ?? "",
+          proxyRes.headers
+        );
+      }
+      proxyRes.pipe(clientRes);
+      proxyRes.on("end", resolve);
+    });
+
+    proxyReq.on("error", (error) => {
+      proxyWarn("http-upstream-error", {
+        error,
+        persistKey: context.persistKey,
+        username: context.username,
+        host: url.hostname,
+      });
+      if (!clientRes.headersSent) {
+        clientRes.writeHead(502);
+      }
+      clientRes.end("Bad Gateway");
+      resolve();
+    });
+
+    clientReq.pipe(proxyReq);
+    clientReq.on("aborted", () => {
+      proxyReq.destroy();
+      resolve();
+    });
   });
+}
+
+async function forwardHttpRequestViaHttp2(
+  clientReq: IncomingMessage,
+  clientRes: ServerResponse,
+  target: ProxyTarget
+): Promise<void> {
+  const session = await getHttp2SessionFor(target);
+  const headers = buildHttp2Headers(clientReq.headers, target);
+  headers[":method"] = clientReq.method ?? "GET";
+  headers[":path"] = `${target.url.pathname}${target.url.search}`;
+  headers[":scheme"] = target.url.protocol.replace(":", "");
+  headers[":authority"] = target.url.host;
+
+  await new Promise<void>((resolve, reject) => {
+    const upstreamReq: ClientHttp2Stream = session.request(headers);
+
+    upstreamReq.on("response", (upstreamHeaders) => {
+      const status = Number(upstreamHeaders[":status"] ?? 502);
+      const responseHeaders: Record<string, string | string[]> = {};
+      for (const [name, value] of Object.entries(upstreamHeaders)) {
+        if (name.startsWith(":")) continue;
+        if (Array.isArray(value)) {
+          responseHeaders[name] = value.map((entry) => entry?.toString() ?? "");
+        } else if (typeof value === "string") {
+          responseHeaders[name] = value;
+        } else if (typeof value === "number") {
+          responseHeaders[name] = String(value);
+        }
+      }
+      if (!clientRes.headersSent) {
+        clientRes.writeHead(status, responseHeaders);
+      }
+    });
+
+    upstreamReq.on("data", (chunk) => {
+      if (!clientRes.writableEnded) {
+        clientRes.write(chunk);
+      }
+    });
+
+    upstreamReq.on("end", () => {
+      if (!clientRes.writableEnded) {
+        clientRes.end();
+      }
+      resolve();
+    });
+
+    upstreamReq.on("error", (error) => {
+      if (!clientRes.headersSent) {
+        clientRes.writeHead(502);
+        clientRes.end("Bad Gateway");
+      } else if (!clientRes.writableEnded) {
+        clientRes.end();
+      }
+      upstreamReq.close(HTTP2_CANCEL_CODE);
+      reject(error);
+    });
+
+    clientReq.pipe(upstreamReq);
+    clientReq.on("aborted", () => {
+      upstreamReq.close(HTTP2_CANCEL_CODE);
+    });
+  });
+}
+
+function buildHttp2Headers(
+  source: IncomingHttpHeaders,
+  target: ProxyTarget
+): http2.OutgoingHttpHeaders {
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (!value) continue;
+    const lowerKey = key.toLowerCase();
+    if (lowerKey === "proxy-authorization") continue;
+    if (HOP_BY_HOP_HEADERS.has(lowerKey)) continue;
+    if (Array.isArray(value)) {
+      headers[lowerKey] = value.join(", ");
+    } else {
+      headers[lowerKey] = value;
+    }
+  }
+  headers.host = target.url.host;
+  injectCmuxProxyHeaders(headers, target.cmuxProxy);
+  return headers;
+}
+
+function injectCmuxProxyHeaders(
+  headers: Record<string, string>,
+  cmuxProxy: CmuxProxyMetadata | undefined
+) {
+  delete headers["x-cmux-port-internal"];
+  delete headers["x-cmux-host-override"];
+  delete headers["x-cmux-workspace-internal"];
+  if (!cmuxProxy) {
+    return;
+  }
+  headers["x-cmux-port-internal"] = String(cmuxProxy.upstreamPort);
+  headers["x-cmux-host-override"] = cmuxProxy.hostOverride;
+  if (cmuxProxy.workspaceHeader) {
+    headers["x-cmux-workspace-internal"] = cmuxProxy.workspaceHeader;
+  }
 }
 
 function forwardUpgradeRequest(
@@ -551,23 +862,19 @@ function forwardUpgradeRequest(
   head: Buffer,
   target: ProxyTarget
 ) {
-  const { url, secure, connectPort } = target;
-  const upstream: Socket | TLSSocket = secure
-    ? tls.connect({
-        host: url.hostname,
-        port: connectPort,
-        servername: url.hostname,
-      })
-    : net.connect(connectPort, url.hostname);
+  const { url } = target;
+  const upstream = createUpstreamSocket(target);
 
   const handleConnected = () => {
     const headers: Record<string, string> = {};
     for (const [key, value] of Object.entries(clientReq.headers)) {
       if (!value) continue;
       if (key.toLowerCase() === "proxy-authorization") continue;
-      headers[key] = Array.isArray(value) ? value.join(", ") : value;
+      const lowerKey = key.toLowerCase();
+      headers[lowerKey] = Array.isArray(value) ? value.join(", ") : value;
     }
     headers.host = url.host;
+    injectCmuxProxyHeaders(headers, target.cmuxProxy);
 
     const lines = [
       `${clientReq.method ?? "GET"} ${url.pathname}${url.search} HTTP/1.1`,
@@ -585,7 +892,7 @@ function forwardUpgradeRequest(
     socket.pipe(upstream);
   };
 
-  if (secure && upstream instanceof tls.TLSSocket) {
+  if (target.secure && upstream instanceof tls.TLSSocket) {
     upstream.once("secureConnect", handleConnected);
   } else {
     upstream.once("connect", handleConnected);
@@ -595,7 +902,7 @@ function forwardUpgradeRequest(
     proxyWarn("upgrade-upstream-error", {
       error,
       host: url.hostname,
-      port: connectPort,
+      port: target.connectPort,
     });
     socket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n");
     socket.end();
@@ -606,20 +913,104 @@ function forwardUpgradeRequest(
   });
 }
 
+function createUpstreamSocket(target: ProxyTarget): Socket | TLSSocket {
+  if (target.secure) {
+    return tls.connect({
+      host: target.url.hostname,
+      port: target.connectPort,
+      servername: target.url.hostname,
+    });
+  }
+  return net.connect(target.connectPort, target.url.hostname);
+}
+
+function establishCmuxProxyConnect(
+  clientSocket: Socket,
+  head: Buffer,
+  target: ProxyTarget
+) {
+  const upstream = createUpstreamSocket(target);
+  const sendConnectRequest = () => {
+    const headers: Record<string, string> = {
+      host: target.url.host,
+      "proxy-connection": "keep-alive",
+    };
+    injectCmuxProxyHeaders(headers, target.cmuxProxy);
+    const lines = [`CONNECT ${target.url.host} HTTP/1.1`];
+    for (const [key, value] of Object.entries(headers)) {
+      lines.push(`${key}: ${value}`);
+    }
+    lines.push("\r\n");
+    upstream.write(lines.join("\r\n"));
+  };
+
+  const onError = (error: Error) => {
+    proxyLogger?.warn("CONNECT cmux upstream error", { error });
+    clientSocket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+    clientSocket.end();
+    upstream.destroy();
+  };
+
+  const chunks: Buffer[] = [];
+  const handleData = (chunk: Buffer) => {
+    chunks.push(chunk);
+    const combined = Buffer.concat(chunks);
+    const headerEnd = combined.indexOf("\r\n\r\n");
+    if (headerEnd === -1) {
+      return;
+    }
+    upstream.removeListener("data", handleData);
+    const headerText = combined.slice(0, headerEnd).toString("utf8");
+    if (!/^HTTP\/1\.1 200/.test(headerText)) {
+      upstream.removeListener("data", handleData);
+      clientSocket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+      clientSocket.end();
+      upstream.destroy();
+      return;
+    }
+    clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+    const remaining = combined.slice(headerEnd + 4);
+    if (remaining.length > 0) {
+      clientSocket.write(remaining);
+    }
+    if (head.length > 0) {
+      upstream.write(head);
+    }
+    upstream.pipe(clientSocket);
+    clientSocket.pipe(upstream);
+  };
+
+  upstream.on("data", handleData);
+  upstream.on("error", onError);
+  clientSocket.on("error", () => {
+    upstream.destroy();
+  });
+
+  if (target.secure && upstream instanceof tls.TLSSocket) {
+    upstream.once("secureConnect", sendConnectRequest);
+  } else {
+    upstream.once("connect", sendConnectRequest);
+  }
+}
+
 function deriveRoute(url: string): ProxyRoute | null {
   try {
     const parsed = new URL(url);
     const hostname = parsed.hostname.toLowerCase();
+    const protocol = parsed.protocol === "http:" ? "http:" : "https:";
     const morphMatch = hostname.match(
-      /^port-(\d+)-morphvm-([^.]+)\.http\.cloud\.morph\.so$/
+      /^port-(\d+)-morphvm-([^.]+)(\..+)$/
     );
     if (morphMatch) {
       const morphId = morphMatch[2];
       if (morphId) {
+        const morphSuffix = morphMatch[3];
+        const cmuxProxyOrigin = `${protocol}//port-${CMUX_PROXY_PORT}-morphvm-${morphId}${morphSuffix}`;
         return {
           morphId,
           scope: "base",
           domainSuffix: "cmux.app",
+          cmuxProxyOrigin,
         };
       }
     }
@@ -655,6 +1046,7 @@ function deriveRoute(url: string): ProxyRoute | null {
         morphId,
         scope: scopeSegment,
         domainSuffix: domain,
+        cmuxProxyOrigin: `${protocol}//port-${CMUX_PROXY_PORT}-morphvm-${morphId}${DEFAULT_MORPH_DOMAIN_SUFFIX}`,
       };
     }
   } catch (error) {
