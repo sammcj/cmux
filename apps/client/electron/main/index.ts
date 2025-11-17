@@ -17,7 +17,6 @@ import {
   webFrameMain,
   type BrowserWindowConstructorOptions,
   type MenuItemConstructorOptions,
-  type Certificate,
 } from "electron";
 import { startEmbeddedServer } from "./embedded-server";
 import { registerWebContentsViewHandlers } from "./web-contents-view";
@@ -46,7 +45,6 @@ import util from "node:util";
 import { initCmdK, keyDebug } from "./cmdk";
 import { env } from "./electron-main-env";
 import {
-  getPreviewProxyCertificateAuthorityInfo,
   getProxyCredentialsForWebContents,
   startPreviewProxy,
 } from "./task-run-preview-proxy";
@@ -232,31 +230,7 @@ function setupConsoleFileMirrors(): void {
 }
 
 function setupPreviewProxyCertificateTrust(): void {
-  const caInfo = getPreviewProxyCertificateAuthorityInfo();
-  app.on(
-    "certificate-error",
-    (event, _webContents, _url, _error, certificate, callback) => {
-      if (isPreviewProxyCertificate(certificate)) {
-        event.preventDefault();
-        callback(true);
-        return;
-      }
-      callback(false);
-    }
-  );
-
-  function isPreviewProxyCertificate(cert: Certificate | undefined): boolean {
-    if (!cert) return false;
-    if (cert.issuerName?.includes(caInfo.subject)) {
-      return true;
-    }
-    const fingerprint = normalizeFingerprint(cert.fingerprint ?? "");
-    return fingerprint === normalizeFingerprint(caInfo.fingerprint256);
-  }
-}
-
-function normalizeFingerprint(input: string): string {
-  return input.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+  // Certificate trust setup removed
 }
 
 function resolveResourcePath(rel: string) {
@@ -1167,10 +1141,8 @@ app.whenReady().then(async () => {
       ],
     });
     const menu = Menu.buildFromTemplate(template);
-    previewReloadMenuItem =
-      menu.getMenuItemById("cmux-preview-reload") ?? null;
-    previewBackMenuItem =
-      menu.getMenuItemById("cmux-preview-back") ?? null;
+    previewReloadMenuItem = menu.getMenuItemById("cmux-preview-reload") ?? null;
+    previewBackMenuItem = menu.getMenuItemById("cmux-preview-back") ?? null;
     previewForwardMenuItem =
       menu.getMenuItemById("cmux-preview-forward") ?? null;
     previewFocusAddressMenuItem =

@@ -13,10 +13,6 @@ import { URL } from "node:url";
 import type { Session, WebContents } from "electron";
 import { isLoopbackHostname } from "@cmux/shared";
 import type { Logger } from "./chrome-camouflage";
-import {
-  getPreviewProxyCertificateAuthority,
-  getSecureContextForHostname,
-} from "./preview-proxy-ca";
 
 type ProxyServer = http.Server;
 type ClientHttp2Session = http2.ClientHttp2Session;
@@ -39,7 +35,10 @@ const HOP_BY_HOP_HEADERS = new Set([
 
 const TASK_RUN_PREVIEW_PREFIX = "task-run-preview:";
 
-function envFlagEnabled(value: string | undefined, defaultValue: boolean): boolean {
+function envFlagEnabled(
+  value: string | undefined,
+  defaultValue: boolean
+): boolean {
   if (value === undefined) {
     return defaultValue;
   }
@@ -47,10 +46,20 @@ function envFlagEnabled(value: string | undefined, defaultValue: boolean): boole
   if (normalized === "") {
     return true;
   }
-  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+  if (
+    normalized === "1" ||
+    normalized === "true" ||
+    normalized === "yes" ||
+    normalized === "on"
+  ) {
     return true;
   }
-  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+  if (
+    normalized === "0" ||
+    normalized === "false" ||
+    normalized === "no" ||
+    normalized === "off"
+  ) {
     return false;
   }
   return defaultValue;
@@ -164,10 +173,6 @@ function getContextForSocket(
   }
   const stored = (socket as ContextAwareSocket)[SOCKET_CONTEXT_SYMBOL];
   return stored ?? null;
-}
-
-export function getPreviewProxyCertificateAuthorityInfo() {
-  return getPreviewProxyCertificateAuthority();
 }
 
 function logPreviewProxyToConsole(
@@ -422,7 +427,9 @@ function attachServerHandlers(server: ProxyServer) {
   });
 }
 
-async function getHttp2SessionFor(target: ProxyTarget): Promise<ClientHttp2Session> {
+async function getHttp2SessionFor(
+  target: ProxyTarget
+): Promise<ClientHttp2Session> {
   const originKey = target.url.origin;
   const existing = http2Sessions.get(originKey);
   if (existing && !existing.closed && !existing.destroyed) {
@@ -567,7 +574,9 @@ function handleConnect(req: IncomingMessage, socket: Socket, head: Buffer) {
     username: context.username,
     requestedHost: target.hostname,
     requestedPort: target.port,
-    route: context.route ? `${context.route.morphId}:${context.route.scope}` : null,
+    route: context.route
+      ? `${context.route.morphId}:${context.route.scope}`
+      : null,
     headLength: head.length,
     headSample: head.length > 0 ? head.subarray(0, 8).toString("hex") : "",
     tlsCandidate,
@@ -582,7 +591,14 @@ function handleConnect(req: IncomingMessage, socket: Socket, head: Buffer) {
       rewrittenPort: rewritten.connectPort,
       persistKey: context.persistKey,
     });
-    establishMitmTunnel(socket, head, target.hostname, target.port, context, rewritten);
+    establishMitmTunnel(
+      socket,
+      head,
+      target.hostname,
+      target.port,
+      context,
+      rewritten
+    );
     return;
   }
 
@@ -762,7 +778,11 @@ function containsHttp2Protocol(protocols: string[] | undefined): boolean {
   return protocols.some((protocol) => {
     if (!protocol) return false;
     const normalized = protocol.toLowerCase();
-    return normalized === "h2" || normalized.startsWith("h2-") || normalized === "h2c";
+    return (
+      normalized === "h2" ||
+      normalized.startsWith("h2-") ||
+      normalized === "h2c"
+    );
   });
 }
 
@@ -855,9 +875,7 @@ function respondProxyAuthRequiredSocket(socket: Socket) {
   socket.end();
 }
 
-function extractBasicToken(
-  raw: string | string[] | undefined
-): string | null {
+function extractBasicToken(raw: string | string[] | undefined): string | null {
   if (typeof raw !== "string") {
     return null;
   }
@@ -1254,7 +1272,10 @@ function normalizeHeaderName(name: string): string {
   if (/^[A-Z0-9-]+$/.test(name)) {
     return name;
   }
-  return name.replace(/(^|-)([a-z])/g, (_match, prefix, char) => `${prefix}${char.toUpperCase()}`);
+  return name.replace(
+    /(^|-)([a-z])/g,
+    (_match, prefix, char) => `${prefix}${char.toUpperCase()}`
+  );
 }
 
 function deleteHeaderCaseInsensitive(
@@ -1538,7 +1559,7 @@ function establishMitmTunnel(
   }
   const server = proxyServer;
 
-  const secureContext = getSecureContextForHostname(originalHostname);
+  const secureContext = tls.createSecureContext();
   let buffered = head;
   let settled = false;
 
@@ -1624,8 +1645,7 @@ function establishMitmTunnel(
   };
 
   const handleData = (chunk: Buffer) => {
-    buffered =
-      buffered.length === 0 ? chunk : Buffer.concat([buffered, chunk]);
+    buffered = buffered.length === 0 ? chunk : Buffer.concat([buffered, chunk]);
     if (classify()) {
       return;
     }
@@ -1664,9 +1684,7 @@ function deriveRoute(url: string): ProxyRoute | null {
     const parsed = new URL(url);
     const hostname = parsed.hostname.toLowerCase();
     const protocol = parsed.protocol === "http:" ? "http:" : "https:";
-    const morphMatch = hostname.match(
-      /^port-(\d+)-morphvm-([^.]+)(\..+)$/
-    );
+    const morphMatch = hostname.match(/^port-(\d+)-morphvm-([^.]+)(\..+)$/);
     if (morphMatch) {
       const morphId = morphMatch[2];
       if (morphId) {
