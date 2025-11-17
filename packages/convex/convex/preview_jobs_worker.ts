@@ -23,6 +23,19 @@ const singleQuote = (value: string): string =>
 
 const WORKER_SOCKET_TIMEOUT_MS = 30_000;
 
+const resolveConvexUrl = (): string | null => {
+  const explicit =
+    process.env.CONVEX_SITE_URL || process.env.CONVEX_URL || process.env.CONVEX_CLOUD_URL;
+  if (explicit) {
+    return explicit.replace(/\/$/, "");
+  }
+  const deployment = process.env.CONVEX_DEPLOYMENT;
+  if (deployment) {
+    return `https://${deployment}.convex.site`;
+  }
+  return null;
+};
+
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const formatWorkerSocketError = (error: unknown): string => {
@@ -387,7 +400,7 @@ async function stopMorphInstance(
   });
 }
 
-export async function runPreviewJob( 
+export async function runPreviewJob(
   ctx: ActionCtx,
   previewRunId: Id<"previewRuns">,
 ) {
@@ -414,6 +427,19 @@ export async function runPreviewJob(
   if (!payload?.run || !payload.config) {
     console.warn("[preview-jobs] Missing run/config for dispatch", {
       previewRunId,
+    });
+    return;
+  }
+
+  const convexUrl = resolveConvexUrl();
+  if (!convexUrl) {
+    console.error("[preview-jobs] Convex URL not configured; cannot trigger screenshots", {
+      previewRunId,
+    });
+    await ctx.runMutation(internal.previewRuns.updateStatus, {
+      previewRunId,
+      status: "failed",
+      stateReason: "Convex URL is not configured for preview screenshots",
     });
     return;
   }
@@ -858,8 +884,15 @@ export async function runPreviewJob(
     });
 
     if (taskRunId && previewJwt) {
-      // Apply CMUX environment variables via envctl (same as crown runs)
-      const envVarsContent = `CMUX_TASK_RUN_ID="${taskRunId}"\nCMUX_TASK_RUN_JWT="${previewJwt}"`;
+      // Apply environment variables via envctl (same as crown runs)
+      const envLines = [
+        `CMUX_TASK_RUN_ID="${taskRunId}"`,
+        `CMUX_TASK_RUN_JWT="${previewJwt}"`,
+        `CONVEX_SITE_URL="${convexUrl}"`,
+        `CONVEX_URL="${convexUrl}"`,
+        `NEXT_PUBLIC_CONVEX_URL="${convexUrl}"`,
+      ];
+      const envVarsContent = envLines.join("\n");
       if (envVarsContent.length === 0) {
         console.error("[preview-jobs] Empty environment payload before envctl", {
           previewRunId,
@@ -939,6 +972,7 @@ export async function runPreviewJob(
       // The JWT contains taskRunId, and the worker will call /api/crown/check to get taskId
       const screenshotPayload: WorkerRunTaskScreenshots = {
         token: previewJwt,
+        convexUrl,
       };
 
       try {

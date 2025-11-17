@@ -191,6 +191,7 @@ export const WorkerStartScreenshotCollectionSchema = z.object({
 export const WorkerRunTaskScreenshotsSchema = z.object({
   token: z.string(),
   anthropicApiKey: z.string().optional(),
+  convexUrl: z.string().min(1).optional(),
 });
 
 // Server to Worker Events

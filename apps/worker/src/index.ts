@@ -49,6 +49,14 @@ import type { WorkerTaskRunResponse } from "@cmux/shared/convex-safe";
 
 const execAsync = promisify(exec);
 
+const resolveConvexUrl = (provided?: string): string | undefined => {
+  if (provided) return provided.replace(/\/$/, "");
+  const fromEnv =
+    process.env.CONVEX_SITE_URL || process.env.CONVEX_URL || process.env.CONVEX_CLOUD_URL;
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  return undefined;
+};
+
 const Terminal = xtermHeadless.Terminal;
 
 // Configuration
@@ -136,7 +144,11 @@ app.post("/api/run-task-screenshots", async (req, res) => {
   try {
     const data = req.body;
 
-    log("INFO", "[/api/run-task-screenshots] Received request");
+    log("INFO", "[/api/run-task-screenshots] Received request", {
+      workerId: WORKER_ID,
+      hasToken: Boolean(data?.token),
+      hasAnthropicKey: Boolean(data?.anthropicApiKey),
+    });
 
     if (!data?.token) {
       return res.status(400).json({
@@ -144,8 +156,22 @@ app.post("/api/run-task-screenshots", async (req, res) => {
       });
     }
 
-    // Use environment variable for convexUrl
-    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+    const convexUrl = resolveConvexUrl(data.convexUrl);
+
+    log("INFO", "[/api/run-task-screenshots] Resolving task metadata", {
+      workerId: WORKER_ID,
+      convexUrl,
+      hasConvexUrl: Boolean(convexUrl),
+    });
+
+    if (!convexUrl) {
+      log("ERROR", "[/api/run-task-screenshots] Missing convex URL for crown check", {
+        workerId: WORKER_ID,
+      });
+      return res.status(400).json({
+        error: "Convex URL is not configured for screenshot workflow",
+      });
+    }
 
     // Extract taskRunId and taskId from JWT by calling /api/crown/check
     // The JWT contains taskRunId, and the check endpoint returns both taskRunId and taskId
@@ -158,9 +184,22 @@ app.post("/api/run-task-screenshots", async (req, res) => {
       convexUrl,
     );
 
+    log("INFO", "[/api/run-task-screenshots] Crown check response received", {
+      workerId: WORKER_ID,
+      hasInfo: Boolean(info),
+      ok: info?.ok ?? null,
+      hasTaskRun: Boolean(info?.taskRun),
+      taskRunId: info?.taskRun?.id,
+      taskId: info?.taskRun?.taskId,
+      isPreviewJob: info?.taskRun?.isPreviewJob,
+    });
+
     if (!info?.ok || !info.taskRun) {
       log("ERROR", "[/api/run-task-screenshots] Failed to load task run metadata", {
         hasInfo: Boolean(info),
+        ok: info?.ok ?? null,
+        taskRunId: info?.taskRun?.id,
+        taskId: info?.taskRun?.taskId,
       });
       return res.status(400).json({
         error: "Unable to load task run metadata for screenshot workflow",
@@ -635,7 +674,11 @@ managementIO.on("connection", (socket) => {
   );
 
   socket.on("worker:run-task-screenshots", async (data, callback) => {
-    log("INFO", "[worker:run-task-screenshots] Received request");
+    log("INFO", "[worker:run-task-screenshots] Received request", {
+      workerId: WORKER_ID,
+      hasToken: Boolean(data?.token),
+      hasAnthropicKey: Boolean(data?.anthropicApiKey),
+    });
 
     try {
       if (!data?.token) {
@@ -644,6 +687,12 @@ managementIO.on("connection", (socket) => {
 
       // Use environment variable for convexUrl
       const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+
+      log("INFO", "[worker:run-task-screenshots] Resolving task metadata", {
+        workerId: WORKER_ID,
+        convexUrl,
+        hasConvexUrl: Boolean(convexUrl),
+      });
 
       // Extract taskRunId and taskId from JWT by calling /api/crown/check
       const info = await convexRequest<WorkerTaskRunResponse>(
@@ -655,9 +704,22 @@ managementIO.on("connection", (socket) => {
         convexUrl,
       );
 
+      log("INFO", "[worker:run-task-screenshots] Crown check response received", {
+        workerId: WORKER_ID,
+        hasInfo: Boolean(info),
+        ok: info?.ok ?? null,
+        hasTaskRun: Boolean(info?.taskRun),
+        taskRunId: info?.taskRun?.id,
+        taskId: info?.taskRun?.taskId,
+        isPreviewJob: info?.taskRun?.isPreviewJob,
+      });
+
       if (!info?.ok || !info.taskRun) {
         log("ERROR", "[worker:run-task-screenshots] Failed to load task run metadata", {
           hasInfo: Boolean(info),
+          ok: info?.ok ?? null,
+          taskRunId: info?.taskRun?.id,
+          taskId: info?.taskRun?.taskId,
         });
         throw new Error("Unable to load task run metadata for screenshot workflow");
       }
