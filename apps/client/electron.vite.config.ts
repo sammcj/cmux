@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { resolveWorkspacePackages } from "./electron-vite-plugin-resolve-workspace";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
 
 function createExternalizeDepsPlugin(
   options?: Parameters<typeof externalizeDepsPlugin>[0]
@@ -29,6 +30,15 @@ function createExternalizeDepsPlugin(
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..", "..");
 
+const SentryVitePlugin = sentryVitePlugin({
+  org: "manaflow",
+  project: "cmux-client-electron",
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  sourcemaps: {
+    filesToDeleteAfterUpload: ["**/*.map"],
+  },
+});
+
 export default defineConfig({
   main: {
     plugins: [
@@ -42,6 +52,7 @@ export default defineConfig({
         ],
       }),
       resolveWorkspacePackages(),
+      SentryVitePlugin,
     ],
     envDir: repoRoot,
     build: {
@@ -51,6 +62,7 @@ export default defineConfig({
         },
         treeshake: "smallest",
       },
+      sourcemap: true,
     },
     envPrefix: "NEXT_PUBLIC_",
   },
@@ -60,6 +72,7 @@ export default defineConfig({
         exclude: ["@cmux/server", "@cmux/server/**"],
       }),
       resolveWorkspacePackages(),
+      SentryVitePlugin,
     ],
     envDir: repoRoot,
     build: {
@@ -73,6 +86,7 @@ export default defineConfig({
         },
         treeshake: "smallest",
       },
+      sourcemap: true,
     },
     envPrefix: "NEXT_PUBLIC_",
   },
@@ -83,10 +97,11 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: resolve("index.html"),
+          index: resolve("index-electron.html"),
         },
         treeshake: "recommended",
       },
+      sourcemap: true,
     },
     resolve: {
       alias: {
@@ -107,6 +122,7 @@ export default defineConfig({
       }),
       react(),
       tailwindcss(),
+      SentryVitePlugin,
     ],
     envPrefix: "NEXT_PUBLIC_",
   },
