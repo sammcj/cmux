@@ -40,13 +40,9 @@ async function stopPreviewInstance(
   const stoppedAt = Date.now();
 
   try {
-    // await stopInstanceInstanceInstanceIdDelete({
-    //   client: morphClient,
-    //   path: { instance_id: previewRun.morphInstanceId },
-    // });
-    console.log("[preview-jobs-http] Leaving Morph instance on for preview run", {
-      previewRunId: previewRun._id,
-      morphInstanceId: previewRun.morphInstanceId,
+    await stopInstanceInstanceInstanceIdDelete({
+      client: morphClient,
+      path: { instance_id: previewRun.morphInstanceId },
     });
   } catch (error) {
     console.error("[preview-jobs-http] Failed to stop Morph instance", {
@@ -449,6 +445,7 @@ export const completePreviewJob = httpAction(async (ctx, req) => {
       message: error instanceof Error ? error.message : String(error),
     }, 500);
   } finally {
+    console.log("[preview-jobs-http] online")
     if (shouldStopInstance && previewRun) {
       await stopPreviewInstance(ctx, previewRun);
     }
