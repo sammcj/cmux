@@ -37,6 +37,7 @@ const SentryVitePlugin = process.env.SENTRY_AUTH_TOKEN ? sentryVitePlugin({
   sourcemaps: {
     filesToDeleteAfterUpload: ["**/*.map"],
   },
+  telemetry: false
 }) : undefined;
 
 export default defineConfig({
