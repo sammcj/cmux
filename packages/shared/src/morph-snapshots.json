@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2025-11-18T01:16:45Z",
+  "presets": [
+    {
+      "presetId": "4vcpu_16gb_48gb",
+      "label": "Standard workspace",
+      "cpu": "4 vCPU",
+      "memory": "16 GB RAM",
+      "disk": "48 GB SSD",
+      "description": "Great default for day-to-day work. Balanced CPU, memory, and storage.",
+      "versions": [
+        {
+          "version": 1,
+          "snapshotId": "snapshot_ytlhlcfm",
+          "capturedAt": "2025-11-18T01:16:45Z"
+        }
+      ]
+    },
+    {
+      "presetId": "8vcpu_32gb_48gb",
+      "label": "Performance workspace",
+      "cpu": "8 vCPU",
+      "memory": "32 GB RAM",
+      "disk": "48 GB SSD",
+      "description": "Extra headroom for larger codebases or heavier workloads.",
+      "versions": [
+        {
+          "version": 1,
+          "snapshotId": "snapshot_zw2z3krp",
+          "capturedAt": "2025-11-18T01:16:45Z"
+        }
+      ]
+    }
+  ]
+}
