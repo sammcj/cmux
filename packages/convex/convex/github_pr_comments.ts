@@ -6,6 +6,27 @@ import {
   internalAction,
   type ActionCtx,
 } from "./_generated/server";
+import { Octokit } from "octokit";
+
+const createOctokit = (token: string): Octokit => {
+  return new Octokit({
+    auth: token,
+    userAgent: "cmux-github-bot",
+    request: {
+      timeout: 10_000,
+    },
+  });
+};
+
+const parseRepoFullName = (
+  repoFullName: string,
+): { owner: string; repo: string } | null => {
+  const [owner, repo] = repoFullName.split("/");
+  if (!owner || !repo) {
+    return null;
+  }
+  return { owner, repo };
+};
 
 export const addPrReaction = internalAction({
   args: {
@@ -28,39 +49,25 @@ export const addPrReaction = internalAction({
         return { ok: false, error: "Failed to get access token" };
       }
 
-      const response = await fetch(
-        `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/reactions`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "User-Agent": "cmux-github-bot",
-          },
-          body: JSON.stringify({ content }),
-        },
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(
-          "[github_pr_comments] Failed to add reaction",
-          {
-            installationId,
-            repoFullName,
-            prNumber,
-            status: response.status,
-            error: errorText,
-          },
-        );
+      const repo = parseRepoFullName(repoFullName);
+      if (!repo) {
+        console.error("[github_pr_comments] Invalid repo full name", {
+          repoFullName,
+        });
         return {
           ok: false,
-          error: `GitHub API error: ${response.status}`,
+          error: "Invalid repository name",
         };
       }
 
-      const data = await response.json();
+      const octokit = createOctokit(accessToken);
+      const { data } = await octokit.rest.reactions.createForIssue({
+        owner: repo.owner,
+        repo: repo.repo,
+        issue_number: prNumber,
+        content,
+      });
+
       console.log("[github_pr_comments] Successfully added reaction", {
         installationId,
         repoFullName,
@@ -108,6 +115,16 @@ export const postPreviewComment = internalAction({
         return { ok: false, error: "Failed to get access token" };
       }
 
+      const repo = parseRepoFullName(repoFullName);
+      if (!repo) {
+        console.error("[github_pr_comments] Invalid repo full name", {
+          repoFullName,
+        });
+        return { ok: false, error: "Invalid repository name" };
+      }
+
+      const octokit = createOctokit(accessToken);
+
       // Get screenshot set
       const screenshotSet = await ctx.runQuery(
         internal.previewScreenshots.getScreenshotSet,
@@ -147,36 +164,13 @@ export const postPreviewComment = internalAction({
       }
 
       // Post comment to GitHub
-      const response = await fetch(
-        `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/comments`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "User-Agent": "cmux-github-bot",
-          },
-          body: JSON.stringify({ body: commentBody }),
-        },
-      );
+      const { data } = await octokit.rest.issues.createComment({
+        owner: repo.owner,
+        repo: repo.repo,
+        issue_number: prNumber,
+        body: commentBody,
+      });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("[github_pr_comments] Failed to post preview comment", {
-          installationId,
-          repoFullName,
-          prNumber,
-          status: response.status,
-          error: errorText,
-        });
-        return {
-          ok: false,
-          error: `GitHub API error: ${response.status}`,
-        };
-      }
-
-      const data = (await response.json()) as { html_url?: string; id?: number };
       console.log("[github_pr_comments] Successfully posted preview comment", {
         installationId,
         repoFullName,
@@ -235,39 +229,21 @@ export const addPrComment = internalAction({
         return { ok: false as const, error: "Failed to get access token" };
       }
 
-      const response = await fetch(
-        `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/comments`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "User-Agent": "cmux-github-bot",
-          },
-          body: JSON.stringify({ body }),
-        },
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(
-          "[github_pr_comments] Failed to add comment",
-          {
-            installationId,
-            repoFullName,
-            prNumber,
-            status: response.status,
-            error: errorText,
-          },
-        );
-        return {
-          ok: false as const,
-          error: `GitHub API error: ${response.status}`,
-        };
+      const repo = parseRepoFullName(repoFullName);
+      if (!repo) {
+        console.error("[github_pr_comments] Invalid repo full name", {
+          repoFullName,
+        });
+        return { ok: false as const, error: "Invalid repository name" };
       }
 
-      const data = await response.json();
+      const octokit = createOctokit(accessToken);
+      const { data } = await octokit.rest.issues.createComment({
+        owner: repo.owner,
+        repo: repo.repo,
+        issue_number: prNumber,
+        body,
+      });
       console.log("[github_pr_comments] Successfully added comment", {
         installationId,
         repoFullName,
@@ -402,6 +378,16 @@ export const postPreviewCommentWithTaskScreenshots = internalAction({
         return { ok: false, error: "Failed to get access token" };
       }
 
+      const repo = parseRepoFullName(repoFullName);
+      if (!repo) {
+        console.error("[github_pr_comments] Invalid repo full name", {
+          repoFullName,
+        });
+        return { ok: false, error: "Invalid repository name" };
+      }
+
+      const octokit = createOctokit(accessToken);
+
       // Get task run to find screenshot set
       const taskRun = await ctx.runQuery(internal.taskRuns.getById, {
         id: taskRunId,
@@ -453,36 +439,12 @@ export const postPreviewCommentWithTaskScreenshots = internalAction({
       }
 
       // Post comment to GitHub
-      const response = await fetch(
-        `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/comments`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "User-Agent": "cmux-github-bot",
-          },
-          body: JSON.stringify({ body: commentBody }),
-        },
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("[github_pr_comments] Failed to post preview comment", {
-          installationId,
-          repoFullName,
-          prNumber,
-          status: response.status,
-          error: errorText,
-        });
-        return {
-          ok: false,
-          error: `GitHub API error: ${response.status}`,
-        };
-      }
-
-      const data = (await response.json()) as { html_url?: string; id?: number };
+      const { data } = await octokit.rest.issues.createComment({
+        owner: repo.owner,
+        repo: repo.repo,
+        issue_number: prNumber,
+        body: commentBody,
+      });
       console.log("[github_pr_comments] Successfully posted preview comment", {
         installationId,
         repoFullName,

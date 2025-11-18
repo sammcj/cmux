@@ -318,6 +318,75 @@ async function ensureCommitAvailable({
   );
 }
 
+async function stashLocalChanges({
+  morphClient,
+  instanceId,
+  repoDir,
+  previewRunId,
+  headSha,
+}: {
+  morphClient: ReturnType<typeof createMorphCloudClient>;
+  instanceId: string;
+  repoDir: string;
+  previewRunId: Id<"previewRuns">;
+  headSha: string;
+}): Promise<void> {
+  console.log("[preview-jobs] Stashing local changes before checkout", {
+    previewRunId,
+    repoDir,
+    headSha,
+  });
+
+  const stashResponse = await execInstanceInstanceIdExecPost({
+    client: morphClient,
+    path: { instance_id: instanceId },
+    body: {
+      command: [
+        "git",
+        "-C",
+        repoDir,
+        "stash",
+        "push",
+        "--include-untracked",
+        "--message",
+        `cmux-preview auto-stash before checkout ${headSha}`,
+      ],
+    },
+  });
+
+  if (stashResponse.error || !stashResponse.data) {
+    console.error("[preview-jobs] Failed to stash changes before checkout", {
+      previewRunId,
+      headSha,
+      error: stashResponse.error,
+    });
+    throw new Error("Failed to stash local changes before checkout");
+  }
+
+  const { exit_code: exitCode, stdout, stderr } = stashResponse.data;
+  if (exitCode !== 0) {
+    console.error("[preview-jobs] Stash command failed", {
+      previewRunId,
+      headSha,
+      exitCode,
+      stdout: sliceOutput(stdout),
+      stderr: sliceOutput(stderr),
+    });
+    throw new Error(
+      `Failed to stash local changes before checkout (exit ${exitCode}): stderr="${sliceOutput(
+        stderr,
+      )}" stdout="${sliceOutput(stdout)}"`,
+    );
+  }
+
+  console.log("[preview-jobs] Stash completed before checkout", {
+    previewRunId,
+    headSha,
+    stdout: sliceOutput(stdout),
+    stderr: sliceOutput(stderr),
+  });
+}
+
 async function waitForInstanceReady(
   morphClient: ReturnType<typeof createMorphCloudClient>,
   instanceId: string,
@@ -913,6 +982,14 @@ export async function runPreviewJob(
       previewRunId,
       headRepoCloneUrl: run.headRepoCloneUrl,
       headRef: run.headRef,
+    });
+
+    await stashLocalChanges({
+      morphClient,
+      instanceId: instance.id,
+      repoDir,
+      previewRunId,
+      headSha: run.headSha,
     });
 
     console.log("[preview-jobs] Starting git checkout", {
