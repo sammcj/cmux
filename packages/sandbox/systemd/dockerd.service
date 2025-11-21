@@ -1,0 +1,13 @@
+[Unit]
+Description=Docker Daemon (cmux sandbox)
+After=network.target
+
+[Service]
+Type=simple
+Environment=DOCKER_HOST=unix:///var/run/docker.sock
+ExecStart=/usr/local/bin/dockerd --host=unix:///var/run/docker.sock --storage-driver=overlay2
+Restart=always
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

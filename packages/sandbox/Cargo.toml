@@ -1,0 +1,45 @@
+[package]
+name = "cmux-sandbox"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Sandbox sidecar with bubblewrap-backed sandboxes and an HTTP API"
+
+[lib]
+name = "cmux_sandbox"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cmux-sandboxd"
+path = "src/bin/server.rs"
+
+[[bin]]
+name = "cmux"
+path = "src/bin/cli.rs"
+
+[dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+axum = { version = "0.8", features = ["macros", "json", "http1", "http2"] }
+chrono = { version = "0.4", features = ["serde", "clock"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "http2"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tokio = { version = "1.41", features = ["macros", "rt-multi-thread", "signal", "process", "fs", "net", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+utoipa = { version = "5.4", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+which = "6.0"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.1"
+serde_json = "1.0"
+tempfile = "3.13"
+tokio = { version = "1.41", features = ["macros", "rt", "time"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+tower = { version = "0.5", features = ["util"] }
