@@ -562,6 +562,28 @@ class PersistentIframeManager {
     entry.wrapper.style.height = `${viewportHeight}px`;
     entry.wrapper.style.transform = `translate(-${viewportWidth}px, -${viewportHeight}px)`;
   }
+
+  focusIframe(key: string): boolean {
+    const entry = this.iframes.get(key);
+    if (!entry) return false;
+
+    const isHidden =
+      entry.wrapper.style.visibility === "hidden" ||
+      entry.wrapper.style.pointerEvents === "none";
+
+    if (isHidden) {
+      return false;
+    }
+
+    try {
+      entry.iframe.focus();
+      entry.iframe.contentWindow?.focus();
+      return true;
+    } catch (error) {
+      console.error(`Failed to focus iframe "${key}"`, error);
+      return false;
+    }
+  }
 }
 
 // Export singleton instance

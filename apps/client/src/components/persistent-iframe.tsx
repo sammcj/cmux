@@ -11,6 +11,11 @@ import { createPortal } from "react-dom";
 
 import { useIframePreflight } from "../hooks/useIframePreflight";
 import { usePersistentIframe } from "../hooks/usePersistentIframe";
+import {
+  registerWebviewActions,
+  unregisterWebviewActions,
+} from "@/lib/webview-actions";
+import { persistentIframeManager } from "@/lib/persistentIframeManager";
 import { cn } from "@/lib/utils";
 
 export type PersistentIframeStatus = "loading" | "loaded" | "error";
@@ -272,6 +277,18 @@ export function PersistentIframe({
   }, [persistKey, isExpanded, isAnyPanelExpanded]);
 
   const effectiveStatus = forcedStatus ?? status;
+
+  const focusIframe = useCallback(() => {
+    return persistentIframeManager.focusIframe(persistKey);
+  }, [persistKey]);
+
+  useEffect(() => {
+    const actions = { focus: focusIframe };
+    registerWebviewActions(persistKey, actions);
+    return () => {
+      unregisterWebviewActions(persistKey, actions);
+    };
+  }, [focusIframe, persistKey]);
 
   useEffect(() => {
     onStatusChange?.(effectiveStatus);
