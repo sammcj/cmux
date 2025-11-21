@@ -1,5 +1,11 @@
 import { useTheme } from "@/components/theme/use-theme";
-import type { StackClientApp } from "@stackframe/react";
+import {
+  capturePosthogPageview,
+  identifyPosthogUser,
+  initPosthog,
+  resetPosthog,
+} from "@/lib/analytics/posthog";
+import { useUser, type StackClientApp } from "@stackframe/react";
 import type { QueryClient } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import {
@@ -118,26 +124,53 @@ function useAutoUpdateNotifications() {
   }, []);
 }
 
+function PosthogTracking({ locationKey }: { locationKey: string }) {
+  const user = useUser({ or: "return-null" });
+
+  useEffect(() => {
+    initPosthog();
+  }, []);
+
+  useEffect(() => {
+    capturePosthogPageview(locationKey);
+  }, [locationKey]);
+
+  useEffect(() => {
+    if (!user) {
+      resetPosthog();
+      return;
+    }
+
+    identifyPosthogUser(user.id, {
+      email: user.primaryEmail ?? undefined,
+      name: user.displayName ?? undefined,
+      team_id: user.selectedTeam?.id ?? undefined,
+    });
+  }, [user]);
+
+  return null;
+}
+
 function RootComponent() {
   const location = useRouterState({
     select: (state) => state.location,
   });
+  const locationKey = `${location.pathname}${location.search}${location.hash}`;
 
   useAutoUpdateNotifications();
 
   useEffect(() => {
     if (import.meta.env.DEV) {
       console.log("[navigation] location-changed", {
-        pathname: location.pathname,
-        search: location.search,
-        hash: location.hash,
+        location: locationKey,
         timestamp: new Date().toISOString(),
       });
     }
-  }, [location]);
+  }, [locationKey]);
 
   return (
     <>
+      <PosthogTracking locationKey={locationKey} />
       <Outlet />
       <DevTools />
       <ToasterWithTheme />
