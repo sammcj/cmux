@@ -7,6 +7,12 @@ const DEFAULT_UI_HOST = "https://us.posthog.com";
 
 let initialized = false;
 
+function registerPlatform() {
+  posthog.register({
+    platform: isElectron ? "cmux-client-electron" : "cmux-client-web",
+  });
+}
+
 interface PosthogUserProperties {
   email?: string;
   name?: string;
@@ -69,10 +75,4 @@ export function resetPosthog() {
   posthog.reset();
 
   registerPlatform();
-}
-
-function registerPlatform() {
-  posthog.register({
-    platform: isElectron ? "cmux-client-electron" : "cmux-client-web",
-  });
 }
