@@ -302,18 +302,18 @@ alias g=git
         &self,
         request: &CreateSandboxRequest,
         workspace: &Path,
+        system_dir: &Path,
         _id: &Uuid,
         lease: &IpLease,
         index: usize,
     ) -> SandboxResult<(Child, u32)> {
         // Prepare system directories for the sandbox
-        let system_dir = workspace.join(".system");
-        fs::create_dir_all(&system_dir).await?;
+        fs::create_dir_all(system_dir).await?;
 
         // Setup overlays
-        let usr_merged = mount_overlay(&system_dir, "usr", "/usr").await?;
-        let etc_merged = mount_overlay(&system_dir, "etc", "/etc").await?;
-        let var_merged = mount_overlay(&system_dir, "var", "/var").await?;
+        let usr_merged = mount_overlay(system_dir, "usr", "/usr").await?;
+        let etc_merged = mount_overlay(system_dir, "etc", "/etc").await?;
+        let var_merged = mount_overlay(system_dir, "var", "/var").await?;
         
         let root_merged = system_dir.join("root-merged");
         fs::create_dir_all(&root_merged).await?;
@@ -592,18 +592,20 @@ impl SandboxService for BubblewrapService {
         let workspace = self.resolve_workspace(&request, &id);
         fs::create_dir_all(&workspace).await?;
 
+        let system_dir = self.workspace_root.join(id.to_string()).join("system");
+
         let lease = {
             let mut pool = self.ip_pool.lock().await;
             pool.allocate()?
         };
 
         let (mut child, inner_pid) = match self
-            .spawn_bubblewrap(&request, &workspace, &id, &lease, index)
+            .spawn_bubblewrap(&request, &workspace, &system_dir, &id, &lease, index)
             .await
         {
             Ok(res) => res,
             Err(error) => {
-                cleanup_overlays(&workspace).await;
+                cleanup_overlays(&system_dir).await;
                 let mut pool = self.ip_pool.lock().await;
                 pool.release(&lease);
                 return Err(error);
@@ -614,7 +616,7 @@ impl SandboxService for BubblewrapService {
             Ok(net) => net,
             Err(error) => {
                 let _ = child.kill().await;
-                cleanup_overlays(&workspace).await;
+                cleanup_overlays(&system_dir).await;
                 {
                     let mut pool = self.ip_pool.lock().await;
                     pool.release(&lease);
@@ -994,7 +996,16 @@ impl SandboxService for BubblewrapService {
 
             let summary = entry.handle.to_summary(observed_status);
             
-            cleanup_overlays(&entry.handle.workspace).await;
+            let system_dir = self.workspace_root.join(id.to_string()).join("system");
+            cleanup_overlays(&system_dir).await;
+
+            // Remove system dir (always managed by us)
+            if let Err(error) = fs::remove_dir_all(&system_dir).await {
+                warn!(
+                    "failed to remove system dir {}: {error}",
+                    system_dir.display()
+                );
+            }
 
             if entry.handle.workspace.starts_with(&self.workspace_root) {
                 if let Err(error) = fs::remove_dir_all(&entry.handle.workspace).await {
@@ -1003,6 +1014,17 @@ impl SandboxService for BubblewrapService {
                         entry.handle.workspace.display()
                     );
                 }
+            }
+
+            // Try to remove the sandbox root directory (container for system and optionally workspace)
+            let sandbox_root = self.workspace_root.join(id.to_string());
+            if let Err(error) = fs::remove_dir(&sandbox_root).await {
+                // It might not be empty if workspace removal failed or if there are other files, 
+                // but usually it should be empty now.
+                 warn!(
+                    "failed to remove sandbox root {}: {error}",
+                    sandbox_root.display()
+                );
             }
 
             info!("removed sandbox {id}");
@@ -1076,8 +1098,7 @@ async fn mount_overlay(
     Ok(merged)
 }
 
-async fn cleanup_overlays(workspace: &Path) {
-    let system_dir = workspace.join(".system");
+async fn cleanup_overlays(system_dir: &Path) {
     let _ = run_command("umount", &[system_dir.join("var-merged").to_string_lossy().as_ref()]).await;
     let _ = run_command("umount", &[system_dir.join("etc-merged").to_string_lossy().as_ref()]).await;
     let _ = run_command("umount", &[system_dir.join("usr-merged").to_string_lossy().as_ref()]).await;
