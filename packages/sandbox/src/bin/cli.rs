@@ -14,6 +14,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
+#[cfg(unix)]
+use tokio::signal::unix::{signal, SignalKind};
+
 // Proxy imports
 use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, SanType};
 use tokio_rustls::TlsAcceptor;
@@ -177,7 +180,7 @@ async fn run() -> anyhow::Result<()> {
         eprintln!("cmux base url: {}", cli.base_url);
     }
     let client = Client::builder()
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(300))
         .no_proxy()
         .http2_keep_alive_interval(Duration::from_secs(30))
         .build()?;
@@ -320,12 +323,13 @@ impl Drop for RawModeGuard {
 }
 
 async fn handle_ssh(base_url: &str, id: &str) -> anyhow::Result<()> {
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let ws_url = base_url
         .replace("http://", "ws://")
         .replace("https://", "wss://")
         .trim_end_matches('/')
         .to_string();
-    let url = format!("{}/sandboxes/{}/attach", ws_url, id);
+    let url = format!("{}/sandboxes/{}/attach?cols={}&rows={}", ws_url, id, cols, rows);
 
     let (ws_stream, _) = connect_async(url).await?;
     eprintln!("Connected to sandbox shell. Press Ctrl+D to exit.");
@@ -337,10 +341,24 @@ async fn handle_ssh(base_url: &str, id: &str) -> anyhow::Result<()> {
     let mut stdout = tokio::io::stdout();
     let mut buf = [0u8; 1024];
 
+    #[cfg(unix)]
+    let mut sigwinch = signal(SignalKind::window_change())?;
+
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 break;
+            }
+            _ = async {
+                #[cfg(unix)]
+                return sigwinch.recv().await;
+                #[cfg(not(unix))]
+                std::future::pending::<Option<()>>().await
+            } => {
+                if let Ok((cols, rows)) = crossterm::terminal::size() {
+                    let msg = format!("resize:{}:{}", rows, cols);
+                    write.send(Message::Text(msg)).await?;
+                }
             }
             msg = read.next() => {
                 match msg {
@@ -534,32 +552,59 @@ async fn handle_connection(
             connect_and_tunnel(socket, base_url, id, port, None).await?;
         }
     } else if header.starts_with("GET ") || header.starts_with("POST ") || header.starts_with("PUT ") || header.starts_with("DELETE ") || header.starts_with("HEAD ") || header.starts_with("OPTIONS ") || header.starts_with("PATCH ") {
-         let line = header.lines().next().unwrap_or("");
-         let parts: Vec<&str> = line.split_whitespace().collect();
-         if parts.len() < 2 { return Ok(()); }
-         let url = parts[1];
+         // Read headers fully
+         let mut header_buf = Vec::new();
+         let mut buffer = [0u8; 1];
+         let mut state = 0; // 0: normal, 1: \r, 2: \r\n, 3: \r\n\r
          
-         if let Some(host_start) = url.strip_prefix("http://") {
-             let path_start = host_start.find('/').unwrap_or(host_start.len());
-             let host_port = &host_start[..path_start];
-             let path = if path_start == host_start.len() { "/" } else { &host_start[path_start..] };
-             
-             let port = host_port.split(':').nth(1).unwrap_or("80").parse::<u16>().unwrap_or(80);
-             
-             // Consume the first line from the socket
-             let mut line_buf = Vec::new();
-             let mut byte = [0u8; 1];
-             loop {
-                 socket.read_exact(&mut byte).await?;
-                 line_buf.push(byte[0]);
-                 if byte[0] == b'\n' { break; }
+         loop {
+             if socket.read_exact(&mut buffer).await.is_err() { break; }
+             header_buf.push(buffer[0]);
+             let b = buffer[0];
+             if state == 0 && b == b'\r' { state = 1; }
+             else if state == 1 && b == b'\n' { state = 2; }
+             else if state == 2 && b == b'\r' { state = 3; }
+             else if state == 3 && b == b'\n' { break; } // Found \r\n\r\n
+             else if b != b'\r' { state = 0; } // Reset if char is not part of sequence
+         }
+         
+         let header_str = String::from_utf8_lossy(&header_buf);
+         let lines: Vec<&str> = header_str.lines().collect();
+         
+         if !lines.is_empty() {
+             let request_line = lines[0];
+             let parts: Vec<&str> = request_line.split_whitespace().collect();
+             if parts.len() >= 2 {
+                 let url = parts[1];
+                 if let Some(host_start) = url.strip_prefix("http://") {
+                     let path_start = host_start.find('/').unwrap_or(host_start.len());
+                     let host_port = &host_start[..path_start];
+                     let path = if path_start == host_start.len() { "/" } else { &host_start[path_start..] };
+                     let port = host_port.split(':').nth(1).unwrap_or("80").parse::<u16>().unwrap_or(80);
+                     
+                     let method = parts[0];
+                     let version = if parts.len() > 2 { parts[2] } else { "HTTP/1.1" };
+                     
+                     let new_req_line = format!("{} {} {}", method, path, version);
+                     
+                     // Rebuild headers with Connection: close
+                     let mut new_headers = String::new();
+                     new_headers.push_str(&new_req_line);
+                     new_headers.push_str("\r\n");
+                     
+                     for line in lines.iter().skip(1) {
+                         if line.to_lowercase().starts_with("connection:") || line.to_lowercase().starts_with("proxy-connection:") {
+                             continue;
+                         }
+                         if line.trim().is_empty() { continue; }
+                         new_headers.push_str(line);
+                         new_headers.push_str("\r\n");
+                     }
+                     new_headers.push_str("Connection: close\r\n\r\n");
+                     
+                     connect_and_tunnel(socket, base_url, id, port, Some(new_headers.into_bytes())).await?;
+                 }
              }
-             
-             let method = parts[0];
-             let version = if parts.len() > 2 { parts[2] } else { "HTTP/1.1" };
-             let new_line = format!("{} {} {}\r\n", method, path, version);
-             
-             connect_and_tunnel(socket, base_url, id, port, Some(new_line.into_bytes())).await?;
          }
     }
     

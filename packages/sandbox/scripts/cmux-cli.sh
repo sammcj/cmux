@@ -50,15 +50,17 @@ if [[ "${1:-}" == "server" ]]; then
   exit 0
 fi
 
-# Check if the container is running and healthy
-if ! docker ps --filter "name=^/${CONTAINER_NAME}$" --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-  echo "Server container '${CONTAINER_NAME}' is not running. Starting it..."
-  start_server
+# Check if the server is running and healthy (fastest check)
+if curl -s "http://127.0.0.1:${PORT}/healthz" >/dev/null; then
+  : # Server is up, do nothing
 else
-  # Optional: Check if the server is actually responding (in case the container is up but server is down/starting)
-  if ! curl -s "http://127.0.0.1:${PORT}/healthz" >/dev/null; then
+  # Server not responding, check if container exists
+  if docker ps --filter "name=^/${CONTAINER_NAME}$" --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
      echo "Container is running but server is not responding. Restarting..."
      start_server
+  else
+    echo "Server container '${CONTAINER_NAME}' is not running. Starting it..."
+    start_server
   fi
 fi
 

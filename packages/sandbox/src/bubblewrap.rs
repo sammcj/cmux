@@ -237,6 +237,51 @@ impl BubblewrapService {
         Ok(())
     }
 
+    async fn setup_bashrc(&self, root_merged: &Path) -> SandboxResult<()> {
+        let root_home = root_merged.join("root");
+        fs::create_dir_all(&root_home).await?;
+        
+        let bashrc = root_home.join(".bashrc");
+        let content = r#"
+# ~/.bashrc: executed by bash(1) for non-login shells.
+
+# If not running interactively, don't do anything
+[ -z "$PS1" ] && return
+
+# check the window size after each command and, if necessary,
+# update the values of LINES and COLUMNS.
+shopt -s checkwinsize
+
+# set a fancy prompt (non-color, unless we know we "want" color)
+case "$TERM" in
+    xterm-color|*-256color) color_prompt=yes;;
+esac
+
+if [ "$color_prompt" = yes ]; then
+    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]# '
+else
+    PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w# '
+fi
+unset color_prompt force_color_prompt
+
+# enable color support of ls and also add handy aliases
+if [ -x /usr/bin/dircolors ]; then
+    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
+    alias ls='ls --color=auto'
+    alias grep='grep --color=auto'
+    alias fgrep='fgrep --color=auto'
+    alias egrep='egrep --color=auto'
+fi
+
+# some more ls aliases
+alias ll='ls -alF'
+alias la='ls -A'
+alias l='ls -CF'
+"#;
+        fs::write(&bashrc, content).await?;
+        Ok(())
+    }
+
     async fn spawn_bubblewrap(
         &self,
         request: &CreateSandboxRequest,
@@ -253,6 +298,22 @@ impl BubblewrapService {
         let usr_merged = mount_overlay(&system_dir, "usr", "/usr").await?;
         let etc_merged = mount_overlay(&system_dir, "etc", "/etc").await?;
         let var_merged = mount_overlay(&system_dir, "var", "/var").await?;
+        
+        // We need a root overlay to persist /root changes if we want .bashrc to work
+        // Since /root is in / (rootfs), and we don't have a / overlay, we can't easily persist /root unless we make an overlay for it 
+        // OR we bind it. 
+        // But bwrap starts empty. We only bind /usr, /etc, /var.
+        // Where is /root? It doesn't exist.
+        // We need to create it.
+        // If we use a tmpfs for /, we can create /root there?
+        // But we can't easily populate a tmpfs before bwrap starts unless we mount an overlay as /.
+        //
+        // Alternative: Create a `root` dir in workspace/.system/root-merged and bind it to /root?
+        // This effectively gives persistent /root.
+        
+        let root_merged = system_dir.join("root-merged");
+        fs::create_dir_all(&root_merged).await?;
+        self.setup_bashrc(&root_merged).await?;
 
         // Ensure we have valid DNS and hosts file in the overlay
         self.setup_dns(&etc_merged).await?;
@@ -304,6 +365,21 @@ impl BubblewrapService {
         command.args(["--bind", usr_merged.to_str().unwrap(), "/usr"]);
         command.args(["--bind", etc_merged.to_str().unwrap(), "/etc"]);
         command.args(["--bind", var_merged.to_str().unwrap(), "/var"]);
+        
+        // Bind /root (we assume it is in /root in the container)
+        // But wait, /root is inside /, and / is implied? 
+        // If we don't bind /, we only have what we bound.
+        // So /root directory itself won't exist unless we create it.
+        // But since / is not bound, we can't create it "in /".
+        // We must bind a directory TO /root.
+        // But for bind to work, the mount point must exist?
+        // Bwrap creates mount points if they don't exist in the destination?
+        // "If dest starts with / then it is an absolute path ... If the destination path does not exist, it is created."
+        // Yes, bwrap creates mount points.
+        
+        // We bind our prepared root-merged/root to /root.
+        // Note: setup_bashrc wrote to root-merged/root/.bashrc
+        command.args(["--bind", root_merged.join("root").to_str().unwrap(), "/root"]);
 
         // Hide sensitive host paths exposed via /var overlay
         command.args(["--tmpfs", "/var/lib/docker"]);
@@ -658,7 +734,7 @@ impl SandboxService for BubblewrapService {
         })
     }
 
-    async fn attach(&self, id_str: String, mut socket: WebSocket) -> SandboxResult<()> {
+    async fn attach(&self, id_str: String, mut socket: WebSocket, initial_size: Option<(u16, u16)>) -> SandboxResult<()> {
         let id = self.resolve_id(&id_str).await?;
         let entry = {
             let sandboxes = self.sandboxes.lock().await;
@@ -666,11 +742,13 @@ impl SandboxService for BubblewrapService {
         }
         .ok_or(SandboxError::NotFound(id))?;
 
+        let (cols, rows) = initial_size.unwrap_or((80, 24));
+
         let system = NativePtySystem::default();
         let pair = system
             .openpty(PtySize {
-                rows: 24,
-                cols: 80,
+                rows,
+                cols,
                 pixel_width: 0,
                 pixel_height: 0,
             })
@@ -742,7 +820,19 @@ impl SandboxService for BubblewrapService {
                 msg = socket.recv() => {
                     match msg {
                         Some(Ok(Message::Text(text))) => {
-                            if tx_in.send(text.as_bytes().to_vec()).await.is_err() {
+                            if text.starts_with("resize:") {
+                                let parts: Vec<&str> = text.split(':').collect();
+                                if parts.len() == 3 {
+                                    if let (Ok(rows), Ok(cols)) = (parts[1].parse::<u16>(), parts[2].parse::<u16>()) {
+                                        let _ = pair.master.resize(PtySize {
+                                            rows,
+                                            cols,
+                                            pixel_width: 0,
+                                            pixel_height: 0,
+                                        });
+                                    }
+                                }
+                            } else if tx_in.send(text.as_bytes().to_vec()).await.is_err() {
                                 break;
                             }
                         }

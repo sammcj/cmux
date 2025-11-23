@@ -20,6 +20,12 @@ struct ProxyParams {
     port: u16,
 }
 
+#[derive(Deserialize)]
+struct AttachParams {
+    cols: Option<u16>,
+    rows: Option<u16>,
+}
+
 #[derive(UtoipaOpenApi)]
 #[openapi(
     paths(
@@ -146,10 +152,15 @@ async fn exec_sandbox(
 async fn attach_sandbox(
     state: axum::extract::State<AppState>,
     Path(id): Path<String>,
+    Query(params): Query<AttachParams>,
     ws: WebSocketUpgrade,
 ) -> Response {
+    let initial_size = match (params.cols, params.rows) {
+        (Some(c), Some(r)) => Some((c, r)),
+        _ => None,
+    };
     ws.on_upgrade(move |socket| async move {
-        if let Err(e) = state.service.attach(id, socket).await {
+        if let Err(e) = state.service.attach(id, socket, initial_size).await {
             tracing::error!("attach failed: {e}");
         }
     })
@@ -232,7 +243,7 @@ mod tests {
             })
         }
 
-        async fn attach(&self, _id: String, _socket: WebSocket) -> SandboxResult<()> {
+        async fn attach(&self, _id: String, _socket: WebSocket, _initial_size: Option<(u16, u16)>) -> SandboxResult<()> {
             Ok(())
         }
 

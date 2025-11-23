@@ -96,6 +96,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   sudo \
   && rm -rf /var/lib/apt/lists/*
 
+RUN arch="$(uname -m)"; \
+    case "$arch" in \
+      x86_64) node_arch="linux-x64" ;; \
+      aarch64) node_arch="linux-arm64" ;; \
+      *) echo "Unsupported architecture: ${arch}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://nodejs.org/dist/v22.11.0/node-v22.11.0-${node_arch}.tar.gz" | tar -xz -C /usr/local --strip-components=1 && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     mv /root/.local/bin/uv /usr/local/bin/uv
 
