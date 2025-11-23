@@ -77,6 +77,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   uidmap \
   fuse-overlayfs \
   util-linux \
+  less \
   systemd \
   systemd-sysv \
   dbus \
