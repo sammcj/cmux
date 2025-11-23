@@ -256,7 +256,7 @@ async fn cli_exec_shorthand() {
     // Test 'cmux exec <id> <cmd>'
     Command::new(assert_cmd::cargo::cargo_bin!("cmux"))
         .env("CMUX_SANDBOX_URL", &base_url)
-        .args(&["exec", "any-id", "echo hello"])
+        .args(["exec", "any-id", "echo hello"])
         .assert()
         .success()
         .stdout(predicates::str::contains("\"stdout\": \"ok\""));

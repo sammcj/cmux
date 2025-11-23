@@ -105,6 +105,10 @@ RUN arch="$(uname -m)"; \
     curl -fsSL "https://nodejs.org/dist/v22.11.0/node-v22.11.0-${node_arch}.tar.gz" | tar -xz -C /usr/local --strip-components=1 && \
     rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://bun.sh/install | bash && \
+    mv /root/.bun/bin/bun /usr/local/bin/bun && \
+    rm -rf /root/.bun
+
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     mv /root/.local/bin/uv /usr/local/bin/uv
 

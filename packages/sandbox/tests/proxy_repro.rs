@@ -1,4 +1,3 @@
-use assert_cmd::cargo::cargo_bin;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -7,8 +6,8 @@ use tokio::net::TcpStream;
 async fn proxy_tls_handshake_should_not_panic() {
     let port = 12345;
     
-    let mut child = std::process::Command::new(cargo_bin("cmux"))
-        .args(&["proxy", "dummy-id", "--port", &port.to_string()])
+    let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin!("cmux"))
+        .args(["proxy", "dummy-id", "--port", &port.to_string()])
         .env("CMUX_SANDBOX_URL", "http://127.0.0.1:12346")
         .stderr(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
