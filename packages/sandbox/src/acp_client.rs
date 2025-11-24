@@ -18,11 +18,14 @@ use futures::{SinkExt, StreamExt};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
     Terminal,
 };
+use std::borrow::Cow;
 use std::{fs::OpenOptions, io, io::Write, sync::Arc};
 use tokio::sync::mpsc;
+use tui_markdown::from_str as markdown_from_str;
 use tui_textarea::TextArea;
 
 fn log_debug(msg: &str) {
@@ -136,6 +139,7 @@ impl Client for AppClient {
 struct ChatMessage {
     role: String,
     text: String,
+    normalized_markdown: Option<String>,
 }
 
 struct App<'a> {
@@ -188,12 +192,21 @@ impl<'a> App<'a> {
         if let Some(last) = self.history.last_mut() {
             if last.role == role {
                 last.text.push_str(text);
+                if matches!(role, "Agent" | "Thought") {
+                    last.normalized_markdown = Some(normalize_code_fences(&last.text));
+                }
                 return;
             }
         }
+        let normalized_markdown = if matches!(role, "Agent" | "Thought") {
+            Some(normalize_code_fences(text))
+        } else {
+            None
+        };
         self.history.push(ChatMessage {
             role: role.to_string(),
             text: text.to_string(),
+            normalized_markdown,
         });
     }
 
@@ -542,9 +555,6 @@ async fn run_app<B: ratatui::backend::Backend>(
     }
 }
 
-use ratatui::text::{Line, Span};
-use tui_markdown::from_str as markdown_from_str;
-
 fn ui(f: &mut ratatui::Frame, app: &App) {
     // Calculate dynamic height based on line count
     // +2 accounts for top and bottom borders
@@ -570,7 +580,7 @@ fn ui(f: &mut ratatui::Frame, app: &App) {
                 let border = "─".repeat(area_width);
                 lines.push(Line::styled(border.clone(), style));
                 for line in msg.text.lines() {
-                    lines.push(Line::styled(line, style));
+                    lines.push(Line::styled(line.to_owned(), style));
                 }
                 lines.push(Line::styled(border, style));
             }
@@ -588,11 +598,11 @@ fn ui(f: &mut ratatui::Frame, app: &App) {
                     if first {
                         lines.push(Line::from(vec![
                             Span::styled(prefix.clone(), prefix_style),
-                            Span::raw(text_line),
+                            Span::raw(text_line.to_owned()),
                         ]));
                         first = false;
                     } else {
-                        lines.push(Line::from(text_line));
+                        lines.push(Line::from(text_line.to_owned()));
                     }
                 }
                 if first {
@@ -609,7 +619,7 @@ fn ui(f: &mut ratatui::Frame, app: &App) {
     let scroll_offset = total_lines.saturating_sub(view_height);
 
     let history_paragraph = Paragraph::new(lines)
-        .wrap(Wrap { trim: true })
+        .wrap(Wrap { trim: false })
         .scroll((scroll_offset, 0));
 
     f.render_widget(history_paragraph, chunks[0]);
@@ -622,7 +632,8 @@ fn render_markdown_message<'a>(
     msg: &'a ChatMessage,
     prefix_style: ratatui::style::Style,
 ) {
-    let mut markdown_lines = markdown_from_str(&msg.text).lines.into_iter();
+    let source = msg.normalized_markdown.as_deref().unwrap_or(&msg.text);
+    let mut markdown_lines = markdown_from_str(source).lines.into_iter();
     match markdown_lines.next() {
         Some(mut line) => {
             let mut spans = Vec::with_capacity(line.spans.len() + 1);
@@ -642,5 +653,64 @@ fn render_markdown_message<'a>(
 
     for line in markdown_lines {
         lines.push(line);
+    }
+}
+
+fn normalize_code_fences(content: &str) -> String {
+    let mut normalized = String::with_capacity(content.len());
+    for line in content.split_inclusive('\n') {
+        let (body, newline) = match line.strip_suffix('\n') {
+            Some(stripped) => (stripped, "\n"),
+            None => (line, ""),
+        };
+
+        if let Some(lang) = body.strip_prefix("```") {
+            let lang = lang.trim();
+            normalized.push_str("```");
+            if !lang.is_empty() {
+                let canonical = canonical_language_token(lang);
+                normalized.push_str(canonical.as_ref());
+            }
+        } else {
+            normalized.push_str(body);
+        }
+
+        normalized.push_str(newline);
+    }
+    normalized
+}
+
+fn canonical_language_token(lang: &str) -> Cow<'static, str> {
+    let trimmed = lang.trim_start_matches('.');
+    let lower = trimmed.to_ascii_lowercase();
+    match lower.as_str() {
+        "js" | "javascript" | "node" => Cow::Borrowed("JavaScript"),
+        "ts" | "typescript" => Cow::Borrowed("TypeScript"),
+        "tsx" => Cow::Borrowed("TSX"),
+        "jsx" => Cow::Borrowed("JSX"),
+        "py" | "python" => Cow::Borrowed("Python"),
+        "rb" | "ruby" => Cow::Borrowed("Ruby"),
+        "rs" | "rust" => Cow::Borrowed("Rust"),
+        "go" | "golang" => Cow::Borrowed("Go"),
+        "java" => Cow::Borrowed("Java"),
+        "kt" | "kotlin" => Cow::Borrowed("Kotlin"),
+        "swift" => Cow::Borrowed("Swift"),
+        "php" => Cow::Borrowed("PHP"),
+        "sh" | "bash" | "shell" => Cow::Borrowed("Bash"),
+        "zsh" => Cow::Borrowed("Zsh"),
+        "ps" | "ps1" | "powershell" => Cow::Borrowed("PowerShell"),
+        "c" => Cow::Borrowed("C"),
+        "cpp" | "c++" => Cow::Borrowed("C++"),
+        "cs" | "csharp" | "c#" => Cow::Borrowed("C#"),
+        "json" => Cow::Borrowed("JSON"),
+        "yaml" | "yml" => Cow::Borrowed("YAML"),
+        "toml" => Cow::Borrowed("TOML"),
+        "ini" => Cow::Borrowed("INI"),
+        "sql" => Cow::Borrowed("SQL"),
+        "html" => Cow::Borrowed("HTML"),
+        "css" => Cow::Borrowed("CSS"),
+        "elixir" | "ex" | "exs" => Cow::Borrowed("Elixir"),
+        "dart" => Cow::Borrowed("Dart"),
+        other => Cow::Owned(other.to_string()),
     }
 }
