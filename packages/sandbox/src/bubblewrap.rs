@@ -124,18 +124,44 @@ impl BubblewrapService {
 
         // Add MASQUERADE rule for sandbox subnet if it doesn't exist
         let subnet = format!("{}/16", NETWORK_BASE);
-        
+
         // Check existence
         let check = run_command(
             &self.iptables_path,
-            &["-t", "nat", "-C", "POSTROUTING", "-s", &subnet, "!", "-d", &subnet, "-j", "MASQUERADE"],
-        ).await;
+            &[
+                "-t",
+                "nat",
+                "-C",
+                "POSTROUTING",
+                "-s",
+                &subnet,
+                "!",
+                "-d",
+                &subnet,
+                "-j",
+                "MASQUERADE",
+            ],
+        )
+        .await;
 
         if check.is_err() {
             run_command(
                 &self.iptables_path,
-                &["-t", "nat", "-A", "POSTROUTING", "-s", &subnet, "!", "-d", &subnet, "-j", "MASQUERADE"],
-            ).await?;
+                &[
+                    "-t",
+                    "nat",
+                    "-A",
+                    "POSTROUTING",
+                    "-s",
+                    &subnet,
+                    "!",
+                    "-d",
+                    &subnet,
+                    "-j",
+                    "MASQUERADE",
+                ],
+            )
+            .await?;
         }
 
         Ok(())
@@ -229,10 +255,10 @@ impl BubblewrapService {
 
     async fn setup_apt(&self, etc_merged: &Path) -> SandboxResult<()> {
         let apt_conf_dir = etc_merged.join("apt/apt.conf.d");
-        // Ensure directory exists (it might be a new directory in the upper layer if copy-up happens, 
+        // Ensure directory exists (it might be a new directory in the upper layer if copy-up happens,
         // or we might need to create it if it doesn't exist in lower, though it should)
         fs::create_dir_all(&apt_conf_dir).await?;
-        
+
         let conf_path = apt_conf_dir.join("99sandbox");
         let content = "Acquire::PrivilegeDrop::User \"root\";\n";
         fs::write(&conf_path, content).await?;
@@ -242,7 +268,7 @@ impl BubblewrapService {
     async fn setup_bashrc(&self, root_merged: &Path) -> SandboxResult<()> {
         let root_home = root_merged.join("root");
         fs::create_dir_all(&root_home).await?;
-        
+
         let bashrc = root_home.join(".bashrc");
         let content = r#"
 # ~/.bashrc: executed by bash(1) for non-login shells.
@@ -289,7 +315,7 @@ alias g=git
     async fn setup_gitconfig(&self, root_merged: &Path) -> SandboxResult<()> {
         let root_home = root_merged.join("root");
         fs::create_dir_all(&root_home).await?;
-        
+
         let gitconfig = root_home.join(".gitconfig");
         let content = r#"[safe]
 	directory = *
@@ -314,7 +340,7 @@ alias g=git
         let usr_merged = mount_overlay(system_dir, "usr", "/usr").await?;
         let etc_merged = mount_overlay(system_dir, "etc", "/etc").await?;
         let var_merged = mount_overlay(system_dir, "var", "/var").await?;
-        
+
         let root_merged = system_dir.join("root-merged");
         fs::create_dir_all(&root_merged).await?;
         self.setup_bashrc(&root_merged).await?;
@@ -322,7 +348,8 @@ alias g=git
 
         // Ensure we have valid DNS and hosts file in the overlay
         self.setup_dns(&etc_merged).await?;
-        self.setup_hosts(&etc_merged, &format!("sandbox-{}", index)).await?;
+        self.setup_hosts(&etc_merged, &format!("sandbox-{}", index))
+            .await?;
         self.setup_apt(&etc_merged).await?;
 
         let workspace_str = workspace
@@ -370,9 +397,13 @@ alias g=git
         command.args(["--bind", usr_merged.to_str().unwrap(), "/usr"]);
         command.args(["--bind", etc_merged.to_str().unwrap(), "/etc"]);
         command.args(["--bind", var_merged.to_str().unwrap(), "/var"]);
-        
+
         // Note: setup_bashrc wrote to root-merged/root/.bashrc
-        command.args(["--bind", root_merged.join("root").to_str().unwrap(), "/root"]);
+        command.args([
+            "--bind",
+            root_merged.join("root").to_str().unwrap(),
+            "/root",
+        ]);
 
         // Hide sensitive host paths exposed via /var overlay
         command.args(["--tmpfs", "/var/lib/docker"]);
@@ -663,7 +694,7 @@ impl SandboxService for BubblewrapService {
             let mut child = entry.child.lock().await;
             results.push(Self::workspace_summary(&entry, &mut child).await?);
         }
-        
+
         // Sort by index to keep stable order
         results.sort_by_key(|s| s.index);
 
@@ -729,7 +760,12 @@ impl SandboxService for BubblewrapService {
         })
     }
 
-    async fn attach(&self, id_str: String, mut socket: WebSocket, initial_size: Option<(u16, u16)>) -> SandboxResult<()> {
+    async fn attach(
+        &self,
+        id_str: String,
+        mut socket: WebSocket,
+        initial_size: Option<(u16, u16)>,
+    ) -> SandboxResult<()> {
         let id = self.resolve_id(&id_str).await?;
         let entry = {
             let sandboxes = self.sandboxes.lock().await;
@@ -869,32 +905,42 @@ impl SandboxService for BubblewrapService {
         .ok_or(SandboxError::NotFound(id))?;
 
         let target_address = format!("127.0.0.1:{}", port);
-        
+
         let mut command = Command::new(&self.nsenter_path);
         command.args(nsenter_args(
             entry.inner_pid,
             None,
-            &["cmux".to_string(), "_internal-proxy".to_string(), target_address],
+            &[
+                "cmux".to_string(),
+                "_internal-proxy".to_string(),
+                target_address,
+            ],
         ));
-        
+
         command.stdin(Stdio::piped());
         command.stdout(Stdio::piped());
-        command.stderr(Stdio::inherit()); 
-        
+        command.stderr(Stdio::inherit());
+
         command.kill_on_drop(true);
-        
+
         let mut child = command.spawn()?;
-        
-        let mut stdin = child.stdin.take().ok_or(SandboxError::Internal("failed to open stdin".into()))?;
-        let mut stdout = child.stdout.take().ok_or(SandboxError::Internal("failed to open stdout".into()))?;
-        
+
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or(SandboxError::Internal("failed to open stdin".into()))?;
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or(SandboxError::Internal("failed to open stdout".into()))?;
+
         let mut buf = [0u8; 8192];
 
         loop {
             tokio::select! {
                 res = stdout.read(&mut buf) => {
                     match res {
-                        Ok(0) => break, 
+                        Ok(0) => break,
                         Ok(n) => {
                             if socket.send(Message::Binary(buf[..n].to_vec().into())).await.is_err() {
                                 break;
@@ -919,7 +965,7 @@ impl SandboxService for BubblewrapService {
                 }
             }
         }
-        
+
         let _ = child.kill().await;
         Ok(())
     }
@@ -933,7 +979,7 @@ impl SandboxService for BubblewrapService {
         .ok_or(SandboxError::NotFound(id))?;
 
         let workspace = entry.handle.workspace;
-        
+
         let tar_path = find_binary("tar")?;
 
         let mut command = Command::new(tar_path);
@@ -943,18 +989,29 @@ impl SandboxService for BubblewrapService {
         command.stdout(Stdio::null());
         command.stderr(Stdio::piped());
 
-        let mut child = command.spawn().map_err(|e| SandboxError::Internal(format!("failed to spawn tar: {e}")))?;
-        let mut stdin = child.stdin.take().ok_or(SandboxError::Internal("failed to open tar stdin".into()))?;
+        let mut child = command
+            .spawn()
+            .map_err(|e| SandboxError::Internal(format!("failed to spawn tar: {e}")))?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or(SandboxError::Internal("failed to open tar stdin".into()))?;
 
         let mut stream = archive.into_data_stream();
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| SandboxError::Internal(format!("stream error: {e}")))?;
-            stdin.write_all(&chunk).await.map_err(|e| SandboxError::Internal(format!("failed to write to tar: {e}")))?;
+            stdin
+                .write_all(&chunk)
+                .await
+                .map_err(|e| SandboxError::Internal(format!("failed to write to tar: {e}")))?;
         }
         drop(stdin);
 
-        let output = child.wait_with_output().await.map_err(|e| SandboxError::Internal(format!("failed to wait for tar: {e}")))?;
-        
+        let output = child
+            .wait_with_output()
+            .await
+            .map_err(|e| SandboxError::Internal(format!("failed to wait for tar: {e}")))?;
+
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(SandboxError::Internal(format!("tar failed: {stderr}")));
@@ -995,7 +1052,7 @@ impl SandboxService for BubblewrapService {
             };
 
             let summary = entry.handle.to_summary(observed_status);
-            
+
             let system_dir = self.workspace_root.join(id.to_string()).join("system");
             cleanup_overlays(&system_dir).await;
 
@@ -1019,9 +1076,9 @@ impl SandboxService for BubblewrapService {
             // Try to remove the sandbox root directory (container for system and optionally workspace)
             let sandbox_root = self.workspace_root.join(id.to_string());
             if let Err(error) = fs::remove_dir(&sandbox_root).await {
-                // It might not be empty if workspace removal failed or if there are other files, 
+                // It might not be empty if workspace removal failed or if there are other files,
                 // but usually it should be empty now.
-                 warn!(
+                warn!(
                     "failed to remove sandbox root {}: {error}",
                     sandbox_root.display()
                 );
@@ -1062,11 +1119,7 @@ async fn run_command(binary: &str, args: &[&str]) -> SandboxResult<()> {
     })
 }
 
-async fn mount_overlay(
-    system_dir: &Path,
-    name: &str,
-    lower: &str,
-) -> SandboxResult<PathBuf> {
+async fn mount_overlay(system_dir: &Path, name: &str, lower: &str) -> SandboxResult<PathBuf> {
     let upper = system_dir.join(format!("{}-upper", name));
     let work = system_dir.join(format!("{}-work", name));
     let merged = system_dir.join(format!("{}-merged", name));
@@ -1099,9 +1152,21 @@ async fn mount_overlay(
 }
 
 async fn cleanup_overlays(system_dir: &Path) {
-    let _ = run_command("umount", &[system_dir.join("var-merged").to_string_lossy().as_ref()]).await;
-    let _ = run_command("umount", &[system_dir.join("etc-merged").to_string_lossy().as_ref()]).await;
-    let _ = run_command("umount", &[system_dir.join("usr-merged").to_string_lossy().as_ref()]).await;
+    let _ = run_command(
+        "umount",
+        &[system_dir.join("var-merged").to_string_lossy().as_ref()],
+    )
+    .await;
+    let _ = run_command(
+        "umount",
+        &[system_dir.join("etc-merged").to_string_lossy().as_ref()],
+    )
+    .await;
+    let _ = run_command(
+        "umount",
+        &[system_dir.join("usr-merged").to_string_lossy().as_ref()],
+    )
+    .await;
 }
 
 #[cfg(test)]

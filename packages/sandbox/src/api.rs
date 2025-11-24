@@ -3,10 +3,10 @@ use crate::models::{
     CreateSandboxRequest, ExecRequest, ExecResponse, HealthResponse, SandboxSummary,
 };
 use crate::service::{AppState, SandboxService};
+use axum::body::Body;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{DefaultBodyLimit, Path, Query};
 use axum::http::StatusCode;
-use axum::body::Body;
 use axum::response::Response;
 use axum::routing::{any, get, post};
 use axum::{Json, Router};
@@ -63,7 +63,10 @@ pub fn build_router(service: Arc<dyn SandboxService>) -> Router {
         .route("/sandboxes", get(list_sandboxes).post(create_sandbox))
         .route("/sandboxes/{id}", get(get_sandbox).delete(delete_sandbox))
         .route("/sandboxes/{id}/exec", post(exec_sandbox))
-        .route("/sandboxes/{id}/files", post(upload_files).layer(DefaultBodyLimit::disable()))
+        .route(
+            "/sandboxes/{id}/files",
+            post(upload_files).layer(DefaultBodyLimit::disable()),
+        )
         .route("/sandboxes/{id}/attach", any(attach_sandbox))
         .route("/sandboxes/{id}/proxy", any(proxy_sandbox))
         .merge(swagger_routes)
@@ -267,7 +270,12 @@ mod tests {
             })
         }
 
-        async fn attach(&self, _id: String, _socket: WebSocket, _initial_size: Option<(u16, u16)>) -> SandboxResult<()> {
+        async fn attach(
+            &self,
+            _id: String,
+            _socket: WebSocket,
+            _initial_size: Option<(u16, u16)>,
+        ) -> SandboxResult<()> {
             Ok(())
         }
 

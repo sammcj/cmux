@@ -5,6 +5,7 @@ use cmux_sandbox::models::{
 use cmux_sandbox::DEFAULT_HTTP_PORT;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use futures::{SinkExt, StreamExt};
+use ignore::WalkBuilder;
 use reqwest::Client;
 use serde::Serialize;
 use std::io::IsTerminal;
@@ -12,20 +13,20 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::sync::Arc;
 use std::time::Duration;
+use tar::Builder;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use tokio::sync::oneshot;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-use ignore::WalkBuilder;
-use tar::Builder;
 
 #[cfg(unix)]
 use tokio::signal::unix::{signal, SignalKind};
 
 // Proxy imports
 use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, SanType};
-use tokio_rustls::TlsAcceptor;
-use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+use rustls::ServerConfig;
+use tokio_rustls::TlsAcceptor;
 
 #[derive(Parser, Debug)]
 #[command(name = "cmux", version, about = "cmux sandbox controller")]
@@ -108,7 +109,7 @@ enum AuthCommand {
 
 struct AuthFileDef {
     name: &'static str,
-    host_path: &'static str, // Relative to HOME
+    host_path: &'static str,    // Relative to HOME
     sandbox_path: &'static str, // Absolute in sandbox
 }
 
@@ -116,28 +117,104 @@ const ENV_CMUX_NO_ATTACH: &str = "CMUX_NO_ATTACH";
 const ENV_CMUX_FORCE_ATTACH: &str = "CMUX_FORCE_ATTACH";
 
 const AUTH_FILES: &[AuthFileDef] = &[
-    AuthFileDef { name: "Claude Config", host_path: ".claude.json", sandbox_path: "/root/.claude.json" },
-    AuthFileDef { name: "Codex Auth", host_path: ".codex/auth.json", sandbox_path: "/root/.codex/auth.json" },
-    AuthFileDef { name: "Codex Instructions", host_path: ".codex/instructions.md", sandbox_path: "/root/.codex/instructions.md" },
-    AuthFileDef { name: "Codex Config", host_path: ".codex/config.toml", sandbox_path: "/root/.codex/config.toml" },
-    AuthFileDef { name: "Gemini Settings", host_path: ".gemini/settings.json", sandbox_path: "/root/.gemini/settings.json" },
-    AuthFileDef { name: "Gemini OAuth", host_path: ".gemini/oauth_creds.json", sandbox_path: "/root/.gemini/oauth_creds.json" },
-    AuthFileDef { name: "Gemini MCP Tokens", host_path: ".gemini/mcp-oauth-tokens.json", sandbox_path: "/root/.gemini/mcp-oauth-tokens.json" },
-    AuthFileDef { name: "Gemini Google Accounts", host_path: ".gemini/google_accounts.json", sandbox_path: "/root/.gemini/google_accounts.json" },
-    AuthFileDef { name: "Gemini Account ID", host_path: ".gemini/google_account_id", sandbox_path: "/root/.gemini/google_account_id" },
-    AuthFileDef { name: "Gemini Install ID", host_path: ".gemini/installation_id", sandbox_path: "/root/.gemini/installation_id" },
-    AuthFileDef { name: "Gemini User ID", host_path: ".gemini/user_id", sandbox_path: "/root/.gemini/user_id" },
-    AuthFileDef { name: "Gemini Env", host_path: ".gemini/.env", sandbox_path: "/root/.gemini/.env" },
-    AuthFileDef { name: "Env", host_path: ".env", sandbox_path: "/root/.env" },
-    AuthFileDef { name: "OpenCode Auth", host_path: ".local/share/opencode/auth.json", sandbox_path: "/root/.local/share/opencode/auth.json" },
+    AuthFileDef {
+        name: "Claude Config",
+        host_path: ".claude.json",
+        sandbox_path: "/root/.claude.json",
+    },
+    AuthFileDef {
+        name: "Codex Auth",
+        host_path: ".codex/auth.json",
+        sandbox_path: "/root/.codex/auth.json",
+    },
+    AuthFileDef {
+        name: "Codex Instructions",
+        host_path: ".codex/instructions.md",
+        sandbox_path: "/root/.codex/instructions.md",
+    },
+    AuthFileDef {
+        name: "Codex Config",
+        host_path: ".codex/config.toml",
+        sandbox_path: "/root/.codex/config.toml",
+    },
+    AuthFileDef {
+        name: "Gemini Settings",
+        host_path: ".gemini/settings.json",
+        sandbox_path: "/root/.gemini/settings.json",
+    },
+    AuthFileDef {
+        name: "Gemini OAuth",
+        host_path: ".gemini/oauth_creds.json",
+        sandbox_path: "/root/.gemini/oauth_creds.json",
+    },
+    AuthFileDef {
+        name: "Gemini MCP Tokens",
+        host_path: ".gemini/mcp-oauth-tokens.json",
+        sandbox_path: "/root/.gemini/mcp-oauth-tokens.json",
+    },
+    AuthFileDef {
+        name: "Gemini Google Accounts",
+        host_path: ".gemini/google_accounts.json",
+        sandbox_path: "/root/.gemini/google_accounts.json",
+    },
+    AuthFileDef {
+        name: "Gemini Account ID",
+        host_path: ".gemini/google_account_id",
+        sandbox_path: "/root/.gemini/google_account_id",
+    },
+    AuthFileDef {
+        name: "Gemini Install ID",
+        host_path: ".gemini/installation_id",
+        sandbox_path: "/root/.gemini/installation_id",
+    },
+    AuthFileDef {
+        name: "Gemini User ID",
+        host_path: ".gemini/user_id",
+        sandbox_path: "/root/.gemini/user_id",
+    },
+    AuthFileDef {
+        name: "Gemini Env",
+        host_path: ".gemini/.env",
+        sandbox_path: "/root/.gemini/.env",
+    },
+    AuthFileDef {
+        name: "Env",
+        host_path: ".env",
+        sandbox_path: "/root/.env",
+    },
+    AuthFileDef {
+        name: "OpenCode Auth",
+        host_path: ".local/share/opencode/auth.json",
+        sandbox_path: "/root/.local/share/opencode/auth.json",
+    },
     // Amp
-    AuthFileDef { name: "Amp Settings", host_path: ".config/amp/settings.json", sandbox_path: "/root/.config/amp/settings.json" },
-    AuthFileDef { name: "Amp Secrets", host_path: ".local/share/amp/secrets.json", sandbox_path: "/root/.local/share/amp/secrets.json" },
+    AuthFileDef {
+        name: "Amp Settings",
+        host_path: ".config/amp/settings.json",
+        sandbox_path: "/root/.config/amp/settings.json",
+    },
+    AuthFileDef {
+        name: "Amp Secrets",
+        host_path: ".local/share/amp/secrets.json",
+        sandbox_path: "/root/.local/share/amp/secrets.json",
+    },
     // Cursor
-    AuthFileDef { name: "Cursor CLI Config", host_path: ".cursor/cli-config.json", sandbox_path: "/root/.cursor/cli-config.json" },
-    AuthFileDef { name: "Cursor Auth", host_path: ".config/cursor/auth.json", sandbox_path: "/root/.config/cursor/auth.json" },
+    AuthFileDef {
+        name: "Cursor CLI Config",
+        host_path: ".cursor/cli-config.json",
+        sandbox_path: "/root/.cursor/cli-config.json",
+    },
+    AuthFileDef {
+        name: "Cursor Auth",
+        host_path: ".config/cursor/auth.json",
+        sandbox_path: "/root/.config/cursor/auth.json",
+    },
     // Qwen
-    AuthFileDef { name: "Qwen Settings", host_path: ".qwen/settings.json", sandbox_path: "/root/.qwen/settings.json" },
+    AuthFileDef {
+        name: "Qwen Settings",
+        host_path: ".qwen/settings.json",
+        sandbox_path: "/root/.qwen/settings.json",
+    },
 ];
 
 #[derive(Subcommand, Debug)]
@@ -218,7 +295,9 @@ fn get_config_dir() -> PathBuf {
 fn get_last_sandbox() -> Option<String> {
     let path = get_config_dir().join("last_sandbox");
     if path.exists() {
-        std::fs::read_to_string(path).ok().map(|s| s.trim().to_string())
+        std::fs::read_to_string(path)
+            .ok()
+            .map(|s| s.trim().to_string())
     } else {
         None
     }
@@ -277,16 +356,21 @@ async fn run() -> anyhow::Result<()> {
             // Upload directory
             eprintln!("Uploading directory: {}", args.path.display());
             let body = stream_directory(args.path.clone());
-            let url = format!("{}/sandboxes/{}/files", cli.base_url.trim_end_matches('/'), summary.id);
+            let url = format!(
+                "{}/sandboxes/{}/files",
+                cli.base_url.trim_end_matches('/'),
+                summary.id
+            );
             let response = client.post(url).body(body).send().await?;
             if !response.status().is_success() {
-                 eprintln!("Failed to upload files: {}", response.status());
+                eprintln!("Failed to upload files: {}", response.status());
             } else {
-                 eprintln!("Files uploaded.");
+                eprintln!("Files uploaded.");
             }
 
             // Upload auth files
-            if let Err(e) = upload_auth_files(&client, &cli.base_url, &summary.id.to_string()).await {
+            if let Err(e) = upload_auth_files(&client, &cli.base_url, &summary.id.to_string()).await
+            {
                 eprintln!("Warning: Failed to upload auth files: {}", e);
             }
 
@@ -294,7 +378,9 @@ async fn run() -> anyhow::Result<()> {
             if should_attach() {
                 handle_ssh(&cli.base_url, &summary.id.to_string()).await?;
             } else {
-                eprintln!("Skipping interactive shell attach (non-interactive environment detected).");
+                eprintln!(
+                    "Skipping interactive shell attach (non-interactive environment detected)."
+                );
             }
         }
         Command::Ls => {
@@ -309,7 +395,7 @@ async fn run() -> anyhow::Result<()> {
             } else {
                 get_last_sandbox().ok_or_else(|| {
                     anyhow::anyhow!("No sandbox ID provided and no previous sandbox found")
-                })? 
+                })?
             };
             save_last_sandbox(&target_id);
             handle_ssh(&cli.base_url, &target_id).await?;
@@ -351,7 +437,10 @@ async fn run() -> anyhow::Result<()> {
             AuthCommand::Status => {
                 let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
                 let home_path = PathBuf::from(home);
-                println!("Checking for authentication files in {}:", home_path.display());
+                println!(
+                    "Checking for authentication files in {}:",
+                    home_path.display()
+                );
                 println!("{:<25} {:<50} {:<10}", "NAME", "PATH", "STATUS");
                 println!("{}", "-".repeat(85));
 
@@ -366,85 +455,96 @@ async fn run() -> anyhow::Result<()> {
                 }
             }
         },
-        Command::Sandboxes(cmd) => match cmd {
-            SandboxCommand::List => {
-                let url = format!("{}/sandboxes", cli.base_url.trim_end_matches('/'));
-                let response = client.get(url).send().await?;
-                let sandboxes: Vec<SandboxSummary> = parse_response(response).await?;
-                print_json(&sandboxes)?;
-            }
-            SandboxCommand::Create(args) => {
-                let resolved_name = args.name.or(args.positional_name);
-                let body = CreateSandboxRequest {
-                    name: resolved_name,
-                    workspace: args.workspace.map(|p| p.to_string_lossy().to_string()),
-                    read_only_paths:
-                        args.read_only_paths.iter().map(|p| p.to_string_lossy().to_string()).collect(),
-                    tmpfs: args.tmpfs,
-                    env: args.env,
-                };
-
-                let url = format!("{}/sandboxes", cli.base_url.trim_end_matches('/'));
-                let response = client.post(url).json(&body).send().await?;
-                let summary: SandboxSummary = parse_response(response).await?;
-                print_json(&summary)?;
-            }
-            SandboxCommand::New(args) => {
-                let body = CreateSandboxRequest {
-                    name: Some("interactive".into()),
-                    workspace: None,
-                    read_only_paths: vec![],
-                    tmpfs: vec![],
-                    env: vec![],
-                };
-                let url = format!("{}/sandboxes", cli.base_url.trim_end_matches('/'));
-                let response = client.post(url).json(&body).send().await?;
-                let summary: SandboxSummary = parse_response(response).await?;
-                eprintln!("Created sandbox {}", summary.id);
-
-                // Upload directory
-                eprintln!("Uploading directory: {}", args.path.display());
-                let body = stream_directory(args.path.clone());
-                let url = format!("{}/sandboxes/{}/files", cli.base_url.trim_end_matches('/'), summary.id);
-                let response = client.post(url).body(body).send().await?;
-                if !response.status().is_success() {
-                     eprintln!("Failed to upload files: {}", response.status());
-                } else {
-                     eprintln!("Files uploaded.");
+        Command::Sandboxes(cmd) => {
+            match cmd {
+                SandboxCommand::List => {
+                    let url = format!("{}/sandboxes", cli.base_url.trim_end_matches('/'));
+                    let response = client.get(url).send().await?;
+                    let sandboxes: Vec<SandboxSummary> = parse_response(response).await?;
+                    print_json(&sandboxes)?;
                 }
+                SandboxCommand::Create(args) => {
+                    let resolved_name = args.name.or(args.positional_name);
+                    let body = CreateSandboxRequest {
+                        name: resolved_name,
+                        workspace: args.workspace.map(|p| p.to_string_lossy().to_string()),
+                        read_only_paths: args
+                            .read_only_paths
+                            .iter()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect(),
+                        tmpfs: args.tmpfs,
+                        env: args.env,
+                    };
 
-                // Upload auth files
-                if let Err(e) = upload_auth_files(&client, &cli.base_url, &summary.id.to_string()).await {
-                    eprintln!("Warning: Failed to upload auth files: {}", e);
+                    let url = format!("{}/sandboxes", cli.base_url.trim_end_matches('/'));
+                    let response = client.post(url).json(&body).send().await?;
+                    let summary: SandboxSummary = parse_response(response).await?;
+                    print_json(&summary)?;
                 }
+                SandboxCommand::New(args) => {
+                    let body = CreateSandboxRequest {
+                        name: Some("interactive".into()),
+                        workspace: None,
+                        read_only_paths: vec![],
+                        tmpfs: vec![],
+                        env: vec![],
+                    };
+                    let url = format!("{}/sandboxes", cli.base_url.trim_end_matches('/'));
+                    let response = client.post(url).json(&body).send().await?;
+                    let summary: SandboxSummary = parse_response(response).await?;
+                    eprintln!("Created sandbox {}", summary.id);
 
-                save_last_sandbox(&summary.id.to_string());
-                if should_attach() {
-                    handle_ssh(&cli.base_url, &summary.id.to_string()).await?;
-                } else {
-                    eprintln!("Skipping interactive shell attach (non-interactive environment detected).");
+                    // Upload directory
+                    eprintln!("Uploading directory: {}", args.path.display());
+                    let body = stream_directory(args.path.clone());
+                    let url = format!(
+                        "{}/sandboxes/{}/files",
+                        cli.base_url.trim_end_matches('/'),
+                        summary.id
+                    );
+                    let response = client.post(url).body(body).send().await?;
+                    if !response.status().is_success() {
+                        eprintln!("Failed to upload files: {}", response.status());
+                    } else {
+                        eprintln!("Files uploaded.");
+                    }
+
+                    // Upload auth files
+                    if let Err(e) =
+                        upload_auth_files(&client, &cli.base_url, &summary.id.to_string()).await
+                    {
+                        eprintln!("Warning: Failed to upload auth files: {}", e);
+                    }
+
+                    save_last_sandbox(&summary.id.to_string());
+                    if should_attach() {
+                        handle_ssh(&cli.base_url, &summary.id.to_string()).await?;
+                    } else {
+                        eprintln!("Skipping interactive shell attach (non-interactive environment detected).");
+                    }
+                }
+                SandboxCommand::Show { id } => {
+                    let url = format!("{}/sandboxes/{id}", cli.base_url.trim_end_matches('/'));
+                    let response = client.get(url).send().await?;
+                    let summary: SandboxSummary = parse_response(response).await?;
+                    print_json(&summary)?;
+                }
+                SandboxCommand::Exec(args) => {
+                    handle_exec_request(&client, &cli.base_url, args).await?;
+                }
+                SandboxCommand::Ssh { id } => {
+                    save_last_sandbox(&id);
+                    handle_ssh(&cli.base_url, &id).await?;
+                }
+                SandboxCommand::Delete { id } => {
+                    let url = format!("{}/sandboxes/{id}", cli.base_url.trim_end_matches('/'));
+                    let response = client.delete(url).send().await?;
+                    let summary: SandboxSummary = parse_response(response).await?;
+                    print_json(&summary)?;
                 }
             }
-            SandboxCommand::Show { id } => {
-                let url = format!("{}/sandboxes/{id}", cli.base_url.trim_end_matches('/'));
-                let response = client.get(url).send().await?;
-                let summary: SandboxSummary = parse_response(response).await?;
-                print_json(&summary)?;
-            }
-            SandboxCommand::Exec(args) => {
-                handle_exec_request(&client, &cli.base_url, args).await?;
-            }
-            SandboxCommand::Ssh { id } => {
-                save_last_sandbox(&id);
-                handle_ssh(&cli.base_url, &id).await?;
-            }
-            SandboxCommand::Delete { id } => {
-                let url = format!("{}/sandboxes/{id}", cli.base_url.trim_end_matches('/'));
-                let response = client.delete(url).send().await?;
-                let summary: SandboxSummary = parse_response(response).await?;
-                print_json(&summary)?;
-            }
-        },
+        }
     }
 
     Ok(())
@@ -472,7 +572,10 @@ async fn handle_ssh(base_url: &str, id: &str) -> anyhow::Result<()> {
         .replace("https://", "wss://")
         .trim_end_matches('/')
         .to_string();
-    let url = format!("{}/sandboxes/{}/attach?cols={}&rows={}", ws_url, id, cols, rows);
+    let url = format!(
+        "{}/sandboxes/{}/attach?cols={}&rows={}",
+        ws_url, id, cols, rows
+    );
 
     let (ws_stream, _) = connect_async(url).await?;
     eprintln!("Connected to sandbox shell. Press Ctrl+D to exit.");
@@ -562,7 +665,10 @@ impl std::io::Write for ChunkedWriter {
         // We use blocking_send because this runs in a spawn_blocking task
         match self.sender.blocking_send(Ok(data)) {
             Ok(_) => Ok(buf.len()),
-            Err(_) => Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Channel closed")),
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "Channel closed",
+            )),
         }
     }
 
@@ -599,7 +705,7 @@ fn stream_directory(path: PathBuf) -> reqwest::Body {
         }
 
         if let Err(e) = tar.finish() {
-             let _ = tx.blocking_send(Err(e));
+            let _ = tx.blocking_send(Err(e));
         }
     });
 
@@ -638,7 +744,10 @@ fn append_path(
 }
 
 fn append_walked_paths(root: &Path, tar: &mut Builder<ChunkedWriter>) -> std::io::Result<()> {
-    let walker = WalkBuilder::new(root).hidden(false).git_ignore(true).build();
+    let walker = WalkBuilder::new(root)
+        .hidden(false)
+        .git_ignore(true)
+        .build();
 
     for result in walker {
         let entry = match result {
@@ -774,7 +883,7 @@ async fn handle_proxy(base_url: String, id: String, port: u16) -> anyhow::Result
         let base_url = base_url.clone();
         let id = id.clone();
         let ca = ca.clone();
-        
+
         tokio::spawn(async move {
             if let Err(_e) = handle_connection(socket, base_url, id, ca).await {
                 // Ignore
@@ -783,34 +892,81 @@ async fn handle_proxy(base_url: String, id: String, port: u16) -> anyhow::Result
     }
 }
 
-async fn handle_browser(base_url: String, id: String) -> anyhow::Result<()> {
-    let ca = Arc::new(generate_ca()?);
-    let listener = TcpListener::bind("127.0.0.1:0").await?;
-    let port = listener.local_addr()?.port();
-    eprintln!("Proxy started on port {}", port);
-    
-    let base_url_c = base_url.clone();
-    let id_c = id.clone();
-    let ca_c = ca.clone();
-    
-    tokio::spawn(async move {
-        loop {
-            if let Ok((socket, _)) = listener.accept().await {
-                 let b = base_url_c.clone();
-                 let i = id_c.clone();
-                 let c = ca_c.clone();
-                 tokio::spawn(async move {
-                     let _ = handle_connection(socket, b, i, c).await;
-                 });
+struct BrowserProxy {
+    port: u16,
+    shutdown_tx: Option<oneshot::Sender<()>>,
+    task: tokio::task::JoinHandle<anyhow::Result<()>>,
+}
+
+impl BrowserProxy {
+    fn port(&self) -> u16 {
+        self.port
+    }
+
+    async fn start(
+        base_url: String,
+        id: String,
+        ca: Arc<rcgen::Certificate>,
+    ) -> anyhow::Result<Self> {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let port = listener.local_addr()?.port();
+        let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
+        let task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = &mut shutdown_rx => {
+                        break;
+                    }
+                    accept_result = listener.accept() => {
+                        match accept_result {
+                            Ok((socket, _)) => {
+                                let base_url = base_url.clone();
+                                let id = id.clone();
+                                let ca = ca.clone();
+                                tokio::spawn(async move {
+                                    if let Err(err) = handle_connection(socket, base_url, id, ca).await {
+                                        eprintln!("Proxy connection error: {err:?}");
+                                    }
+                                });
+                            }
+                            Err(err) => {
+                                return Err(anyhow::anyhow!("Proxy accept error: {err}"));
+                            }
+                        }
+                    }
+                }
             }
+            Ok(())
+        });
+
+        Ok(Self {
+            port,
+            shutdown_tx: Some(shutdown_tx),
+            task,
+        })
+    }
+
+    async fn shutdown(mut self) -> anyhow::Result<()> {
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
         }
-    });
-    
+        match self.task.await {
+            Ok(result) => result,
+            Err(err) => Err(anyhow::anyhow!("Proxy task join error: {err}")),
+        }
+    }
+}
+
+async fn handle_browser(base_url: String, id: String) -> anyhow::Result<()> {
+    let proxy = BrowserProxy::start(base_url, id, Arc::new(generate_ca()?)).await?;
+    let port = proxy.port();
+    eprintln!("Proxy started on port {}", port);
+
     // Launch Chrome
     #[cfg(target_os = "macos")]
     let chrome_bin = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
     #[cfg(target_os = "linux")]
-    let chrome_bin = "google-chrome"; 
+    let chrome_bin = "google-chrome";
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     let chrome_bin = "chrome";
 
@@ -818,45 +974,72 @@ async fn handle_browser(base_url: String, id: String) -> anyhow::Result<()> {
     let _ = std::fs::create_dir_all(&user_data);
 
     eprintln!("Launching Chrome...");
-    let mut child = tokio::process::Command::new(chrome_bin)
-        .arg(format!("--proxy-server=http=127.0.0.1:{};https=127.0.0.1:{}", port, port))
+    let mut child = match tokio::process::Command::new(chrome_bin)
+        .arg(format!(
+            "--proxy-server=http=127.0.0.1:{};https=127.0.0.1:{}",
+            port, port
+        ))
         .arg("--proxy-bypass-list=<-loopback>")
         .arg("--ignore-certificate-errors")
         .arg(format!("--user-data-dir={}", user_data.display()))
         .arg("--no-first-run")
-        .arg("http://localhost:8000") 
+        .arg("http://localhost:8000")
         .kill_on_drop(true)
-        .spawn()?;
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(err) => {
+            let _ = proxy.shutdown().await;
+            return Err(err.into());
+        }
+    };
 
-    child.wait().await?;
+    let wait_result = child.wait().await;
+    let shutdown_result = proxy.shutdown().await;
+    if let Err(err) = wait_result {
+        return Err(err.into());
+    }
+    shutdown_result?;
     Ok(())
 }
 
 fn generate_ca() -> anyhow::Result<rcgen::Certificate> {
     let mut params = CertificateParams::default();
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-    params.distinguished_name.push(DnType::CommonName, "cmux-sandbox-ca");
+    params
+        .distinguished_name
+        .push(DnType::CommonName, "cmux-sandbox-ca");
     Ok(rcgen::Certificate::from_params(params)?)
 }
 
 async fn handle_server_start() -> anyhow::Result<()> {
-    let container_name = std::env::var("CONTAINER_NAME").unwrap_or_else(|_| "cmux-sandbox-dev-run".into());
+    let container_name =
+        std::env::var("CONTAINER_NAME").unwrap_or_else(|_| "cmux-sandbox-dev-run".into());
     let port = std::env::var("CMUX_SANDBOX_PORT").unwrap_or_else(|_| "46831".into());
     let image_name = std::env::var("IMAGE_NAME").unwrap_or_else(|_| "cmux-sandbox-dev".into());
 
     // Check if container is already running
     let output = tokio::process::Command::new("docker")
-        .args(["ps", "--filter", &format!("name=^/{}$", container_name), "--format", "{{.Names}}"])
+        .args([
+            "ps",
+            "--filter",
+            &format!("name=^/{}$", container_name),
+            "--format",
+            "{{.Names}}",
+        ])
         .output()
         .await?;
-    
+
     let output_str = String::from_utf8_lossy(&output.stdout);
     if output_str.trim() == container_name {
         eprintln!("Server container '{}' is already running.", container_name);
         return Ok(());
     }
 
-    eprintln!("Starting server container '{}' on port {}...", container_name, port);
+    eprintln!(
+        "Starting server container '{}' on port {}...",
+        container_name, port
+    );
 
     // Force remove existing stopped container if any
     let _ = tokio::process::Command::new("docker")
@@ -869,23 +1052,37 @@ async fn handle_server_start() -> anyhow::Result<()> {
             "run",
             "--privileged",
             "-d",
-            "--name", &container_name,
+            "--name",
+            &container_name,
             "--cgroupns=host",
-            "--tmpfs", "/run",
-            "--tmpfs", "/run/lock",
-            "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw",
-            "--dns", "1.1.1.1",
-            "--dns", "8.8.8.8",
-            "-e", &format!("CMUX_SANDBOX_PORT={}", port),
-            "-p", &format!("{}:{}", port, port),
-            "-v", "cmux-sandbox-docker:/var/lib/docker",
-            "-v", "cmux-sandbox-data:/var/lib/cmux/sandboxes",
-            "--entrypoint", "/usr/local/bin/bootstrap-dind.sh",
+            "--tmpfs",
+            "/run",
+            "--tmpfs",
+            "/run/lock",
+            "-v",
+            "/sys/fs/cgroup:/sys/fs/cgroup:rw",
+            "--dns",
+            "1.1.1.1",
+            "--dns",
+            "8.8.8.8",
+            "-e",
+            &format!("CMUX_SANDBOX_PORT={}", port),
+            "-p",
+            &format!("{}:{}", port, port),
+            "-v",
+            "cmux-sandbox-docker:/var/lib/docker",
+            "-v",
+            "cmux-sandbox-data:/var/lib/cmux/sandboxes",
+            "--entrypoint",
+            "/usr/local/bin/bootstrap-dind.sh",
             &image_name,
             "/usr/local/bin/cmux-sandboxd",
-            "--bind", "0.0.0.0",
-            "--port", &port,
-            "--data-dir", "/var/lib/cmux/sandboxes",
+            "--bind",
+            "0.0.0.0",
+            "--port",
+            &port,
+            "--data-dir",
+            "/var/lib/cmux/sandboxes",
         ])
         .status()
         .await?;
@@ -896,7 +1093,10 @@ async fn handle_server_start() -> anyhow::Result<()> {
 
     eprintln!("Waiting for server to be ready...");
     for _ in 0..30 {
-        if reqwest::get(format!("http://127.0.0.1:{}/healthz", port)).await.is_ok() {
+        if reqwest::get(format!("http://127.0.0.1:{}/healthz", port))
+            .await
+            .is_ok()
+        {
             eprintln!("Server is up!");
             return Ok(());
         }
@@ -907,13 +1107,14 @@ async fn handle_server_start() -> anyhow::Result<()> {
 }
 
 async fn handle_server_stop() -> anyhow::Result<()> {
-    let container_name = std::env::var("CONTAINER_NAME").unwrap_or_else(|_| "cmux-sandbox-dev-run".into());
+    let container_name =
+        std::env::var("CONTAINER_NAME").unwrap_or_else(|_| "cmux-sandbox-dev-run".into());
     eprintln!("Stopping server container '{}'...", container_name);
     let status = tokio::process::Command::new("docker")
         .args(["rm", "-f", &container_name])
         .status()
         .await?;
-    
+
     if status.success() {
         eprintln!("Server stopped.");
     } else {
@@ -923,8 +1124,9 @@ async fn handle_server_stop() -> anyhow::Result<()> {
 }
 
 async fn handle_server_status(base_url: &str) -> anyhow::Result<()> {
-    let container_name = std::env::var("CONTAINER_NAME").unwrap_or_else(|_| "cmux-sandbox-dev-run".into());
-    
+    let container_name =
+        std::env::var("CONTAINER_NAME").unwrap_or_else(|_| "cmux-sandbox-dev-run".into());
+
     println!("cmux CLI version: {}", env!("CARGO_PKG_VERSION"));
     println!("Server URL: {}", base_url);
     println!("----------------------------------------");
@@ -982,144 +1184,204 @@ async fn handle_server_status(base_url: &str) -> anyhow::Result<()> {
 }
 
 async fn handle_connection(
-    mut socket: tokio::net::TcpStream, 
-    base_url: String, 
-    id: String, 
-    ca: Arc<rcgen::Certificate>
+    mut socket: tokio::net::TcpStream,
+    base_url: String,
+    id: String,
+    ca: Arc<rcgen::Certificate>,
 ) -> anyhow::Result<()> {
     let mut buf = [0u8; 4096];
     let n = socket.peek(&mut buf).await?;
-    if n == 0 { return Ok(()); }
-    
+    if n == 0 {
+        return Ok(());
+    }
+
     let header = String::from_utf8_lossy(&buf[..n]);
-    
+
     if header.starts_with("CONNECT ") {
         let line = header.lines().next().unwrap_or("");
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 2 { return Ok(()); }
+        if parts.len() < 2 {
+            return Ok(());
+        }
         let target = parts[1];
-        let port = target.split(':').nth(1).unwrap_or("80").parse::<u16>().unwrap_or(80);
-        
+        let port = target
+            .split(':')
+            .nth(1)
+            .unwrap_or("80")
+            .parse::<u16>()
+            .unwrap_or(80);
+
         let mut trash = [0u8; 4096];
         let mut total_read = 0;
         loop {
-             let n_read = socket.read(&mut trash[total_read..]).await?;
-             if n_read == 0 { return Ok(()); }
-             total_read += n_read;
-             if trash[..total_read].windows(4).any(|w| w == b"\r\n\r\n") {
-                 break;
-             }
-             if total_read >= trash.len() { break; } 
+            let n_read = socket.read(&mut trash[total_read..]).await?;
+            if n_read == 0 {
+                return Ok(());
+            }
+            total_read += n_read;
+            if trash[..total_read].windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+            if total_read >= trash.len() {
+                break;
+            }
         }
 
-        socket.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await?;
-        
+        socket
+            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            .await?;
+
         let mut peek_buf = [0u8; 1];
         let n = socket.peek(&mut peek_buf).await?;
         if n > 0 && peek_buf[0] == 0x16 {
             let target_host = target.split(':').next().unwrap_or("localhost");
-            
+
             let mut params = CertificateParams::new(vec![target_host.to_string()]);
-            params.distinguished_name.push(DnType::CommonName, target_host);
+            params
+                .distinguished_name
+                .push(DnType::CommonName, target_host);
             params.subject_alt_names = vec![SanType::DnsName(target_host.to_string())];
-            
+
             let cert = rcgen::Certificate::from_params(params)?;
             let cert_der = cert.serialize_der_with_signer(&ca)?;
             let key_der = cert.serialize_private_key_der();
-            
+
             let certs = vec![CertificateDer::from(cert_der)];
             let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_der));
-             
+
             let server_config = ServerConfig::builder()
                 .with_no_client_auth()
                 .with_single_cert(certs, key)?;
-                
+
             let acceptor = TlsAcceptor::from(Arc::new(server_config));
             let tls_stream = acceptor.accept(socket).await?;
-            
+
             connect_and_tunnel(tls_stream, base_url, id, port, None).await?;
         } else {
             connect_and_tunnel(socket, base_url, id, port, None).await?;
         }
-    } else if header.starts_with("GET ") || header.starts_with("POST ") || header.starts_with("PUT ") || header.starts_with("DELETE ") || header.starts_with("HEAD ") || header.starts_with("OPTIONS ") || header.starts_with("PATCH ") {
-         // Read headers fully
-         let mut header_buf = Vec::new();
-         let mut buffer = [0u8; 1];
-         let mut state = 0; // 0: normal, 1: \r, 2: \r\n, 3: \r\n\r
-         
-         loop {
-             if socket.read_exact(&mut buffer).await.is_err() { break; }
-             header_buf.push(buffer[0]);
-             let b = buffer[0];
-             if state == 0 && b == b'\r' { state = 1; }
-             else if state == 1 && b == b'\n' { state = 2; }
-             else if state == 2 && b == b'\r' { state = 3; }
-             else if state == 3 && b == b'\n' { break; } // Found \r\n\r\n
-             else if b != b'\r' { state = 0; } // Reset if char is not part of sequence
-         }
-         
-         let header_str = String::from_utf8_lossy(&header_buf);
-         let lines: Vec<&str> = header_str.lines().collect();
-         
-         if !lines.is_empty() {
-             let request_line = lines[0];
-             let parts: Vec<&str> = request_line.split_whitespace().collect();
-             if parts.len() >= 2 {
-                 let url = parts[1];
-                 if let Some(host_start) = url.strip_prefix("http://") {
-                     let path_start = host_start.find('/').unwrap_or(host_start.len());
-                     let host_port = &host_start[..path_start];
-                     let path = if path_start == host_start.len() { "/" } else { &host_start[path_start..] };
-                     let port = host_port.split(':').nth(1).unwrap_or("80").parse::<u16>().unwrap_or(80);
-                     
-                     let method = parts[0];
-                     let version = if parts.len() > 2 { parts[2] } else { "HTTP/1.1" };
-                     
-                     let new_req_line = format!("{} {} {}", method, path, version);
-                     
-                     // Rebuild headers with Connection: close
-                     let mut new_headers = String::new();
-                     new_headers.push_str(&new_req_line);
-                     new_headers.push_str("\r\n");
-                     
-                     for line in lines.iter().skip(1) {
-                         if line.to_lowercase().starts_with("connection:") || line.to_lowercase().starts_with("proxy-connection:") {
-                             continue;
-                         }
-                         if line.trim().is_empty() { continue; }
-                         new_headers.push_str(line);
-                         new_headers.push_str("\r\n");
-                     }
-                     new_headers.push_str("Connection: close\r\n\r\n");
-                     
-                     connect_and_tunnel(socket, base_url, id, port, Some(new_headers.into_bytes())).await?;
-                 }
-             }
-         }
+    } else if header.starts_with("GET ")
+        || header.starts_with("POST ")
+        || header.starts_with("PUT ")
+        || header.starts_with("DELETE ")
+        || header.starts_with("HEAD ")
+        || header.starts_with("OPTIONS ")
+        || header.starts_with("PATCH ")
+    {
+        // Read headers fully
+        let mut header_buf = Vec::new();
+        let mut buffer = [0u8; 1];
+        let mut state = 0; // 0: normal, 1: \r, 2: \r\n, 3: \r\n\r
+
+        loop {
+            if socket.read_exact(&mut buffer).await.is_err() {
+                break;
+            }
+            header_buf.push(buffer[0]);
+            let b = buffer[0];
+            if state == 0 && b == b'\r' {
+                state = 1;
+            } else if state == 1 && b == b'\n' {
+                state = 2;
+            } else if state == 2 && b == b'\r' {
+                state = 3;
+            } else if state == 3 && b == b'\n' {
+                break;
+            }
+            // Found \r\n\r\n
+            else if b != b'\r' {
+                state = 0;
+            } // Reset if char is not part of sequence
+        }
+
+        let header_str = String::from_utf8_lossy(&header_buf);
+        let lines: Vec<&str> = header_str.lines().collect();
+
+        if !lines.is_empty() {
+            let request_line = lines[0];
+            let parts: Vec<&str> = request_line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let url = parts[1];
+                if let Some(host_start) = url.strip_prefix("http://") {
+                    let path_start = host_start.find('/').unwrap_or(host_start.len());
+                    let host_port = &host_start[..path_start];
+                    let path = if path_start == host_start.len() {
+                        "/"
+                    } else {
+                        &host_start[path_start..]
+                    };
+                    let port = host_port
+                        .split(':')
+                        .nth(1)
+                        .unwrap_or("80")
+                        .parse::<u16>()
+                        .unwrap_or(80);
+
+                    let method = parts[0];
+                    let version = if parts.len() > 2 {
+                        parts[2]
+                    } else {
+                        "HTTP/1.1"
+                    };
+
+                    let new_req_line = format!("{} {} {}", method, path, version);
+
+                    // Rebuild headers with Connection: close
+                    let mut new_headers = String::new();
+                    new_headers.push_str(&new_req_line);
+                    new_headers.push_str("\r\n");
+
+                    for line in lines.iter().skip(1) {
+                        if line.to_lowercase().starts_with("connection:")
+                            || line.to_lowercase().starts_with("proxy-connection:")
+                        {
+                            continue;
+                        }
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+                        new_headers.push_str(line);
+                        new_headers.push_str("\r\n");
+                    }
+                    new_headers.push_str("Connection: close\r\n\r\n");
+
+                    connect_and_tunnel(socket, base_url, id, port, Some(new_headers.into_bytes()))
+                        .await?;
+                }
+            }
+        }
     }
-    
+
     Ok(())
 }
 
-async fn connect_and_tunnel<S>(socket: S, base_url: String, id: String, port: u16, initial_data: Option<Vec<u8>>) -> anyhow::Result<()> 
-where S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin {
+async fn connect_and_tunnel<S>(
+    socket: S,
+    base_url: String,
+    id: String,
+    port: u16,
+    initial_data: Option<Vec<u8>>,
+) -> anyhow::Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
     let ws_url = base_url
         .replace("http://", "ws://")
         .replace("https://", "wss://")
         .trim_end_matches('/')
         .to_string();
     let url = format!("{}/sandboxes/{}/proxy?port={}", ws_url, id, port);
-    
+
     let (ws_stream, _) = connect_async(url).await?;
     let (mut ws_write, mut ws_read) = ws_stream.split();
     let (mut sock_read, mut sock_write) = tokio::io::split(socket);
-    
+
     if let Some(data) = initial_data {
         ws_write.send(Message::Binary(data)).await?;
     }
-    
+
     let mut buf = [0u8; 8192];
-    
+
     loop {
         tokio::select! {
              res = sock_read.read(&mut buf) => {
@@ -1172,7 +1434,7 @@ async fn upload_auth_files(client: &Client, base_url: &str, id: &str) -> anyhow:
     tokio::task::spawn_blocking(move || {
         let writer = ChunkedWriter { sender: tx.clone() };
         let mut tar = Builder::new(writer);
-        
+
         let temp_dir_name = "__cmux_auth_temp";
 
         for (host_path, sandbox_path_str) in files_to_upload {
@@ -1181,11 +1443,11 @@ async fn upload_auth_files(client: &Client, base_url: &str, id: &str) -> anyhow:
             // But tar paths shouldn't start with / usually if we want them relative to extraction point
             // The server extracts to /workspace.
             // So if we put it as "__cmux_auth_temp/...", it extracts to /workspace/__cmux_auth_temp/...
-            
+
             // We need to strip the leading / from sandbox_path for the tar entry
             let sandbox_path = Path::new(sandbox_path_str);
             let rel_sandbox_path = sandbox_path.strip_prefix("/").unwrap_or(sandbox_path);
-            
+
             let tar_path = Path::new(temp_dir_name).join(rel_sandbox_path);
 
             if let Err(e) = tar.append_path_with_name(&host_path, &tar_path) {
@@ -1193,9 +1455,9 @@ async fn upload_auth_files(client: &Client, base_url: &str, id: &str) -> anyhow:
                 return;
             }
         }
-        
+
         if let Err(e) = tar.finish() {
-             let _ = tx.blocking_send(Err(e));
+            let _ = tx.blocking_send(Err(e));
         }
     });
 
@@ -1206,14 +1468,17 @@ async fn upload_auth_files(client: &Client, base_url: &str, id: &str) -> anyhow:
     let url = format!("{}/sandboxes/{}/files", base_url.trim_end_matches('/'), id);
     let response = client.post(url).body(body).send().await?;
     if !response.status().is_success() {
-         return Err(anyhow::anyhow!("Failed to upload auth files: {}", response.status()));
+        return Err(anyhow::anyhow!(
+            "Failed to upload auth files: {}",
+            response.status()
+        ));
     }
 
     // Now move files from temp dir to final destination
     // We uploaded to /workspace/__cmux_auth_temp/...
     // We want to move contents of /workspace/__cmux_auth_temp/root/* to /root/
     // and cleanup
-    
+
     let move_script = r#"
         if [ -d /workspace/__cmux_auth_temp ]; then
             cp -r /workspace/__cmux_auth_temp/root/. /root/ 2>/dev/null || true
@@ -1226,18 +1491,25 @@ async fn upload_auth_files(client: &Client, base_url: &str, id: &str) -> anyhow:
         workdir: None,
         env: Vec::new(),
     };
-    
+
     let exec_url = format!("{}/sandboxes/{}/exec", base_url.trim_end_matches('/'), id);
     let exec_response = client.post(exec_url).json(&exec_body).send().await?;
-    
+
     if !exec_response.status().is_success() {
-        return Err(anyhow::anyhow!("Failed to execute move script: {}", exec_response.status()));
+        return Err(anyhow::anyhow!(
+            "Failed to execute move script: {}",
+            exec_response.status()
+        ));
     }
 
     Ok(())
 }
 
-async fn handle_exec_request(client: &Client, base_url: &str, args: ExecArgs) -> anyhow::Result<()> {
+async fn handle_exec_request(
+    client: &Client,
+    base_url: &str,
+    args: ExecArgs,
+) -> anyhow::Result<()> {
     let command = if args.command.len() == 1 && args.command[0].contains(' ') {
         vec!["/bin/sh".into(), "-c".into(), args.command[0].clone()]
     } else {
@@ -1293,5 +1565,28 @@ mod tests {
             env: args.env.clone(),
         };
         assert_eq!(built.command, vec!["/bin/sh", "-c", "echo 123"]);
+    }
+
+    #[tokio::test]
+    async fn browser_proxy_shuts_down_after_browser_closes() {
+        let proxy = BrowserProxy::start(
+            "http://127.0.0.1:12345".to_string(),
+            "test-id".to_string(),
+            Arc::new(generate_ca().unwrap()),
+        )
+        .await
+        .expect("proxy should start");
+
+        let port = proxy.port();
+        proxy.shutdown().await.expect("proxy should stop");
+
+        let bind_attempt = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            tokio::net::TcpListener::bind(("127.0.0.1", port)),
+        )
+        .await
+        .expect("bind attempt timed out");
+
+        bind_attempt.expect("proxy should release the port");
     }
 }

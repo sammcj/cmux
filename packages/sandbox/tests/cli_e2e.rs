@@ -2,12 +2,7 @@ use assert_cmd::Command;
 use axum::body::Body;
 use cmux_sandbox::build_router;
 use cmux_sandbox::models::{
-    CreateSandboxRequest,
-    ExecRequest,
-    ExecResponse,
-    SandboxNetwork,
-    SandboxStatus,
-    SandboxSummary,
+    CreateSandboxRequest, ExecRequest, ExecResponse, SandboxNetwork, SandboxStatus, SandboxSummary,
 };
 use cmux_sandbox::service::SandboxService;
 use std::net::SocketAddr;
@@ -49,8 +44,9 @@ impl SandboxService for MockService {
             index: 0,
             name: request.name.unwrap_or_else(|| "mock".to_string()),
             created_at: chrono::Utc::now(),
-            workspace:
-                request.workspace.unwrap_or_else(|| "/tmp/mock-workspace".to_string()),
+            workspace: request
+                .workspace
+                .unwrap_or_else(|| "/tmp/mock-workspace".to_string()),
             status: SandboxStatus::Running,
             network: SandboxNetwork {
                 host_interface: "vethh-mock".into(),
@@ -114,7 +110,10 @@ impl SandboxService for MockService {
         archive: Body,
     ) -> cmux_sandbox::errors::SandboxResult<()> {
         self.record("upload_archive").await;
-        let bytes = axum::body::to_bytes(archive, usize::MAX).await.unwrap().to_vec();
+        let bytes = axum::body::to_bytes(archive, usize::MAX)
+            .await
+            .unwrap()
+            .to_vec();
         let mut guard = self.archives.lock().await;
         guard.push(bytes);
         Ok(())
@@ -134,7 +133,8 @@ impl SandboxService for MockService {
     }
 }
 
-#[tokio::test] async fn cli_can_list_and_create_via_http() {
+#[tokio::test]
+async fn cli_can_list_and_create_via_http() {
     let service = Arc::new(MockService::new());
     let app = build_router(service.clone());
     let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
@@ -197,7 +197,7 @@ impl SandboxService for MockService {
         .text()
         .await
         .unwrap();
-    transcript.push(( 
+    transcript.push((
         "cmux sandboxes create --name demo --workspace /tmp/demo".into(),
         created.clone(),
     ));
@@ -247,8 +247,6 @@ fn cli_help_exits_quickly() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cli_exec_shorthand() {
-
-
     let service = Arc::new(MockService::new());
     let app = build_router(service.clone());
     let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
@@ -276,7 +274,7 @@ async fn cli_exec_shorthand() {
         .stdout(predicates::str::contains("\"stdout\": \"ok\""));
 
     assert!(service.calls.lock().await.contains(&"exec"));
-    
+
     server.abort();
     let _ = server.await;
 }
@@ -300,23 +298,23 @@ async fn cli_uploads_cwd_respecting_gitignore() {
     });
 
     let base_url = format!("http://{}", addr);
-    
+
     // Setup temp dir
     let temp_dir = tempfile::tempdir().unwrap();
     let dir_path = temp_dir.path();
-    
+
     // included.txt
     std::fs::write(dir_path.join("included.txt"), "keep me").unwrap();
-    
+
     // ignored.txt
     std::fs::write(dir_path.join("ignored.txt"), "ignore me").unwrap();
-    
+
     // .gitignore
     std::fs::write(dir_path.join(".gitignore"), "ignored.txt\n").unwrap();
     std::fs::create_dir(dir_path.join(".git")).unwrap();
-    
+
     // Run cmux new in that dir
-    // We need to run with --detach or similar if possible, or just wait for it to finish 
+    // We need to run with --detach or similar if possible, or just wait for it to finish
     // but `cmux new` attaches to SSH.
     // The CLI attaches via WebSocket. In our MockService, `attach` does nothing (returns Ok).
     // So `cmux new` should finish connecting and then wait for input?
@@ -349,23 +347,37 @@ async fn cli_uploads_cwd_respecting_gitignore() {
     {
         let calls = service.calls.lock().await;
         assert!(calls.contains(&"create"), "Should have created sandbox");
-        assert!(calls.contains(&"upload_archive"), "Should have uploaded archive");
+        assert!(
+            calls.contains(&"upload_archive"),
+            "Should have uploaded archive"
+        );
     }
 
     // Check uploaded archive
     {
         let archives = service.archives.lock().await;
         assert_eq!(archives.len(), 1, "Should have uploaded one archive");
-        
+
         let data = &archives[0];
         let mut archive = tar::Archive::new(&data[..]);
-        let entries: Vec<_> = archive.entries().unwrap() 
+        let entries: Vec<_> = archive
+            .entries()
+            .unwrap()
             .map(|e| e.unwrap().path().unwrap().to_string_lossy().into_owned())
             .collect();
-            
-        assert!(entries.iter().any(|e| e.contains("included.txt")), "included.txt missing");
-        assert!(entries.iter().any(|e| e.contains(".gitignore")), ".gitignore missing");
-        assert!(!entries.iter().any(|e| e.contains("ignored.txt")), "ignored.txt should be ignored");
+
+        assert!(
+            entries.iter().any(|e| e.contains("included.txt")),
+            "included.txt missing"
+        );
+        assert!(
+            entries.iter().any(|e| e.contains(".gitignore")),
+            ".gitignore missing"
+        );
+        assert!(
+            !entries.iter().any(|e| e.contains("ignored.txt")),
+            "ignored.txt should be ignored"
+        );
     }
 
     server.abort();
@@ -391,15 +403,15 @@ async fn cli_uploads_large_file() {
     });
 
     let base_url = format!("http://{}", addr);
-    
+
     // Setup temp dir
     let temp_dir = tempfile::tempdir().unwrap();
     let dir_path = temp_dir.path();
-    
+
     // Create a 5MB file
     let large_data = vec![0u8; 5 * 1024 * 1024];
     std::fs::write(dir_path.join("large.bin"), &large_data).unwrap();
-    
+
     Command::new(assert_cmd::cargo::cargo_bin!("cmux"))
         .env("CMUX_SANDBOX_URL", &base_url)
         .env("HOME", dir_path)
