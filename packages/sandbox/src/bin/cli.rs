@@ -7,7 +7,9 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use futures::{SinkExt, StreamExt};
 use reqwest::Client;
 use serde::Serialize;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
+use std::process::Command as ProcessCommand;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -109,6 +111,9 @@ struct AuthFileDef {
     host_path: &'static str, // Relative to HOME
     sandbox_path: &'static str, // Absolute in sandbox
 }
+
+const ENV_CMUX_NO_ATTACH: &str = "CMUX_NO_ATTACH";
+const ENV_CMUX_FORCE_ATTACH: &str = "CMUX_FORCE_ATTACH";
 
 const AUTH_FILES: &[AuthFileDef] = &[
     AuthFileDef { name: "Claude Config", host_path: ".claude.json", sandbox_path: "/root/.claude.json" },
@@ -286,7 +291,11 @@ async fn run() -> anyhow::Result<()> {
             }
 
             save_last_sandbox(&summary.id.to_string());
-            handle_ssh(&cli.base_url, &summary.id.to_string()).await?;
+            if should_attach() {
+                handle_ssh(&cli.base_url, &summary.id.to_string()).await?;
+            } else {
+                eprintln!("Skipping interactive shell attach (non-interactive environment detected).");
+            }
         }
         Command::Ls => {
             let url = format!("{}/sandboxes", cli.base_url.trim_end_matches('/'));
@@ -410,7 +419,11 @@ async fn run() -> anyhow::Result<()> {
                 }
 
                 save_last_sandbox(&summary.id.to_string());
-                handle_ssh(&cli.base_url, &summary.id.to_string()).await?;
+                if should_attach() {
+                    handle_ssh(&cli.base_url, &summary.id.to_string()).await?;
+                } else {
+                    eprintln!("Skipping interactive shell attach (non-interactive environment detected).");
+                }
             }
             SandboxCommand::Show { id } => {
                 let url = format!("{}/sandboxes/{id}", cli.base_url.trim_end_matches('/'));
@@ -564,7 +577,8 @@ fn stream_directory(path: PathBuf) -> reqwest::Body {
     tokio::task::spawn_blocking(move || {
         let writer = ChunkedWriter { sender: tx.clone() };
         let mut tar = Builder::new(writer);
-        
+        tar.follow_symlinks(false);
+
         let root = match path.canonicalize() {
             Ok(p) => p,
             Err(e) => {
@@ -572,42 +586,18 @@ fn stream_directory(path: PathBuf) -> reqwest::Body {
                 return;
             }
         };
-        
-        let walker = WalkBuilder::new(&root).hidden(false).git_ignore(true).build();
 
-        for result in walker {
-            match result {
-                Ok(entry) => {
-                    let entry_path = entry.path();
-                    if entry_path == root {
-                        continue;
-                    }
+        let append_result = if let Some(paths) = git_list_files(&root) {
+            append_paths(&root, paths, &mut tar).and_then(|_| append_git_dir(&root, &mut tar))
+        } else {
+            append_walked_paths(&root, &mut tar)
+        };
 
-                    let relative_path = match entry_path.strip_prefix(&root) {
-                         Ok(p) => p,
-                         Err(e) => {
-                              let _ = tx.blocking_send(Err(std::io::Error::other(e)));
-                              return;
-                         }
-                    };
-                    
-                    if entry_path.is_dir() {
-                        if let Err(e) = tar.append_dir(relative_path, entry_path) {
-                            let _ = tx.blocking_send(Err(e));
-                            return;
-                        }
-                    } else if let Err(e) = tar.append_path_with_name(entry_path, relative_path) {
-                        let _ = tx.blocking_send(Err(e));
-                        return;
-                    }
-                }
-                Err(e) => {
-                     let _ = tx.blocking_send(Err(std::io::Error::other(e)));
-                     return;
-                }
-            }
+        if let Err(e) = append_result {
+            let _ = tx.blocking_send(Err(e));
+            return;
         }
-        
+
         if let Err(e) = tar.finish() {
              let _ = tx.blocking_send(Err(e));
         }
@@ -616,6 +606,155 @@ fn stream_directory(path: PathBuf) -> reqwest::Body {
     reqwest::Body::wrap_stream(futures::stream::unfold(rx, |mut rx| async move {
         rx.recv().await.map(|msg| (msg, rx))
     }))
+}
+
+fn append_paths(
+    root: &Path,
+    paths: Vec<PathBuf>,
+    tar: &mut Builder<ChunkedWriter>,
+) -> std::io::Result<()> {
+    for relative_path in paths {
+        append_path(root, &relative_path, tar)?;
+    }
+    Ok(())
+}
+
+fn append_path(
+    root: &Path,
+    relative_path: &Path,
+    tar: &mut Builder<ChunkedWriter>,
+) -> std::io::Result<()> {
+    let entry_path = root.join(relative_path);
+    let metadata = std::fs::symlink_metadata(&entry_path)?;
+    let file_type = metadata.file_type();
+
+    if file_type.is_dir() {
+        tar.append_dir(relative_path, entry_path)?;
+    } else {
+        tar.append_path_with_name(entry_path, relative_path)?;
+    }
+
+    Ok(())
+}
+
+fn append_walked_paths(root: &Path, tar: &mut Builder<ChunkedWriter>) -> std::io::Result<()> {
+    let walker = WalkBuilder::new(root).hidden(false).git_ignore(true).build();
+
+    for result in walker {
+        let entry = match result {
+            Ok(entry) => entry,
+            Err(err) => return Err(std::io::Error::other(err)),
+        };
+        let entry_path = entry.path();
+
+        if entry_path == root {
+            continue;
+        }
+
+        let relative_path = entry_path
+            .strip_prefix(root)
+            .map_err(|e| std::io::Error::other(e))?;
+
+        append_path(root, relative_path, tar)?;
+    }
+
+    Ok(())
+}
+
+fn git_list_files(root: &Path) -> Option<Vec<PathBuf>> {
+    let is_repo = ProcessCommand::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .map(|output| output == "true")
+        .unwrap_or(false);
+
+    if !is_repo {
+        return None;
+    }
+
+    let output = ProcessCommand::new("git")
+        .arg("-C")
+        .arg(root)
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            ".",
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let mut paths = Vec::new();
+    for raw in output.stdout.split(|b| *b == 0) {
+        if raw.is_empty() {
+            continue;
+        }
+
+        let path_str = String::from_utf8(raw.to_vec()).ok()?;
+        paths.push(PathBuf::from(path_str));
+    }
+
+    Some(paths)
+}
+
+fn append_git_dir(root: &Path, tar: &mut Builder<ChunkedWriter>) -> std::io::Result<()> {
+    let git_dir = root.join(".git");
+    if !git_dir.exists() {
+        return Ok(());
+    }
+
+    let walker = WalkBuilder::new(&git_dir)
+        .hidden(false)
+        .git_ignore(false)
+        .build();
+
+    for result in walker {
+        let entry = match result {
+            Ok(entry) => entry,
+            Err(err) => return Err(std::io::Error::other(err)),
+        };
+
+        let entry_path = entry.path();
+        if entry_path == git_dir {
+            continue;
+        }
+
+        let relative_path = entry_path
+            .strip_prefix(root)
+            .map_err(|e| std::io::Error::other(e))?;
+
+        append_path(root, relative_path, tar)?;
+    }
+
+    Ok(())
+}
+
+fn should_attach() -> bool {
+    if std::env::var(ENV_CMUX_NO_ATTACH).is_ok() {
+        return false;
+    }
+
+    let stdin_tty = std::io::stdin().is_terminal();
+    let stdout_tty = std::io::stdout().is_terminal();
+    let stderr_tty = std::io::stderr().is_terminal();
+
+    if std::env::var(ENV_CMUX_FORCE_ATTACH).is_ok() {
+        return stdin_tty && stdout_tty && stderr_tty;
+    }
+
+    stdin_tty && stdout_tty && stderr_tty
 }
 
 fn print_json<T: Serialize>(value: &T) -> anyhow::Result<()> {

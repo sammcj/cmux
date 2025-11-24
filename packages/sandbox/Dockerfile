@@ -4,10 +4,16 @@ ARG RUST_VERSION=1.91.0
 ARG DOCKER_VERSION=27.4.0
 ARG DOCKER_COMPOSE_VERSION=2.29.7
 ARG BUILDKIT_VERSION=0.15.2
+ARG NODE_VERSION=22.11.0
 
-FROM rust:${RUST_VERSION}-bullseye AS builder
+FROM rust:${RUST_VERSION}-bullseye AS rust-base
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true \
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  apt-get update && apt-get install -y --no-install-recommends \
   pkg-config \
   libssl-dev \
   clang \
@@ -15,10 +21,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
+
+FROM rust-base AS chef
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+  --mount=type=cache,target=/usr/local/cargo/git \
+  cargo install --locked cargo-chef
+COPY packages/sandbox/Cargo.toml packages/sandbox/Cargo.lock ./
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+ENV CARGO_TERM_COLOR=never \
+  CARGO_PROFILE_RELEASE_STRIP=symbols \
+  CARGO_TARGET_DIR=/workspace/target
+
+COPY --from=chef /workspace/recipe.json recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+  --mount=type=cache,target=/usr/local/cargo/git \
+  cargo chef cook --release --recipe-path recipe.json
+
 COPY packages/sandbox/Cargo.toml packages/sandbox/Cargo.lock ./
 COPY packages/sandbox/src ./src
 
-RUN cargo build --release --bin cmux --bin cmux-sandboxd
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+  --mount=type=cache,target=/usr/local/cargo/git \
+  cargo build --locked --release --bin cmux --bin cmux-sandboxd
 
 FROM ubuntu:24.04 AS dind-installer
 
@@ -65,7 +91,10 @@ EOF
 
 FROM ubuntu:24.04
 
+ARG NODE_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
+
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -98,28 +127,27 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   git \
   ripgrep \
   wget \
+  gnupg \
+  && mkdir -p -m 755 /etc/apt/keyrings \
+  && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+  && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends gh \
   && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p -m 755 /etc/apt/keyrings && \
-    wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null && \
-    chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
-    apt-get update && \
-    apt-get install -y gh && \
-    rm -rf /var/lib/apt/lists/*
-
 RUN arch="$(uname -m)"; \
-    case "$arch" in \
-      x86_64) node_arch="linux-x64" ;; \
-      aarch64) node_arch="linux-arm64" ;; \
-      *) echo "Unsupported architecture: ${arch}" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://nodejs.org/dist/v22.11.0/node-v22.11.0-${node_arch}.tar.gz" | tar -xz -C /usr/local --strip-components=1 && \
-    rm -rf /var/lib/apt/lists/*
+  case "$arch" in \
+    x86_64) node_arch="linux-x64" ;; \
+    aarch64) node_arch="linux-arm64" ;; \
+    *) echo "Unsupported architecture: ${arch}" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${node_arch}.tar.gz" | tar -xz -C /usr/local --strip-components=1 && \
+  rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://bun.sh/install | bash && \
-    mv /root/.bun/bin/bun /usr/local/bin/bun && \
-    rm -rf /root/.bun
+  mv /root/.bun/bin/bun /usr/local/bin/bun && \
+  rm -rf /root/.bun /root/.cache/bun
 
 ENV BUN_INSTALL_GLOBAL_DIR=/usr/local/lib/bun
 ENV BUN_INSTALL_BIN=/usr/local/bin
@@ -131,33 +159,34 @@ RUN bun add -g \
     opencode-ai
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    mv /root/.local/bin/uv /usr/local/bin/uv
+  mv /root/.local/bin/uv /usr/local/bin/uv && \
+  rm -rf /root/.local
 
 RUN update-alternatives --set iptables /usr/sbin/iptables-legacy || true
 RUN mkdir -p /var/lib/cmux/sandboxes
 
-COPY --from=dind-installer /usr/local/bin/docker /usr/local/bin/docker
-COPY --from=dind-installer /usr/local/bin/dockerd /usr/local/bin/dockerd
-COPY --from=dind-installer /usr/local/bin/docker-init /usr/local/bin/docker-init
-COPY --from=dind-installer /usr/local/bin/docker-proxy /usr/local/bin/docker-proxy
-COPY --from=dind-installer /usr/local/bin/containerd /usr/local/bin/containerd
-COPY --from=dind-installer /usr/local/bin/containerd-shim-runc-v2 /usr/local/bin/containerd-shim-runc-v2
-COPY --from=dind-installer /usr/local/bin/runc /usr/local/bin/runc
-COPY --from=dind-installer /usr/local/bin/ctr /usr/local/bin/ctr
-COPY --from=dind-installer /usr/local/bin/buildctl /usr/local/bin/buildctl
-COPY --from=dind-installer /usr/local/bin/buildkitd /usr/local/bin/buildkitd
-COPY --from=dind-installer /usr/local/lib/docker/cli-plugins/ /usr/local/lib/docker/cli-plugins/
+COPY --from=dind-installer --link /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=dind-installer --link /usr/local/bin/dockerd /usr/local/bin/dockerd
+COPY --from=dind-installer --link /usr/local/bin/docker-init /usr/local/bin/docker-init
+COPY --from=dind-installer --link /usr/local/bin/docker-proxy /usr/local/bin/docker-proxy
+COPY --from=dind-installer --link /usr/local/bin/containerd /usr/local/bin/containerd
+COPY --from=dind-installer --link /usr/local/bin/containerd-shim-runc-v2 /usr/local/bin/containerd-shim-runc-v2
+COPY --from=dind-installer --link /usr/local/bin/runc /usr/local/bin/runc
+COPY --from=dind-installer --link /usr/local/bin/ctr /usr/local/bin/ctr
+COPY --from=dind-installer --link /usr/local/bin/buildctl /usr/local/bin/buildctl
+COPY --from=dind-installer --link /usr/local/bin/buildkitd /usr/local/bin/buildkitd
+COPY --from=dind-installer --link /usr/local/lib/docker/cli-plugins/ /usr/local/lib/docker/cli-plugins/
 
-COPY --from=builder /workspace/target/release/cmux-sandboxd /usr/local/bin/cmux-sandboxd
-COPY --from=builder /workspace/target/release/cmux /usr/local/bin/cmux
+COPY --from=builder --link /workspace/target/release/cmux-sandboxd /usr/local/bin/cmux-sandboxd
+COPY --from=builder --link /workspace/target/release/cmux /usr/local/bin/cmux
 
-COPY packages/sandbox/scripts/bootstrap-dind.sh /usr/local/bin/bootstrap-dind.sh
+COPY --link packages/sandbox/scripts/bootstrap-dind.sh /usr/local/bin/bootstrap-dind.sh
 RUN chmod +x /usr/local/bin/bootstrap-dind.sh
 
 # systemd service units
-COPY packages/sandbox/systemd/dockerd.service /etc/systemd/system/dockerd.service
-COPY packages/sandbox/systemd/buildkitd.service /etc/systemd/system/buildkitd.service
-COPY packages/sandbox/systemd/cmux-sandboxd.service /etc/systemd/system/cmux-sandboxd.service
+COPY --link packages/sandbox/systemd/dockerd.service /etc/systemd/system/dockerd.service
+COPY --link packages/sandbox/systemd/buildkitd.service /etc/systemd/system/buildkitd.service
+COPY --link packages/sandbox/systemd/cmux-sandboxd.service /etc/systemd/system/cmux-sandboxd.service
 RUN echo "CMUX_SANDBOX_PORT=46831" > /etc/default/cmux-sandboxd
 RUN mkdir -p /etc/systemd/system/multi-user.target.wants && \
   ln -s /etc/systemd/system/dockerd.service /etc/systemd/system/multi-user.target.wants/dockerd.service && \
