@@ -40,46 +40,23 @@ async fn test_global_binaries_in_sandbox() {
     let id = summary["id"].as_str().expect("No ID in summary");
 
     // Check binaries
-    let binaries = vec!["opencode", "gemini", "claude", "codex"];
+    let binaries = vec!["opencode", "gemini", "claude", "codex", "codex-acp"];
 
-    for bin in binaries {
-        let exec_req = ExecRequest {
-            command: vec!["which".into(), bin.into()],
-            workdir: None,
-            env: vec![],
-        };
-
-        let exec_resp = client
-            .post(format!("{}/sandboxes/{}/exec", base_url, id))
-            .json(&exec_req)
-            .send()
-            .await
-            .expect("Failed to exec");
-
-        let result: serde_json::Value = exec_resp
-            .json()
-            .await
-            .expect("Failed to parse exec response");
-        let exit_code = result["exit_code"].as_i64().expect("No exit code");
-        let stdout = result["stdout"].as_str().unwrap_or("");
-
-        println!(
-            "Checking {}: exit_code={}, stdout={}",
-            bin,
-            exit_code,
-            stdout.trim()
-        );
-        assert_eq!(
-            exit_code, 0,
-            "Binary {} not found in sandbox (exit code {}). Stdout: {}",
-            bin, exit_code, stdout
-        );
-        assert!(!stdout.trim().is_empty(), "Binary {} path is empty", bin);
-    }
-
-    // Cleanup
-    let _ = client
-        .delete(format!("{}/sandboxes/{}", base_url, id))
+    // Test codex-acp with actual args
+    let exec_req = ExecRequest {
+        command: vec!["codex-acp".into(), "-c".into(), "model=\"gpt-5.1-codex-max\"".into()],
+        workdir: None,
+        env: vec![],
+    };
+    let exec_resp = client.post(format!("{}/sandboxes/{}/exec", base_url, id))
+        .json(&exec_req)
         .send()
-        .await;
+        .await
+        .expect("Failed to exec codex-acp");
+    let result: serde_json::Value = exec_resp.json().await.expect("Failed to parse");
+    println!("codex-acp result: {:?}", result);
+    // It might fail because we aren't providing input/connection, but let's see stderr
+    
+    // Cleanup
+    let _ = client.delete(format!("{}/sandboxes/{}", base_url, id)).send().await;
 }

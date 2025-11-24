@@ -25,6 +25,13 @@ struct ProxyParams {
 struct AttachParams {
     cols: Option<u16>,
     rows: Option<u16>,
+    command: Option<String>,
+    #[serde(default = "default_tty")]
+    tty: bool,
+}
+
+fn default_tty() -> bool {
+    true
 }
 
 #[derive(UtoipaOpenApi)]
@@ -186,8 +193,13 @@ async fn attach_sandbox(
         (Some(c), Some(r)) => Some((c, r)),
         _ => None,
     };
+    
+    let command = params.command.map(|c| {
+        vec!["/bin/sh".to_string(), "-c".to_string(), c]
+    });
+
     ws.on_upgrade(move |socket| async move {
-        if let Err(e) = state.service.attach(id, socket, initial_size).await {
+        if let Err(e) = state.service.attach(id, socket, initial_size, command, params.tty).await {
             tracing::error!("attach failed: {e}");
         }
     })
@@ -275,6 +287,8 @@ mod tests {
             _id: String,
             _socket: WebSocket,
             _initial_size: Option<(u16, u16)>,
+            _command: Option<Vec<String>>,
+            _tty: bool,
         ) -> SandboxResult<()> {
             Ok(())
         }

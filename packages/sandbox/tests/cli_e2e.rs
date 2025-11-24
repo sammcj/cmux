@@ -91,6 +91,8 @@ impl SandboxService for MockService {
         _id: String,
         _socket: axum::extract::ws::WebSocket,
         _initial_size: Option<(u16, u16)>,
+        _command: Option<Vec<String>>,
+        _tty: bool,
     ) -> cmux_sandbox::errors::SandboxResult<()> {
         Ok(())
     }

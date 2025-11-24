@@ -91,6 +91,9 @@ enum Command {
     /// Show status of the sandbox server
     Status,
 
+    /// Start interactive ACP chat client
+    Chat,
+
     /// Manage authentication files
     Auth(AuthArgs),
 }
@@ -432,6 +435,45 @@ async fn run() -> anyhow::Result<()> {
         }
         Command::Status => {
             handle_server_status(&cli.base_url).await?;
+        }
+        Command::Chat => {
+            let body = CreateSandboxRequest {
+                name: Some("interactive".into()),
+                workspace: None,
+                read_only_paths: vec![],
+                tmpfs: vec![],
+                env: vec![],
+            };
+            let url = format!("{}/sandboxes", cli.base_url.trim_end_matches('/'));
+            let response = client.post(url).json(&body).send().await?;
+            let summary: SandboxSummary = parse_response(response).await?;
+            eprintln!("Created sandbox {}", summary.id);
+
+            // Upload directory (current directory)
+            let current_dir = std::env::current_dir()?;
+            eprintln!("Uploading directory: {}", current_dir.display());
+            let body = stream_directory(current_dir);
+            let url = format!(
+                "{}/sandboxes/{}/files",
+                cli.base_url.trim_end_matches('/'),
+                summary.id
+            );
+            let response = client.post(url).body(body).send().await?;
+            if !response.status().is_success() {
+                eprintln!("Failed to upload files: {}", response.status());
+            } else {
+                eprintln!("Files uploaded.");
+            }
+
+            // Upload auth files
+            if let Err(e) =
+                upload_auth_files(&client, &cli.base_url, &summary.id.to_string()).await
+            {
+                eprintln!("Warning: Failed to upload auth files: {}", e);
+            }
+
+            save_last_sandbox(&summary.id.to_string());
+            cmux_sandbox::run_chat_tui(cli.base_url, summary.id.to_string()).await.map_err(|e| anyhow::anyhow!(e))?;
         }
         Command::Auth(args) => match args.command {
             AuthCommand::Status => {

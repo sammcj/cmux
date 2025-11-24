@@ -6,7 +6,7 @@ ARG DOCKER_COMPOSE_VERSION=2.29.7
 ARG BUILDKIT_VERSION=0.15.2
 ARG NODE_VERSION=22.11.0
 
-FROM rust:${RUST_VERSION}-bullseye AS rust-base
+FROM rust:${RUST_VERSION}-bookworm AS rust-base
 
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true \
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
@@ -28,6 +28,17 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
   cargo install --locked cargo-chef
 COPY packages/sandbox/Cargo.toml packages/sandbox/Cargo.lock ./
 RUN cargo chef prepare --recipe-path recipe.json
+
+FROM rust-base AS acp-builder
+WORKDIR /workspace
+ENV CARGO_TERM_COLOR=never \
+  CARGO_PROFILE_RELEASE_STRIP=symbols \
+  CARGO_TARGET_DIR=/workspace/target
+
+RUN git clone https://github.com/agentclientprotocol/agent-client-protocol .tmp_acp_repos/agent-client-protocol && \
+    git clone https://github.com/zed-industries/codex-acp .tmp_acp_repos/codex-acp && \
+    cd .tmp_acp_repos/codex-acp && \
+    cargo build --release
 
 FROM chef AS builder
 ENV CARGO_TERM_COLOR=never \
@@ -165,7 +176,19 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
 RUN update-alternatives --set iptables /usr/sbin/iptables-legacy || true
 RUN mkdir -p /var/lib/cmux/sandboxes
 
-COPY --from=dind-installer --link /usr/local/bin/docker /usr/local/bin/docker
+# Install libssl1.1 for compatibility (required by some agent binaries)
+RUN arch="$(uname -m)"; \
+    if [ "$arch" = "x86_64" ]; then \
+      echo "deb http://security.ubuntu.com/ubuntu focal-security main" >> /etc/apt/sources.list; \
+    else \
+      echo "deb http://ports.ubuntu.com/ubuntu-ports focal-security main" >> /etc/apt/sources.list; \
+    fi && \
+    apt-get update && \
+    apt-get install -y libssl1.1 && \
+    sed -i '$d' /etc/apt/sources.list && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=dind-installer /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=dind-installer --link /usr/local/bin/dockerd /usr/local/bin/dockerd
 COPY --from=dind-installer --link /usr/local/bin/docker-init /usr/local/bin/docker-init
 COPY --from=dind-installer --link /usr/local/bin/docker-proxy /usr/local/bin/docker-proxy
@@ -179,6 +202,7 @@ COPY --from=dind-installer --link /usr/local/lib/docker/cli-plugins/ /usr/local/
 
 COPY --from=builder --link /workspace/target/release/cmux-sandboxd /usr/local/bin/cmux-sandboxd
 COPY --from=builder --link /workspace/target/release/cmux /usr/local/bin/cmux
+COPY --from=acp-builder --link /workspace/target/release/codex-acp /usr/local/bin/codex-acp
 
 COPY --link packages/sandbox/scripts/bootstrap-dind.sh /usr/local/bin/bootstrap-dind.sh
 RUN chmod +x /usr/local/bin/bootstrap-dind.sh

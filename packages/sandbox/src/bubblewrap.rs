@@ -765,6 +765,8 @@ impl SandboxService for BubblewrapService {
         id_str: String,
         mut socket: WebSocket,
         initial_size: Option<(u16, u16)>,
+        command: Option<Vec<String>>,
+        tty: bool,
     ) -> SandboxResult<()> {
         let id = self.resolve_id(&id_str).await?;
         let entry = {
@@ -773,6 +775,127 @@ impl SandboxService for BubblewrapService {
         }
         .ok_or(SandboxError::NotFound(id))?;
 
+        let target_command = command.unwrap_or_else(|| vec!["/bin/bash".to_string(), "-i".to_string()]);
+        info!("attaching to sandbox {} with command: {:?} (tty={})", id_str, target_command, tty);
+
+        if !tty {
+            // Non-PTY path: Use standard pipes
+            let mut cmd = Command::new(&self.nsenter_path);
+            cmd.args(nsenter_args(
+                entry.inner_pid,
+                None,
+                &target_command,
+            ));
+            
+            cmd.stdin(Stdio::piped());
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
+            cmd.kill_on_drop(true);
+
+            let mut child = cmd.spawn()?;
+            
+            let mut stdin = child.stdin.take().ok_or(SandboxError::Internal("failed to open stdin".into()))?;
+            let mut stdout = child.stdout.take().ok_or(SandboxError::Internal("failed to open stdout".into()))?;
+            let mut stderr = child.stderr.take().ok_or(SandboxError::Internal("failed to open stderr".into()))?;
+
+            let (tx_in, mut rx_in) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
+            
+            // Writer task (WebSocket -> Stdin)
+            tokio::spawn(async move {
+                while let Some(data) = rx_in.recv().await {
+                    info!("Writing to stdin: {:?}", String::from_utf8_lossy(&data));
+                    if let Err(e) = stdin.write_all(&data).await {
+                        warn!("Failed to write to stdin: {}", e);
+                        break;
+                    }
+                    if let Err(e) = stdin.flush().await {
+                        warn!("Failed to flush stdin: {}", e);
+                        break; 
+                    }
+                    info!("Wrote and flushed to stdin");
+                }
+            });
+
+            // Reader tasks (Stdout/Stderr -> WebSocket)
+            let (tx_out, mut rx_out) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
+            let tx_err = tx_out.clone();
+
+            tokio::spawn(async move {
+                let mut buf = [0u8; 1024];
+                loop {
+                    match stdout.read(&mut buf).await {
+                        Ok(0) => {
+                            info!("Stdout EOF");
+                            break;
+                        }
+                        Ok(n) => {
+                            info!("Read from stdout: {:?}", String::from_utf8_lossy(&buf[..n]));
+                            if tx_out.send(buf[..n].to_vec()).await.is_err() { break; }
+                        }
+                        Err(e) => {
+                            warn!("Stdout read error: {}", e);
+                            break;
+                        }
+                    }
+                }
+            });
+
+            tokio::spawn(async move {
+                let mut buf = [0u8; 1024];
+                loop {
+                    match stderr.read(&mut buf).await {
+                        Ok(0) => {
+                            info!("Stderr EOF");
+                            break;
+                        }
+                        Ok(n) => {
+                            info!("Read from stderr: {:?}", String::from_utf8_lossy(&buf[..n]));
+                            if tx_err.send(buf[..n].to_vec()).await.is_err() { break; }
+                        }
+                        Err(e) => {
+                            warn!("Stderr read error: {}", e);
+                            break;
+                        }
+                    }
+                }
+            });
+
+            loop {
+                tokio::select! {
+                    msg = socket.recv() => {
+                        match msg {
+                            Some(Ok(Message::Binary(data))) => {
+                                info!("WebSocket Recv Binary: {} bytes", data.len());
+                                if tx_in.send(data.into()).await.is_err() { break; }
+                            }
+                            Some(Ok(Message::Text(text))) => {
+                                info!("WebSocket Recv Text: {:?}", text);
+                                if tx_in.send(text.as_bytes().to_vec()).await.is_err() { break; }
+                            }
+                            Some(Ok(Message::Close(_))) | None => {
+                                info!("WebSocket Closed");
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    data = rx_out.recv() => {
+                        match data {
+                            Some(d) => {
+                                info!("Sending to WebSocket: {} bytes", d.len());
+                                if socket.send(Message::Binary(d.into())).await.is_err() { break; }
+                            }
+                            None => break, // Channels closed (child exited)
+                        }
+                    }
+                }
+            }
+            
+            let _ = child.kill().await;
+            return Ok(());
+        }
+
+        // PTY Path (existing implementation)
         let (cols, rows) = initial_size.unwrap_or((80, 24));
 
         let system = NativePtySystem::default();
@@ -786,10 +909,11 @@ impl SandboxService for BubblewrapService {
             .map_err(|e| SandboxError::Internal(format!("failed to open pty: {e}")))?;
 
         let mut cmd = CommandBuilder::new(&self.nsenter_path);
+        
         cmd.args(nsenter_args(
             entry.inner_pid,
             None,
-            &["/bin/bash".to_string(), "-i".to_string()],
+            &target_command,
         ));
         cmd.env("TERM", "xterm-256color");
 
