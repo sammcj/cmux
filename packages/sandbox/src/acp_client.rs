@@ -1,34 +1,36 @@
 use agent_client_protocol::{
-    Client, Agent, ClientSideConnection, Error, RequestPermissionRequest, RequestPermissionResponse,
-    RequestPermissionOutcome, PermissionOptionId,
-    ReadTextFileRequest, ReadTextFileResponse, WriteTextFileRequest, WriteTextFileResponse,
-    CreateTerminalRequest, CreateTerminalResponse, TerminalOutputRequest, TerminalOutputResponse,
-    SessionNotification, InitializeRequest, NewSessionRequest,
-    ClientCapabilities, FileSystemCapability, PromptRequest, ContentBlock, SessionUpdate,
-    SessionId, TextContent, V1,
-    ReleaseTerminalRequest, ReleaseTerminalResponse,
-    WaitForTerminalExitRequest, WaitForTerminalExitResponse,
-    KillTerminalCommandRequest, KillTerminalCommandResponse,
+    Agent, Client, ClientCapabilities, ClientSideConnection, ContentBlock, CreateTerminalRequest,
+    CreateTerminalResponse, Error, FileSystemCapability, InitializeRequest,
+    KillTerminalCommandRequest, KillTerminalCommandResponse, NewSessionRequest, PermissionOptionId,
+    PromptRequest, ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest,
+    ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SessionId, SessionNotification, SessionUpdate,
+    TerminalOutputRequest, TerminalOutputResponse, TextContent, WaitForTerminalExitRequest,
+    WaitForTerminalExitResponse, WriteTextFileRequest, WriteTextFileResponse, V1,
 };
+use anyhow::Result;
+use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyModifiers},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use futures::{SinkExt, StreamExt};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     widgets::{Block, Borders, Paragraph, Wrap},
     Terminal,
 };
-use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, EventStream},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use tui_textarea::{TextArea, Input, Key};
+use std::{fs::OpenOptions, io, io::Write, sync::Arc};
 use tokio::sync::mpsc;
-use std::{sync::Arc, io, fs::OpenOptions, io::Write};
-use futures::{StreamExt, SinkExt};
-use anyhow::Result;
+use tui_textarea::TextArea;
 
 fn log_debug(msg: &str) {
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open("/tmp/cmux-chat.log") {
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/cmux-chat.log")
+    {
         let _ = writeln!(file, "[{}] {}", chrono::Utc::now().to_rfc3339(), msg);
     }
 }
@@ -40,7 +42,6 @@ struct AppClient {
 #[derive(Debug)]
 enum AppEvent {
     SessionUpdate(SessionNotification),
-    Error(String),
 }
 
 #[async_trait::async_trait(?Send)]
@@ -50,7 +51,10 @@ impl Client for AppClient {
         request: RequestPermissionRequest,
     ) -> Result<RequestPermissionResponse, Error> {
         log_debug(&format!("RequestPermission: {:?}", request));
-        let option_id = request.options.first().map(|o| o.id.clone())
+        let option_id = request
+            .options
+            .first()
+            .map(|o| o.id.clone())
             .unwrap_or(PermissionOptionId("allow".into()));
 
         Ok(RequestPermissionResponse {
@@ -72,7 +76,7 @@ impl Client for AppClient {
             Err(e) => {
                 log_debug(&format!("ReadTextFile Error: {}", e));
                 Err(Error::internal_error().with_data(e.to_string()))
-            },
+            }
         }
     }
 
@@ -91,7 +95,7 @@ impl Client for AppClient {
         &self,
         _request: CreateTerminalRequest,
     ) -> Result<CreateTerminalResponse, Error> {
-         Err(Error::internal_error().with_data("Terminal not supported yet"))
+        Err(Error::internal_error().with_data("Terminal not supported yet"))
     }
 
     async fn terminal_output(
@@ -105,21 +109,21 @@ impl Client for AppClient {
         &self,
         _request: ReleaseTerminalRequest,
     ) -> Result<ReleaseTerminalResponse, Error> {
-         Err(Error::internal_error().with_data("Terminal not supported yet"))
+        Err(Error::internal_error().with_data("Terminal not supported yet"))
     }
 
     async fn wait_for_terminal_exit(
         &self,
         _request: WaitForTerminalExitRequest,
     ) -> Result<WaitForTerminalExitResponse, Error> {
-         Err(Error::internal_error().with_data("Terminal not supported yet"))
+        Err(Error::internal_error().with_data("Terminal not supported yet"))
     }
 
     async fn kill_terminal_command(
         &self,
         _request: KillTerminalCommandRequest,
     ) -> Result<KillTerminalCommandResponse, Error> {
-         Err(Error::internal_error().with_data("Terminal not supported yet"))
+        Err(Error::internal_error().with_data("Terminal not supported yet"))
     }
 
     async fn session_notification(&self, notification: SessionNotification) -> Result<(), Error> {
@@ -147,9 +151,10 @@ impl<'a> App<'a> {
         textarea.set_block(
             Block::default()
                 .borders(Borders::TOP | Borders::BOTTOM)
-                .border_style(ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray))
+                .border_style(ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray)),
         );
-        textarea.set_placeholder_text("Type a message and press Enter to send. Ctrl+J for new line.");
+        textarea
+            .set_placeholder_text("Type a message and press Enter to send. Ctrl+J for new line.");
         Self {
             history: vec![],
             textarea,
@@ -161,19 +166,19 @@ impl<'a> App<'a> {
     fn on_session_update(&mut self, notification: SessionNotification) {
         match notification.update {
             SessionUpdate::UserMessageChunk(chunk) => {
-                 if let ContentBlock::Text(text_content) = chunk.content {
-                     self.append_message("User", &text_content.text);
-                 }
+                if let ContentBlock::Text(text_content) = chunk.content {
+                    self.append_message("User", &text_content.text);
+                }
             }
             SessionUpdate::AgentMessageChunk(chunk) => {
-                 if let ContentBlock::Text(text_content) = chunk.content {
-                     self.append_message("Agent", &text_content.text);
-                 }
+                if let ContentBlock::Text(text_content) = chunk.content {
+                    self.append_message("Agent", &text_content.text);
+                }
             }
             SessionUpdate::AgentThoughtChunk(chunk) => {
-                 if let ContentBlock::Text(text_content) = chunk.content {
-                     self.append_message("Thought", &text_content.text);
-                 }
+                if let ContentBlock::Text(text_content) = chunk.content {
+                    self.append_message("Thought", &text_content.text);
+                }
             }
             _ => {}
         }
@@ -181,10 +186,10 @@ impl<'a> App<'a> {
 
     fn append_message(&mut self, role: &str, text: &str) {
         if let Some(last) = self.history.last_mut() {
-             if last.role == role {
-                 last.text.push_str(text);
-                 return;
-             }
+            if last.role == role {
+                last.text.push_str(text);
+                return;
+            }
         }
         self.history.push(ChatMessage {
             role: role.to_string(),
@@ -194,11 +199,12 @@ impl<'a> App<'a> {
 
     async fn send_message(&mut self) {
         // Clone connection and session_id early to drop the borrow of self
-        let (conn, session_id) = if let (Some(conn), Some(session_id)) = (&self.client_connection, &self.session_id) {
-            (conn.clone(), session_id.clone())
-        } else {
-            return;
-        };
+        let (conn, session_id) =
+            if let (Some(conn), Some(session_id)) = (&self.client_connection, &self.session_id) {
+                (conn.clone(), session_id.clone())
+            } else {
+                return;
+            };
 
         let lines = self.textarea.lines();
         let text = lines.join("\n");
@@ -207,22 +213,23 @@ impl<'a> App<'a> {
         }
 
         self.append_message("User", &text);
-        
+
         // Clear input immediately
         self.textarea = TextArea::default();
         self.textarea.set_block(
             Block::default()
                 .borders(Borders::TOP | Borders::BOTTOM)
-                .border_style(ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray))
+                .border_style(ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray)),
         );
-        self.textarea.set_placeholder_text("Type a message and press Enter to send. Ctrl+J for new line.");
+        self.textarea
+            .set_placeholder_text("Type a message and press Enter to send. Ctrl+J for new line.");
 
         let request = PromptRequest {
             session_id,
-            prompt: vec![ContentBlock::Text(TextContent { 
-                text, 
-                annotations: None, 
-                meta: None 
+            prompt: vec![ContentBlock::Text(TextContent {
+                text,
+                annotations: None,
+                meta: None,
             })],
             meta: None,
         };
@@ -230,8 +237,8 @@ impl<'a> App<'a> {
         tokio::task::spawn_local(async move {
             // Manually deref if needed, but method syntax should work if trait is in scope.
             // We are using `Agent` trait method `prompt`.
-            if let Err(_) = Agent::prompt(&*conn, request).await {
-                // Log error
+            if let Err(error) = Agent::prompt(&*conn, request).await {
+                log_debug(&format!("Prompt failed: {}", error));
             }
         });
     }
@@ -282,12 +289,14 @@ pub async fn run_chat_tui(base_url: String, sandbox_id: String) -> Result<()> {
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     enable_raw_mode()?;
-    
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let local = tokio::task::LocalSet::new();
-    let res = local.run_until(run_main_loop(&mut terminal, base_url, sandbox_id)).await;
+    let res = local
+        .run_until(run_main_loop(&mut terminal, base_url, sandbox_id))
+        .await;
 
     disable_raw_mode()?;
     execute!(
@@ -317,20 +326,25 @@ pub async fn run_chat_tui(base_url: String, sandbox_id: String) -> Result<()> {
     }
 }
 
-async fn run_main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, base_url: String, sandbox_id: String) -> Result<()> {
+async fn run_main_loop<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    base_url: String,
+    sandbox_id: String,
+) -> Result<()> {
     log_debug("Starting run_main_loop");
     let (tx, rx) = mpsc::unbounded_channel();
-    
+
     let ws_url = base_url
         .replace("http://", "ws://")
         .replace("https://", "wss://")
         .trim_end_matches('/')
         .to_string();
-        
+
     // Wrap in stdbuf to ensure unbuffered I/O over pipes
     let command = "/usr/bin/stdbuf -i0 -o0 -e0 /usr/local/bin/codex-acp -c approval_policy=\"never\" -c sandbox_mode=\"danger-full-access\" -c model=\"gpt-5.1-codex-max\"";
-    let encoded_command = url::form_urlencoded::byte_serialize(command.as_bytes()).collect::<String>();
-    
+    let encoded_command =
+        url::form_urlencoded::byte_serialize(command.as_bytes()).collect::<String>();
+
     let url = format!(
         "{}/sandboxes/{}/attach?cols=80&rows=24&tty=false&command={}",
         ws_url, sandbox_id, encoded_command
@@ -339,11 +353,24 @@ async fn run_main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>,
 
     let (ws_stream, _) = tokio_tungstenite::connect_async(url).await?;
     log_debug("WebSocket connected");
-    
+
     let (write, read) = ws_stream.split();
-    
-    struct WsRead(futures::stream::SplitStream<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>);
-    struct WsWrite(futures::stream::SplitSink<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, tokio_tungstenite::tungstenite::Message>);
+
+    struct WsRead(
+        futures::stream::SplitStream<
+            tokio_tungstenite::WebSocketStream<
+                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+            >,
+        >,
+    );
+    struct WsWrite(
+        futures::stream::SplitSink<
+            tokio_tungstenite::WebSocketStream<
+                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+            >,
+            tokio_tungstenite::tungstenite::Message,
+        >,
+    );
 
     impl tokio::io::AsyncRead for WsRead {
         fn poll_read(
@@ -369,8 +396,8 @@ async fn run_main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>,
                     }
                     Some(Err(e)) => {
                         log_debug(&format!("RECV Error: {}", e));
-                        return std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e)))
-                    },
+                        return std::task::Poll::Ready(Err(io::Error::other(e)));
+                    }
                     _ => continue,
                 }
             }
@@ -384,18 +411,24 @@ async fn run_main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>,
             buf: &[u8],
         ) -> std::task::Poll<io::Result<usize>> {
             log_debug(&format!("SEND: {:?}", String::from_utf8_lossy(buf)));
-            match self.0.start_send_unpin(tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec())) {
+            match self
+                .0
+                .start_send_unpin(tokio_tungstenite::tungstenite::Message::Binary(
+                    buf.to_vec(),
+                )) {
                 Ok(_) => {
                     // Force a flush attempt to ensure the message is pushed to the underlying socket
                     // even if the caller doesn't call flush immediately.
                     match self.0.poll_flush_unpin(cx) {
                         std::task::Poll::Ready(Ok(_)) => log_debug("Auto-flush success"),
-                        std::task::Poll::Ready(Err(e)) => log_debug(&format!("Auto-flush error: {}", e)),
+                        std::task::Poll::Ready(Err(e)) => {
+                            log_debug(&format!("Auto-flush error: {}", e))
+                        }
                         std::task::Poll::Pending => log_debug("Auto-flush pending"),
                     }
                     std::task::Poll::Ready(Ok(buf.len()))
-                },
-                Err(e) => std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e))),
+                }
+                Err(e) => std::task::Poll::Ready(Err(io::Error::other(e))),
             }
         }
 
@@ -404,14 +437,14 @@ async fn run_main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>,
             cx: &mut std::task::Context<'_>,
         ) -> std::task::Poll<io::Result<()>> {
             log_debug("FLUSH");
-            self.0.poll_flush_unpin(cx).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            self.0.poll_flush_unpin(cx).map_err(io::Error::other)
         }
 
         fn poll_shutdown(
             mut self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,
         ) -> std::task::Poll<io::Result<()>> {
-            self.0.poll_close_unpin(cx).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            self.0.poll_close_unpin(cx).map_err(io::Error::other)
         }
     }
 
@@ -427,35 +460,39 @@ async fn run_main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>,
 
     tokio::task::spawn_local(async move {
         if let Err(e) = io_task.await {
-             log_debug(&format!("IO Task Error: {}", e));
+            log_debug(&format!("IO Task Error: {}", e));
         } else {
-             log_debug("IO Task Finished");
+            log_debug("IO Task Finished");
         }
     });
 
     log_debug("Sending Initialize...");
-    client_conn.initialize(InitializeRequest {
-        protocol_version: V1,
-        client_capabilities: ClientCapabilities {
-            fs: FileSystemCapability {
-                read_text_file: true,
-                write_text_file: true,
+    client_conn
+        .initialize(InitializeRequest {
+            protocol_version: V1,
+            client_capabilities: ClientCapabilities {
+                fs: FileSystemCapability {
+                    read_text_file: true,
+                    write_text_file: true,
+                    meta: None,
+                },
+                terminal: false,
                 meta: None,
             },
-            terminal: false,
+            client_info: None,
             meta: None,
-        },
-        client_info: None,
-        meta: None,
-    }).await?;
+        })
+        .await?;
     log_debug("Initialize complete");
 
     log_debug("Starting New Session...");
-    let new_session_res = client_conn.new_session(NewSessionRequest {
-        cwd: std::path::PathBuf::from("/workspace"),
-        mcp_servers: vec![],
-        meta: None,
-    }).await?;
+    let new_session_res = client_conn
+        .new_session(NewSessionRequest {
+            cwd: std::path::PathBuf::from("/workspace"),
+            mcp_servers: vec![],
+            meta: None,
+        })
+        .await?;
     log_debug("New Session started");
 
     let mut app = App::new();
@@ -465,7 +502,7 @@ async fn run_main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>,
     log_debug("Running App UI loop...");
     run_app(terminal, app, rx).await?;
     log_debug("App UI loop finished");
-    
+
     Ok(())
 }
 
@@ -483,7 +520,6 @@ async fn run_app<B: ratatui::backend::Backend>(
             Some(event) = rx.recv() => {
                 match event {
                     AppEvent::SessionUpdate(notification) => app.on_session_update(notification),
-                    AppEvent::Error(msg) => app.append_message("System", &format!("Error: {}", msg)),
                 }
             }
             Some(Ok(event)) = reader.next() => {
@@ -507,6 +543,7 @@ async fn run_app<B: ratatui::backend::Backend>(
 }
 
 use ratatui::text::{Line, Span};
+use tui_markdown::from_str as markdown_from_str;
 
 fn ui(f: &mut ratatui::Frame, app: &App) {
     // Calculate dynamic height based on line count
@@ -515,52 +552,53 @@ fn ui(f: &mut ratatui::Frame, app: &App) {
     let line_count = app.textarea.lines().len() as u16;
     let input_height = (line_count + 2).clamp(3, 12);
 
-    let chunks = Layout::default() 
+    let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(
-            [
-                Constraint::Min(1),
-                Constraint::Length(input_height),
-            ]
-            .as_ref(),
-        )
+        .constraints([Constraint::Min(1), Constraint::Length(input_height)].as_ref())
         .split(f.area());
 
     let area_width = chunks[0].width as usize;
-    let mut lines = Vec::new();
-    
+    let mut lines: Vec<Line<'_>> = Vec::new();
+
     for (i, msg) in app.history.iter().enumerate() {
         if i > 0 {
             lines.push(Line::from("")); // Spacing
         }
-        
-        if msg.role == "User" {
-            let style = ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray);
-            let border = "─".repeat(area_width);
-            lines.push(Line::styled(border.clone(), style));
-            for line in msg.text.lines() {
-                lines.push(Line::styled(line, style));
+        match msg.role.as_str() {
+            "User" => {
+                let style = ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray);
+                let border = "─".repeat(area_width);
+                lines.push(Line::styled(border.clone(), style));
+                for line in msg.text.lines() {
+                    lines.push(Line::styled(line, style));
+                }
+                lines.push(Line::styled(border, style));
             }
-            lines.push(Line::styled(border, style));
-        } else {
-             let prefix = format!("{}: ", msg.role);
-             let prefix_style = ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::BOLD);
-             
-             let mut first = true;
-             for text_line in msg.text.lines() {
-                 if first {
-                     lines.push(Line::from(vec![
-                         Span::styled(prefix.clone(), prefix_style),
-                         Span::raw(text_line),
-                     ]));
-                     first = false;
-                 } else {
-                     lines.push(Line::from(text_line));
-                 }
-             }
-             if first {
-                 lines.push(Line::from(vec![Span::styled(prefix, prefix_style)]));
-             }
+            "Agent" | "Thought" => {
+                let prefix_style =
+                    ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::BOLD);
+                render_markdown_message(&mut lines, msg, prefix_style);
+            }
+            _ => {
+                let prefix = format!("{}: ", msg.role);
+                let prefix_style =
+                    ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::BOLD);
+                let mut first = true;
+                for text_line in msg.text.lines() {
+                    if first {
+                        lines.push(Line::from(vec![
+                            Span::styled(prefix.clone(), prefix_style),
+                            Span::raw(text_line),
+                        ]));
+                        first = false;
+                    } else {
+                        lines.push(Line::from(text_line));
+                    }
+                }
+                if first {
+                    lines.push(Line::from(vec![Span::styled(prefix, prefix_style)]));
+                }
+            }
         }
     }
 
@@ -568,17 +606,41 @@ fn ui(f: &mut ratatui::Frame, app: &App) {
     // We count total lines generated.
     let total_lines = lines.len() as u16;
     let view_height = chunks[0].height;
-    let scroll_offset = if total_lines > view_height {
-        total_lines - view_height
-    } else {
-        0
-    };
+    let scroll_offset = total_lines.saturating_sub(view_height);
 
     let history_paragraph = Paragraph::new(lines)
         .wrap(Wrap { trim: true })
         .scroll((scroll_offset, 0));
-        
+
     f.render_widget(history_paragraph, chunks[0]);
 
     f.render_widget(&app.textarea, chunks[1]);
+}
+
+fn render_markdown_message<'a>(
+    lines: &mut Vec<Line<'a>>,
+    msg: &'a ChatMessage,
+    prefix_style: ratatui::style::Style,
+) {
+    let mut markdown_lines = markdown_from_str(&msg.text).lines.into_iter();
+    match markdown_lines.next() {
+        Some(mut line) => {
+            let mut spans = Vec::with_capacity(line.spans.len() + 1);
+            spans.push(Span::styled(format!("{}: ", msg.role), prefix_style));
+            spans.append(&mut line.spans);
+            let mut new_line = Line::from(spans);
+            new_line.style = line.style;
+            lines.push(new_line);
+        }
+        None => {
+            lines.push(Line::from(vec![Span::styled(
+                format!("{}: ", msg.role),
+                prefix_style,
+            )]));
+        }
+    }
+
+    for line in markdown_lines {
+        lines.push(line);
+    }
 }

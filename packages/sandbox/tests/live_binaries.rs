@@ -39,16 +39,18 @@ async fn test_global_binaries_in_sandbox() {
     let summary: serde_json::Value = resp.json().await.expect("Failed to parse sandbox summary");
     let id = summary["id"].as_str().expect("No ID in summary");
 
-    // Check binaries
-    let binaries = vec!["opencode", "gemini", "claude", "codex", "codex-acp"];
-
     // Test codex-acp with actual args
     let exec_req = ExecRequest {
-        command: vec!["codex-acp".into(), "-c".into(), "model=\"gpt-5.1-codex-max\"".into()],
+        command: vec![
+            "codex-acp".into(),
+            "-c".into(),
+            "model=\"gpt-5.1-codex-max\"".into(),
+        ],
         workdir: None,
         env: vec![],
     };
-    let exec_resp = client.post(format!("{}/sandboxes/{}/exec", base_url, id))
+    let exec_resp = client
+        .post(format!("{}/sandboxes/{}/exec", base_url, id))
         .json(&exec_req)
         .send()
         .await
@@ -56,7 +58,10 @@ async fn test_global_binaries_in_sandbox() {
     let result: serde_json::Value = exec_resp.json().await.expect("Failed to parse");
     println!("codex-acp result: {:?}", result);
     // It might fail because we aren't providing input/connection, but let's see stderr
-    
+
     // Cleanup
-    let _ = client.delete(format!("{}/sandboxes/{}", base_url, id)).send().await;
+    let _ = client
+        .delete(format!("{}/sandboxes/{}", base_url, id))
+        .send()
+        .await;
 }

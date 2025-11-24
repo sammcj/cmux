@@ -193,13 +193,17 @@ async fn attach_sandbox(
         (Some(c), Some(r)) => Some((c, r)),
         _ => None,
     };
-    
-    let command = params.command.map(|c| {
-        vec!["/bin/sh".to_string(), "-c".to_string(), c]
-    });
+
+    let command = params
+        .command
+        .map(|c| vec!["/bin/sh".to_string(), "-c".to_string(), c]);
 
     ws.on_upgrade(move |socket| async move {
-        if let Err(e) = state.service.attach(id, socket, initial_size, command, params.tty).await {
+        if let Err(e) = state
+            .service
+            .attach(id, socket, initial_size, command, params.tty)
+            .await
+        {
             tracing::error!("attach failed: {e}");
         }
     })

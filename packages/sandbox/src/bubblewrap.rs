@@ -775,31 +775,40 @@ impl SandboxService for BubblewrapService {
         }
         .ok_or(SandboxError::NotFound(id))?;
 
-        let target_command = command.unwrap_or_else(|| vec!["/bin/bash".to_string(), "-i".to_string()]);
-        info!("attaching to sandbox {} with command: {:?} (tty={})", id_str, target_command, tty);
+        let target_command =
+            command.unwrap_or_else(|| vec!["/bin/bash".to_string(), "-i".to_string()]);
+        info!(
+            "attaching to sandbox {} with command: {:?} (tty={})",
+            id_str, target_command, tty
+        );
 
         if !tty {
             // Non-PTY path: Use standard pipes
             let mut cmd = Command::new(&self.nsenter_path);
-            cmd.args(nsenter_args(
-                entry.inner_pid,
-                None,
-                &target_command,
-            ));
-            
+            cmd.args(nsenter_args(entry.inner_pid, None, &target_command));
+
             cmd.stdin(Stdio::piped());
             cmd.stdout(Stdio::piped());
             cmd.stderr(Stdio::piped());
             cmd.kill_on_drop(true);
 
             let mut child = cmd.spawn()?;
-            
-            let mut stdin = child.stdin.take().ok_or(SandboxError::Internal("failed to open stdin".into()))?;
-            let mut stdout = child.stdout.take().ok_or(SandboxError::Internal("failed to open stdout".into()))?;
-            let mut stderr = child.stderr.take().ok_or(SandboxError::Internal("failed to open stderr".into()))?;
+
+            let mut stdin = child
+                .stdin
+                .take()
+                .ok_or(SandboxError::Internal("failed to open stdin".into()))?;
+            let mut stdout = child
+                .stdout
+                .take()
+                .ok_or(SandboxError::Internal("failed to open stdout".into()))?;
+            let mut stderr = child
+                .stderr
+                .take()
+                .ok_or(SandboxError::Internal("failed to open stderr".into()))?;
 
             let (tx_in, mut rx_in) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
-            
+
             // Writer task (WebSocket -> Stdin)
             tokio::spawn(async move {
                 while let Some(data) = rx_in.recv().await {
@@ -810,7 +819,7 @@ impl SandboxService for BubblewrapService {
                     }
                     if let Err(e) = stdin.flush().await {
                         warn!("Failed to flush stdin: {}", e);
-                        break; 
+                        break;
                     }
                     info!("Wrote and flushed to stdin");
                 }
@@ -830,7 +839,9 @@ impl SandboxService for BubblewrapService {
                         }
                         Ok(n) => {
                             info!("Read from stdout: {:?}", String::from_utf8_lossy(&buf[..n]));
-                            if tx_out.send(buf[..n].to_vec()).await.is_err() { break; }
+                            if tx_out.send(buf[..n].to_vec()).await.is_err() {
+                                break;
+                            }
                         }
                         Err(e) => {
                             warn!("Stdout read error: {}", e);
@@ -850,7 +861,9 @@ impl SandboxService for BubblewrapService {
                         }
                         Ok(n) => {
                             info!("Read from stderr: {:?}", String::from_utf8_lossy(&buf[..n]));
-                            if tx_err.send(buf[..n].to_vec()).await.is_err() { break; }
+                            if tx_err.send(buf[..n].to_vec()).await.is_err() {
+                                break;
+                            }
                         }
                         Err(e) => {
                             warn!("Stderr read error: {}", e);
@@ -890,7 +903,7 @@ impl SandboxService for BubblewrapService {
                     }
                 }
             }
-            
+
             let _ = child.kill().await;
             return Ok(());
         }
@@ -909,12 +922,8 @@ impl SandboxService for BubblewrapService {
             .map_err(|e| SandboxError::Internal(format!("failed to open pty: {e}")))?;
 
         let mut cmd = CommandBuilder::new(&self.nsenter_path);
-        
-        cmd.args(nsenter_args(
-            entry.inner_pid,
-            None,
-            &target_command,
-        ));
+
+        cmd.args(nsenter_args(entry.inner_pid, None, &target_command));
         cmd.env("TERM", "xterm-256color");
 
         let mut child = pair

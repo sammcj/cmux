@@ -466,14 +466,15 @@ async fn run() -> anyhow::Result<()> {
             }
 
             // Upload auth files
-            if let Err(e) =
-                upload_auth_files(&client, &cli.base_url, &summary.id.to_string()).await
+            if let Err(e) = upload_auth_files(&client, &cli.base_url, &summary.id.to_string()).await
             {
                 eprintln!("Warning: Failed to upload auth files: {}", e);
             }
 
             save_last_sandbox(&summary.id.to_string());
-            cmux_sandbox::run_chat_tui(cli.base_url, summary.id.to_string()).await.map_err(|e| anyhow::anyhow!(e))?;
+            cmux_sandbox::run_chat_tui(cli.base_url, summary.id.to_string())
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
         }
         Command::Auth(args) => match args.command {
             AuthCommand::Status => {
