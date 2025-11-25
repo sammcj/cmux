@@ -15,6 +15,7 @@ use tokio::sync::mpsc;
 
 use crate::mux::commands::MuxCommand;
 use crate::mux::events::MuxEvent;
+use crate::mux::layout::PaneContent;
 use crate::mux::state::{FocusArea, MuxApp};
 use crate::mux::terminal::{
     connect_to_sandbox, create_and_connect_sandbox, create_terminal_manager,
@@ -164,6 +165,7 @@ async fn run_app<B: ratatui::backend::Backend>(
 
     loop {
         terminal.draw(|f| ui(f, &mut app))?;
+        sync_terminal_sizes(&app, &terminal_manager);
 
         tokio::select! {
             Some(event) = event_rx.recv() => {
@@ -172,7 +174,11 @@ async fn run_app<B: ratatui::backend::Backend>(
                     if let Some(pane_id) = app.active_pane_id() {
                         let manager = terminal_manager.clone();
                         let sandbox_id = sandbox_id.clone();
-                        let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+                        let (rows, cols) = preferred_size_for_pane(&app, pane_id).unwrap_or_else(|| {
+                            let (fallback_cols, fallback_rows) =
+                                crossterm::terminal::size().unwrap_or((80, 24));
+                            (fallback_rows, fallback_cols)
+                        });
                         let event_tx = app.event_tx.clone();
 
                         tokio::spawn(async move {
@@ -196,11 +202,14 @@ async fn run_app<B: ratatui::backend::Backend>(
                     if message.contains("Creating sandbox") {
                         // Spawn sandbox creation task
                         let manager = terminal_manager.clone();
-                        let pane_id = app.active_pane_id();
                         let event_tx = app.event_tx.clone();
-                        let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-
-                        if let Some(pane_id) = pane_id {
+                        if let Some(pane_id) = app.active_pane_id() {
+                            let (rows, cols) = preferred_size_for_pane(&app, pane_id)
+                                .unwrap_or_else(|| {
+                                    let (fallback_cols, fallback_rows) =
+                                        crossterm::terminal::size().unwrap_or((80, 24));
+                                    (fallback_rows, fallback_cols)
+                                });
                             tokio::spawn(async move {
                                 match create_and_connect_sandbox(
                                     manager,
@@ -249,6 +258,56 @@ async fn run_app<B: ratatui::backend::Backend>(
     }
 
     Ok(())
+}
+
+fn pane_content_dimensions(pane: &crate::mux::layout::Pane) -> Option<(u16, u16)> {
+    let area = pane.area?;
+    let cols = area.width.saturating_sub(2);
+    let rows = area.height.saturating_sub(2);
+
+    if cols == 0 || rows == 0 {
+        return None;
+    }
+
+    Some((rows, cols))
+}
+
+fn preferred_size_for_pane(
+    app: &MuxApp<'_>,
+    pane_id: crate::mux::layout::PaneId,
+) -> Option<(u16, u16)> {
+    let tab = app.workspace.active_tab()?;
+    let pane = tab.layout.find_pane(pane_id)?;
+    pane_content_dimensions(pane)
+}
+
+fn sync_terminal_sizes(
+    app: &MuxApp<'_>,
+    terminal_manager: &crate::mux::terminal::SharedTerminalManager,
+) {
+    let Some(tab) = app.workspace.active_tab() else {
+        return;
+    };
+
+    let mut targets: Vec<(crate::mux::layout::PaneId, u16, u16)> = Vec::new();
+    for pane in tab.layout.panes() {
+        if !matches!(pane.content, PaneContent::Terminal { .. }) {
+            continue;
+        }
+        if let Some((rows, cols)) = pane_content_dimensions(pane) {
+            targets.push((pane.id, rows, cols));
+        }
+    }
+
+    if targets.is_empty() {
+        return;
+    }
+
+    if let Ok(mut guard) = terminal_manager.try_lock() {
+        for (pane_id, rows, cols) in targets {
+            let _ = guard.update_view_size(pane_id, rows, cols);
+        }
+    }
 }
 
 /// Handle input events. Returns true if the app should quit.
@@ -485,14 +544,6 @@ async fn handle_input(
             if let Some(pane_id) = app.active_pane_id() {
                 if let Ok(guard) = terminal_manager.try_lock() {
                     guard.send_input(pane_id, text.into_bytes());
-                }
-            }
-        }
-        Event::Resize(cols, rows) => {
-            // Resize active terminal
-            if let Some(pane_id) = app.active_pane_id() {
-                if let Ok(mut guard) = terminal_manager.try_lock() {
-                    guard.resize(pane_id, rows, cols);
                 }
             }
         }

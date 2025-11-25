@@ -1074,9 +1074,26 @@ pub struct TerminalConnection {
 }
 
 /// Terminal output buffer for rendering - now using VirtualTerminal
-#[derive(Debug, Clone)]
 pub struct TerminalBuffer {
     pub terminal: VirtualTerminal,
+    parser: Parser,
+}
+
+impl std::fmt::Debug for TerminalBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TerminalBuffer")
+            .field("terminal", &self.terminal)
+            .finish()
+    }
+}
+
+impl Clone for TerminalBuffer {
+    fn clone(&self) -> Self {
+        Self {
+            terminal: self.terminal.clone(),
+            parser: Parser::new(),
+        }
+    }
 }
 
 impl Default for TerminalBuffer {
@@ -1089,18 +1106,20 @@ impl TerminalBuffer {
     pub fn new() -> Self {
         Self {
             terminal: VirtualTerminal::new(24, 80),
+            parser: Parser::new(),
         }
     }
 
     pub fn with_size(rows: usize, cols: usize) -> Self {
         Self {
             terminal: VirtualTerminal::new(rows, cols),
+            parser: Parser::new(),
         }
     }
 
     /// Process raw terminal data
     pub fn process(&mut self, data: &[u8]) {
-        self.terminal.process(data);
+        self.parser.advance(&mut self.terminal, data);
     }
 
     /// Resize the terminal
@@ -1128,6 +1147,7 @@ impl TerminalBuffer {
         let rows = self.terminal.rows;
         let cols = self.terminal.cols;
         self.terminal = VirtualTerminal::new(rows, cols);
+        self.parser = Parser::new();
     }
 
     /// Check if the terminal has any content
@@ -1205,6 +1225,8 @@ pub struct TerminalManager {
     connections: HashMap<PaneId, TerminalConnection>,
     /// Output buffers by pane ID
     buffers: HashMap<PaneId, TerminalBuffer>,
+    /// Last sent terminal sizes by pane ID (rows, cols)
+    last_sizes: HashMap<PaneId, (u16, u16)>,
     /// Event channel to send events back to the app
     event_tx: mpsc::UnboundedSender<MuxEvent>,
 }
@@ -1215,6 +1237,7 @@ impl TerminalManager {
             base_url,
             connections: HashMap::new(),
             buffers: HashMap::new(),
+            last_sizes: HashMap::new(),
             event_tx,
         }
     }
@@ -1252,6 +1275,7 @@ impl TerminalManager {
     /// Disconnect a terminal
     pub fn disconnect(&mut self, pane_id: PaneId) {
         self.connections.remove(&pane_id);
+        self.last_sizes.remove(&pane_id);
     }
 
     /// Clear a terminal buffer
@@ -1261,26 +1285,38 @@ impl TerminalManager {
         }
     }
 
-    /// Send resize event to a terminal
-    pub fn resize(&mut self, pane_id: PaneId, rows: u16, cols: u16) -> bool {
-        // Resize the virtual terminal
+    /// Send resize event to a terminal and avoid duplicate updates
+    pub fn update_view_size(&mut self, pane_id: PaneId, rows: u16, cols: u16) -> bool {
+        if rows == 0 || cols == 0 {
+            return false;
+        }
+
+        let last = self.last_sizes.get(&pane_id).copied();
+        if let Some((last_rows, last_cols)) = last {
+            if last_rows == rows && last_cols == cols {
+                return true;
+            }
+        }
+
         if let Some(buffer) = self.buffers.get_mut(&pane_id) {
             buffer.resize(rows as usize, cols as usize);
         }
 
-        // Send resize command to remote
+        self.last_sizes.insert(pane_id, (rows, cols));
+
         if let Some(conn) = self.connections.get(&pane_id) {
             let msg = format!("resize:{}:{}", rows, cols);
             conn.sender.send(msg.into_bytes()).is_ok()
         } else {
-            false
+            true
         }
     }
 
     /// Initialize a buffer with specific size
     pub fn init_buffer(&mut self, pane_id: PaneId, rows: usize, cols: usize) {
         self.buffers
-            .insert(pane_id, TerminalBuffer::with_size(rows, cols));
+            .insert(pane_id, TerminalBuffer::with_size(rows.max(1), cols.max(1)));
+        self.last_sizes.insert(pane_id, (rows as u16, cols as u16));
     }
 }
 

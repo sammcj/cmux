@@ -176,6 +176,11 @@ fn render_workspace(f: &mut Frame, app: &mut MuxApp, area: Rect) {
     // First, calculate areas (needs mutable borrow)
     if let Some(tab) = app.workspace.active_tab_mut() {
         tab.layout.calculate_areas(area);
+        if let Some(zoomed_id) = app.zoomed_pane {
+            if let Some(pane) = tab.layout.find_pane_mut(zoomed_id) {
+                pane.area = Some(area);
+            }
+        }
     }
 
     // Now get immutable references for rendering
