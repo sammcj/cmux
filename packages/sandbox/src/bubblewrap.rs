@@ -495,6 +495,10 @@ fi
             "--bind",
             "/var/run/cmux",
             "/run/cmux",
+            // Bind-mount the Docker socket for Docker-in-Docker support
+            "--bind",
+            "/var/run/docker.sock",
+            "/run/docker.sock",
             "--bind",
             &workspace_str,
             "/workspace",
@@ -560,6 +564,8 @@ fi
             format!("http://{}:{}", lease.host, self.port),
         );
         command.env("IS_SANDBOX", "1");
+        // Docker socket is bind-mounted to /run/docker.sock
+        command.env("DOCKER_HOST", "unix:///run/docker.sock");
         // Socket path for open-url (mapped from /var/run/cmux to /run/cmux inside sandbox)
         command.env("CMUX_OPEN_URL_SOCKET", "/run/cmux/open-url.sock");
 
@@ -745,6 +751,7 @@ fi
         cmd.env("LANG", "C.UTF-8");
         cmd.env("LC_ALL", "C.UTF-8");
         cmd.env("IS_SANDBOX", "1");
+        cmd.env("DOCKER_HOST", "unix:///run/docker.sock");
         // SSH agent forwarding
         let ssh_socket_path = Path::new("/ssh-agent.sock");
         if ssh_socket_path.exists() {
@@ -1173,6 +1180,7 @@ impl SandboxService for BubblewrapService {
         cmd.env("LANG", "C.UTF-8");
         cmd.env("LC_ALL", "C.UTF-8");
         cmd.env("IS_SANDBOX", "1");
+        cmd.env("DOCKER_HOST", "unix:///run/docker.sock");
         // SSH agent forwarding
         let ssh_socket_path = Path::new("/ssh-agent.sock");
         if ssh_socket_path.exists() {
