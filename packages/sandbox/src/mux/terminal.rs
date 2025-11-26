@@ -84,6 +84,8 @@ pub struct VirtualTerminal {
     pub title: Option<String>,
     /// Last printed character (for REP - repeat)
     last_printed_char: Option<char>,
+    /// Pending responses to send back to the PTY (e.g., DSR cursor position report)
+    pub pending_responses: Vec<Vec<u8>>,
 }
 
 /// Saved cursor state (DECSC/DECRC)
@@ -168,6 +170,7 @@ impl VirtualTerminal {
             bell_pending: false,
             title: None,
             last_printed_char: None,
+            pending_responses: Vec::new(),
         }
     }
 
@@ -312,6 +315,11 @@ impl VirtualTerminal {
     pub fn process(&mut self, data: &[u8]) {
         let mut parser = Parser::new();
         parser.advance(self, data);
+    }
+
+    /// Drain pending responses that should be sent back to the PTY
+    pub fn drain_responses(&mut self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut self.pending_responses)
     }
 
     /// Scroll the screen up by one line within the scroll region
@@ -891,9 +899,23 @@ impl Perform for VirtualTerminal {
             'm' => {
                 self.apply_sgr(params);
             }
-            // Device Status Report
+            // Device Status Report (DSR)
             'n' => {
-                // Ignore - would need to send response back
+                let mode = params_vec.first().copied().unwrap_or(0);
+                match mode {
+                    5 => {
+                        // Status Report - respond with "OK" (CSI 0 n)
+                        self.pending_responses.push(b"\x1b[0n".to_vec());
+                    }
+                    6 => {
+                        // Cursor Position Report (CPR) - respond with cursor position
+                        // Note: Terminal rows/cols are 1-indexed in the response
+                        let response =
+                            format!("\x1b[{};{}R", self.cursor_row + 1, self.cursor_col + 1);
+                        self.pending_responses.push(response.into_bytes());
+                    }
+                    _ => {}
+                }
             }
             // Set scroll region
             'r' => {
@@ -1214,6 +1236,11 @@ impl TerminalBuffer {
         self.parser = Parser::new();
     }
 
+    /// Drain pending responses that should be sent back to the PTY
+    pub fn drain_responses(&mut self) -> Vec<Vec<u8>> {
+        self.terminal.drain_responses()
+    }
+
     /// Check if the terminal has any content
     pub fn has_content(&self) -> bool {
         // Check if any cell has non-space content
@@ -1381,16 +1408,30 @@ impl TerminalManager {
         })
     }
 
-    /// Handle incoming terminal output from the multiplexed connection
-    pub fn handle_output(&mut self, pane_id: PaneId, data: Vec<u8>) {
+    /// Handle incoming terminal output from the multiplexed connection.
+    /// Returns any pending responses that should be sent back to the PTY (e.g., DSR responses).
+    pub fn handle_output(&mut self, pane_id: PaneId, data: Vec<u8>) -> Vec<Vec<u8>> {
         let buffer = self.buffers.entry(pane_id).or_default();
         buffer.process(&data);
+        buffer.drain_responses()
     }
 
-    /// Handle output by session ID (used by the mux connection handler)
+    /// Handle output by session ID (used by the mux connection handler).
+    /// Automatically sends any pending responses back to the PTY.
     pub fn handle_output_by_session(&mut self, session_id: &PtySessionId, data: Vec<u8>) {
         if let Some(&pane_id) = self.session_to_pane.get(session_id) {
-            self.handle_output(pane_id, data);
+            let responses = self.handle_output(pane_id, data);
+            // Send any pending responses back to the PTY
+            if !responses.is_empty() {
+                if let Some(sender) = &self.mux_sender {
+                    for response in responses {
+                        sender.send(MuxClientMessage::Input {
+                            session_id: session_id.clone(),
+                            data: response,
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -1809,5 +1850,35 @@ mod tests {
         // Line 1 should have scrolled into scrollback
         assert_eq!(term.scrollback.len(), 1);
         assert_eq!(term.scrollback[0][0].c, 'L');
+    }
+
+    #[test]
+    fn virtual_terminal_responds_to_dsr_cursor_position() {
+        let mut term = VirtualTerminal::new(24, 80);
+        // Move cursor to row 5, col 10 (1-indexed in escape sequence)
+        term.process(b"\x1b[5;10H");
+        assert_eq!(term.cursor_row, 4); // 0-indexed
+        assert_eq!(term.cursor_col, 9); // 0-indexed
+
+        // Send DSR request for cursor position (CSI 6 n)
+        term.process(b"\x1b[6n");
+
+        // Should have a pending response with cursor position
+        let responses = term.drain_responses();
+        assert_eq!(responses.len(), 1);
+        // Response should be CSI row;col R (1-indexed)
+        assert_eq!(responses[0], b"\x1b[5;10R");
+    }
+
+    #[test]
+    fn virtual_terminal_responds_to_dsr_status() {
+        let mut term = VirtualTerminal::new(24, 80);
+        // Send DSR request for status (CSI 5 n)
+        term.process(b"\x1b[5n");
+
+        // Should have a pending response with "OK" status
+        let responses = term.drain_responses();
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0], b"\x1b[0n");
     }
 }
