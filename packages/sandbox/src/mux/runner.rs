@@ -15,8 +15,9 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
 
+use crate::auth_files::{detect_auth_files, upload_auth_files_with_list};
 use crate::mux::commands::MuxCommand;
-use crate::mux::events::MuxEvent;
+use crate::mux::events::{MuxEvent, NotificationLevel};
 use crate::mux::layout::{ClosedTabInfo, PaneContent, PaneExitOutcome};
 use crate::mux::state::{FocusArea, MuxApp};
 use crate::mux::terminal::{
@@ -117,7 +118,7 @@ async fn run_main_loop<B: ratatui::backend::Backend>(
                     // Upload workspace directory
                     let _ = init_tx.send(MuxEvent::Notification {
                         message: format!("Uploading {}...", dir_name),
-                        level: crate::mux::events::NotificationLevel::Info,
+                        level: NotificationLevel::Info,
                     });
 
                     if let Err(e) =
@@ -129,10 +130,33 @@ async fn run_main_loop<B: ratatui::backend::Backend>(
                         )));
                     }
 
+                    let auth_files = detect_auth_files();
+                    if !auth_files.is_empty() {
+                        let _ = init_tx.send(MuxEvent::Notification {
+                            message: format!("Uploading {} auth file(s)...", auth_files.len()),
+                            level: NotificationLevel::Info,
+                        });
+
+                        if let Err(e) = upload_auth_files_with_list(
+                            &client,
+                            &init_url,
+                            &sandbox_id,
+                            auth_files,
+                            false,
+                        )
+                        .await
+                        {
+                            let _ = init_tx.send(MuxEvent::Error(format!(
+                                "Failed to upload auth files: {}",
+                                e
+                            )));
+                        }
+                    }
+
                     let _ = init_tx.send(MuxEvent::SandboxCreated(summary.clone()));
                     let _ = init_tx.send(MuxEvent::Notification {
                         message: format!("Created sandbox: {}", sandbox_id),
-                        level: crate::mux::events::NotificationLevel::Info,
+                        level: NotificationLevel::Info,
                     });
 
                     // Request connection to the new sandbox
