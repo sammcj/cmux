@@ -5,7 +5,8 @@ use cmux_sandbox::models::{
 use cmux_sandbox::{
     build_default_env_vars, extract_api_key_from_output, store_claude_token,
     sync_files::{upload_sync_files, SYNC_FILES},
-    AcpProvider, DEFAULT_HTTP_PORT,
+    AcpProvider, DEFAULT_HTTP_PORT, DMUX_DEFAULT_CONTAINER, DMUX_DEFAULT_HTTP_PORT,
+    DMUX_DEFAULT_IMAGE,
 };
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use futures::{SinkExt, StreamExt};
@@ -185,8 +186,25 @@ struct NewArgs {
     path: PathBuf,
 }
 
+/// Check if we're running as "dmux" (debug/dev binary)
+fn is_dmux() -> bool {
+    std::env::args()
+        .next()
+        .and_then(|arg0| {
+            std::path::Path::new(&arg0)
+                .file_name()
+                .map(|name| name.to_string_lossy().starts_with("dmux"))
+        })
+        .unwrap_or(false)
+}
+
 fn default_base_url() -> String {
-    format!("http://127.0.0.1:{DEFAULT_HTTP_PORT}")
+    let port = if is_dmux() {
+        DMUX_DEFAULT_HTTP_PORT
+    } else {
+        DEFAULT_HTTP_PORT
+    };
+    format!("http://127.0.0.1:{port}")
 }
 
 fn parse_env(raw: &str) -> Result<EnvVar, String> {
@@ -1056,10 +1074,25 @@ fn generate_ca() -> anyhow::Result<rcgen::Certificate> {
 }
 
 async fn handle_server_start() -> anyhow::Result<()> {
+    let (default_container, default_port, default_image, volume_prefix) = if is_dmux() {
+        (
+            DMUX_DEFAULT_CONTAINER,
+            DMUX_DEFAULT_HTTP_PORT.to_string(),
+            DMUX_DEFAULT_IMAGE,
+            "dmux",
+        )
+    } else {
+        (
+            "cmux-sandbox-dev-run",
+            DEFAULT_HTTP_PORT.to_string(),
+            "cmux-sandbox-dev",
+            "cmux",
+        )
+    };
     let container_name =
-        std::env::var("CONTAINER_NAME").unwrap_or_else(|_| "cmux-sandbox-dev-run".into());
-    let port = std::env::var("CMUX_SANDBOX_PORT").unwrap_or_else(|_| "46831".into());
-    let image_name = std::env::var("IMAGE_NAME").unwrap_or_else(|_| "cmux-sandbox-dev".into());
+        std::env::var("CONTAINER_NAME").unwrap_or_else(|_| default_container.into());
+    let port = std::env::var("CMUX_SANDBOX_PORT").unwrap_or(default_port);
+    let image_name = std::env::var("IMAGE_NAME").unwrap_or_else(|_| default_image.into());
 
     // Check if container is already running
     let output = tokio::process::Command::new("docker")
@@ -1090,6 +1123,9 @@ async fn handle_server_start() -> anyhow::Result<()> {
         .output()
         .await;
 
+    let docker_volume = format!("{}-sandbox-docker:/var/lib/docker", volume_prefix);
+    let data_volume = format!("{}-sandbox-data:/var/lib/cmux/sandboxes", volume_prefix);
+
     let status = tokio::process::Command::new("docker")
         .args([
             "run",
@@ -1113,9 +1149,9 @@ async fn handle_server_start() -> anyhow::Result<()> {
             "-p",
             &format!("{}:{}", port, port),
             "-v",
-            "cmux-sandbox-docker:/var/lib/docker",
+            &docker_volume,
             "-v",
-            "cmux-sandbox-data:/var/lib/cmux/sandboxes",
+            &data_volume,
             "--entrypoint",
             "/usr/local/bin/bootstrap-dind.sh",
             &image_name,
@@ -1150,8 +1186,13 @@ async fn handle_server_start() -> anyhow::Result<()> {
 }
 
 async fn handle_server_stop() -> anyhow::Result<()> {
+    let default_container = if is_dmux() {
+        DMUX_DEFAULT_CONTAINER
+    } else {
+        "cmux-sandbox-dev-run"
+    };
     let container_name =
-        std::env::var("CONTAINER_NAME").unwrap_or_else(|_| "cmux-sandbox-dev-run".into());
+        std::env::var("CONTAINER_NAME").unwrap_or_else(|_| default_container.into());
     eprintln!("Stopping server container '{}'...", container_name);
     let status = tokio::process::Command::new("docker")
         .args(["rm", "-f", &container_name])
@@ -1167,8 +1208,13 @@ async fn handle_server_stop() -> anyhow::Result<()> {
 }
 
 async fn handle_server_status(base_url: &str) -> anyhow::Result<()> {
+    let default_container = if is_dmux() {
+        DMUX_DEFAULT_CONTAINER
+    } else {
+        "cmux-sandbox-dev-run"
+    };
     let container_name =
-        std::env::var("CONTAINER_NAME").unwrap_or_else(|_| "cmux-sandbox-dev-run".into());
+        std::env::var("CONTAINER_NAME").unwrap_or_else(|_| default_container.into());
 
     println!("cmux CLI version: {}", env!("CARGO_PKG_VERSION"));
     println!("Server URL: {}", base_url);

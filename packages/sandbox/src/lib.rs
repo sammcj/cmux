@@ -23,3 +23,8 @@ pub use mux::run_mux_tui;
 
 pub const DEFAULT_HTTP_PORT: u16 = 46831;
 pub const DEFAULT_WS_PORT: u16 = 46832;
+
+// Debug/dev version defaults (dmux)
+pub const DMUX_DEFAULT_HTTP_PORT: u16 = 46833;
+pub const DMUX_DEFAULT_CONTAINER: &str = "dmux-sandbox-dev-run";
+pub const DMUX_DEFAULT_IMAGE: &str = "dmux-sandbox-dev";
