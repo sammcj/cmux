@@ -18,9 +18,7 @@ use crate::mux::commands::MuxCommand;
 use crate::mux::events::MuxEvent;
 use crate::mux::layout::{ClosedTabInfo, PaneContent, PaneExitOutcome};
 use crate::mux::state::{FocusArea, MuxApp};
-use crate::mux::terminal::{
-    connect_to_sandbox, create_and_connect_sandbox, create_terminal_manager,
-};
+use crate::mux::terminal::{connect_to_sandbox, create_terminal_manager};
 use crate::mux::ui::ui;
 
 /// Run the multiplexer TUI.
@@ -188,44 +186,59 @@ async fn run_app<B: ratatui::backend::Backend>(
                         }
                     }
                     MuxEvent::Notification { message, .. } if message.contains("Creating sandbox") => {
-                        // Spawn sandbox creation task
-                        let manager = terminal_manager.clone();
+                        // Spawn sandbox creation task - creates via REST API then emits SandboxCreated
+                        let url = base_url.clone();
                         let event_tx = app.event_tx.clone();
-                        if let Some(pane_id) = app.active_pane_id() {
-                            let (rows, cols) = preferred_size_for_pane(&app, pane_id)
-                                .unwrap_or_else(|| {
-                                    let (fallback_cols, fallback_rows) =
-                                        crossterm::terminal::size().unwrap_or((80, 24));
-                                    (fallback_rows, fallback_cols)
-                                });
-                            tokio::spawn(async move {
-                                match create_and_connect_sandbox(
-                                    manager,
-                                    pane_id,
-                                    Some("interactive".to_string()),
-                                    cols,
-                                    rows,
-                                ).await {
-                                    Ok(sandbox_id) => {
-                                        let _ = event_tx.send(MuxEvent::Notification {
-                                            message: format!("Created sandbox: {}", sandbox_id),
-                                            level: crate::mux::events::NotificationLevel::Info,
-                                        });
-                                        // Trigger refresh
-                                        let _ = event_tx.send(MuxEvent::Notification {
-                                            message: "Refreshing sandboxes...".to_string(),
-                                            level: crate::mux::events::NotificationLevel::Info,
-                                        });
-                                    }
-                                    Err(e) => {
-                                        let _ = event_tx.send(MuxEvent::Error(format!(
-                                            "Failed to create sandbox: {}",
-                                            e
-                                        )));
+                        tokio::spawn(async move {
+                            let client = reqwest::Client::new();
+                            let api_url = format!("{}/sandboxes", url.trim_end_matches('/'));
+                            let body = crate::models::CreateSandboxRequest {
+                                name: Some("interactive".to_string()),
+                                workspace: None,
+                                read_only_paths: vec![],
+                                tmpfs: vec![],
+                                env: vec![],
+                            };
+
+                            match client.post(&api_url).json(&body).send().await {
+                                Ok(response) if response.status().is_success() => {
+                                    match response.json::<crate::models::SandboxSummary>().await {
+                                        Ok(summary) => {
+                                            let sandbox_id = summary.id.to_string();
+                                            // Send SandboxCreated which sets up workspace/tab/pane
+                                            let _ = event_tx.send(MuxEvent::SandboxCreated(summary));
+                                            // Request connection to the new sandbox
+                                            let _ = event_tx.send(MuxEvent::ConnectToSandbox { sandbox_id });
+                                            // Refresh to show the new sandbox in sidebar
+                                            let _ = event_tx.send(MuxEvent::Notification {
+                                                message: "Refreshing sandboxes...".to_string(),
+                                                level: crate::mux::events::NotificationLevel::Info,
+                                            });
+                                        }
+                                        Err(e) => {
+                                            let _ = event_tx.send(MuxEvent::Error(format!(
+                                                "Failed to parse sandbox response: {}",
+                                                e
+                                            )));
+                                        }
                                     }
                                 }
-                            });
-                        }
+                                Ok(response) => {
+                                    let status = response.status();
+                                    let text = response.text().await.unwrap_or_default();
+                                    let _ = event_tx.send(MuxEvent::Error(format!(
+                                        "Failed to create sandbox: {} - {}",
+                                        status, text
+                                    )));
+                                }
+                                Err(e) => {
+                                    let _ = event_tx.send(MuxEvent::Error(format!(
+                                        "Failed to create sandbox: {}",
+                                        e
+                                    )));
+                                }
+                            }
+                        });
                     }
                     MuxEvent::Notification { message, .. } if message.contains("Refreshing sandboxes") => {
                         // Trigger a refresh

@@ -97,6 +97,13 @@ impl SandboxService for MockService {
         Ok(())
     }
 
+    async fn mux_attach(
+        &self,
+        _socket: axum::extract::ws::WebSocket,
+    ) -> cmux_sandbox::errors::SandboxResult<()> {
+        Ok(())
+    }
+
     async fn proxy(
         &self,
         _id: String,

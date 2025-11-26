@@ -76,6 +76,8 @@ pub fn build_router(service: Arc<dyn SandboxService>) -> Router {
         )
         .route("/sandboxes/{id}/attach", any(attach_sandbox))
         .route("/sandboxes/{id}/proxy", any(proxy_sandbox))
+        // Multiplexed WebSocket endpoint - single connection for all PTY sessions
+        .route("/mux/attach", any(mux_attach))
         .merge(swagger_routes)
         .with_state(state)
 }
@@ -222,6 +224,15 @@ async fn proxy_sandbox(
     })
 }
 
+/// Multiplexed WebSocket endpoint - handles multiple PTY sessions over a single connection.
+async fn mux_attach(state: axum::extract::State<AppState>, ws: WebSocketUpgrade) -> Response {
+    ws.on_upgrade(move |socket| async move {
+        if let Err(e) = state.service.mux_attach(socket).await {
+            tracing::error!("mux_attach failed: {e}");
+        }
+    })
+}
+
 #[utoipa::path(
     delete,
     path = "/sandboxes/{id}",
@@ -294,6 +305,10 @@ mod tests {
             _command: Option<Vec<String>>,
             _tty: bool,
         ) -> SandboxResult<()> {
+            Ok(())
+        }
+
+        async fn mux_attach(&self, _socket: WebSocket) -> SandboxResult<()> {
             Ok(())
         }
 

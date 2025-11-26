@@ -73,3 +73,97 @@ pub struct ExecResponse {
 pub struct HealthResponse {
     pub status: String,
 }
+
+// ============================================================================
+// Multiplexed WebSocket Protocol Messages
+// ============================================================================
+
+/// Unique identifier for a PTY session within a multiplexed connection.
+/// This is a string to allow for flexible ID generation on the client side.
+pub type PtySessionId = String;
+
+/// Client-to-server messages for the multiplexed WebSocket protocol.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MuxClientMessage {
+    /// Attach to a sandbox's terminal, creating a new PTY session.
+    Attach {
+        session_id: PtySessionId,
+        sandbox_id: String,
+        cols: u16,
+        rows: u16,
+        #[serde(default)]
+        command: Option<Vec<String>>,
+        #[serde(default = "default_tty")]
+        tty: bool,
+    },
+    /// Send input data to a PTY session.
+    Input {
+        session_id: PtySessionId,
+        #[serde(with = "base64_bytes")]
+        data: Vec<u8>,
+    },
+    /// Resize a PTY session.
+    Resize {
+        session_id: PtySessionId,
+        cols: u16,
+        rows: u16,
+    },
+    /// Detach from a PTY session (close it).
+    Detach { session_id: PtySessionId },
+    /// Ping to keep connection alive.
+    Ping { timestamp: u64 },
+}
+
+/// Server-to-client messages for the multiplexed WebSocket protocol.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MuxServerMessage {
+    /// PTY session was successfully attached.
+    Attached { session_id: PtySessionId },
+    /// Output data from a PTY session.
+    Output {
+        session_id: PtySessionId,
+        #[serde(with = "base64_bytes")]
+        data: Vec<u8>,
+    },
+    /// PTY session exited.
+    Exited {
+        session_id: PtySessionId,
+        #[serde(default)]
+        exit_code: Option<i32>,
+    },
+    /// Error occurred for a session.
+    Error {
+        session_id: Option<PtySessionId>,
+        message: String,
+    },
+    /// Pong response to ping.
+    Pong { timestamp: u64 },
+}
+
+fn default_tty() -> bool {
+    true
+}
+
+/// Helper module for base64 encoding/decoding of byte vectors in JSON.
+mod base64_bytes {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let encoded = STANDARD.encode(bytes);
+        encoded.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let encoded = String::deserialize(deserializer)?;
+        STANDARD.decode(&encoded).map_err(serde::de::Error::custom)
+    }
+}

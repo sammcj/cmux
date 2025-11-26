@@ -56,6 +56,7 @@ tokio-util = { version = "0.7", features = ["compat"] }
 url = "2.5"
 terminal-light = "1.4"
 vte = "0.15"
+base64 = "0.22.1"
 
 [dev-dependencies]
 assert_cmd = "2.0"

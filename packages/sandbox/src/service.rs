@@ -19,6 +19,8 @@ pub trait SandboxService: Send + Sync + 'static {
         command: Option<Vec<String>>,
         tty: bool,
     ) -> SandboxResult<()>;
+    /// Multiplexed attach - handles multiple PTY sessions over a single WebSocket.
+    async fn mux_attach(&self, socket: WebSocket) -> SandboxResult<()>;
     async fn proxy(&self, id: String, port: u16, socket: WebSocket) -> SandboxResult<()>;
     async fn upload_archive(&self, id: String, archive: Body) -> SandboxResult<()>;
     async fn delete(&self, id: String) -> SandboxResult<Option<SandboxSummary>>;

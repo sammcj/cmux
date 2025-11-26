@@ -1,15 +1,16 @@
 use crate::errors::{SandboxError, SandboxResult};
 use crate::ip_pool::{IpLease, IpPool};
 use crate::models::{
-    CreateSandboxRequest, ExecRequest, ExecResponse, SandboxNetwork, SandboxStatus, SandboxSummary,
+    CreateSandboxRequest, ExecRequest, ExecResponse, MuxClientMessage, MuxServerMessage,
+    PtySessionId, SandboxNetwork, SandboxStatus, SandboxSummary,
 };
 use crate::service::SandboxService;
 use async_trait::async_trait;
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket};
 use chrono::{DateTime, Utc};
-use futures::StreamExt;
-use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use futures::{SinkExt, StreamExt};
+use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -21,14 +22,22 @@ use std::sync::Arc;
 use tokio::fs;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tokio::sync::{mpsc, Mutex};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 use which::which;
 
 const NETWORK_BASE: Ipv4Addr = Ipv4Addr::new(10, 201, 0, 0);
 const HOST_IF_PREFIX: &str = "vethh";
 const NS_IF_PREFIX: &str = "vethn";
+
+/// Handle for a multiplexed PTY session.
+struct PtySessionHandle {
+    input_tx: mpsc::UnboundedSender<Vec<u8>>,
+    master: Box<dyn MasterPty + Send>,
+    #[allow(dead_code)]
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+}
 
 #[derive(Deserialize)]
 struct BwrapStatus {
@@ -591,6 +600,104 @@ alias g=git
 
         Ok(entry.handle.to_summary(status))
     }
+
+    /// Spawn a PTY session for multiplexed attach.
+    async fn spawn_mux_pty_session(
+        &self,
+        session_id: PtySessionId,
+        inner_pid: u32,
+        command: Vec<String>,
+        cols: u16,
+        rows: u16,
+        output_tx: mpsc::UnboundedSender<MuxServerMessage>,
+    ) -> SandboxResult<PtySessionHandle> {
+        let system = NativePtySystem::default();
+        let pair = system
+            .openpty(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| SandboxError::Internal(format!("failed to open pty: {e}")))?;
+
+        let mut cmd = CommandBuilder::new(&self.nsenter_path);
+        cmd.args(nsenter_args(inner_pid, None, &command));
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("LANG", "C.UTF-8");
+        cmd.env("LC_ALL", "C.UTF-8");
+
+        let child = pair
+            .slave
+            .spawn_command(cmd)
+            .map_err(|e| SandboxError::Internal(format!("failed to spawn pty command: {e}")))?;
+        // Release slave so it closes when child exits
+        drop(pair.slave);
+
+        let mut reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|e| SandboxError::Internal(format!("failed to clone pty reader: {e}")))?;
+        let mut writer = pair
+            .master
+            .take_writer()
+            .map_err(|e| SandboxError::Internal(format!("failed to take pty writer: {e}")))?;
+
+        let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+
+        // Reader thread: PTY -> output channel
+        let session_id_clone = session_id.clone();
+        let output_tx_clone = output_tx.clone();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => {
+                        // PTY closed
+                        let _ = output_tx_clone.send(MuxServerMessage::Exited {
+                            session_id: session_id_clone,
+                            exit_code: None,
+                        });
+                        break;
+                    }
+                    Ok(n) => {
+                        if output_tx_clone
+                            .send(MuxServerMessage::Output {
+                                session_id: session_id_clone.clone(),
+                                data: buf[..n].to_vec(),
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Err(_) => {
+                        let _ = output_tx_clone.send(MuxServerMessage::Exited {
+                            session_id: session_id_clone,
+                            exit_code: None,
+                        });
+                        break;
+                    }
+                }
+            }
+        });
+
+        // Writer thread: input channel -> PTY
+        std::thread::spawn(move || {
+            while let Some(data) = input_rx.blocking_recv() {
+                if writer.write_all(&data).is_err() {
+                    break;
+                }
+                let _ = writer.flush();
+            }
+        });
+
+        Ok(PtySessionHandle {
+            input_tx,
+            master: pair.master,
+            child,
+        })
+    }
 }
 
 fn find_binary(name: &str) -> SandboxResult<String> {
@@ -1102,6 +1209,193 @@ impl SandboxService for BubblewrapService {
         }
 
         let _ = child.kill().await;
+        Ok(())
+    }
+
+    async fn mux_attach(&self, socket: WebSocket) -> SandboxResult<()> {
+        info!("mux_attach: new multiplexed connection");
+
+        // Channel for PTY output from all sessions -> WebSocket
+        let (output_tx, mut output_rx) = mpsc::unbounded_channel::<MuxServerMessage>();
+
+        // Track active PTY sessions: session_id -> (input_tx, master_pty for resize)
+        let sessions: Arc<Mutex<HashMap<PtySessionId, PtySessionHandle>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
+        let (mut ws_write, mut ws_read) = socket.split();
+
+        // Task to send output to WebSocket
+        let output_task = tokio::spawn(async move {
+            while let Some(msg) = output_rx.recv().await {
+                let json = match serde_json::to_string(&msg) {
+                    Ok(j) => j,
+                    Err(e) => {
+                        warn!("mux_attach: failed to serialize message: {e}");
+                        continue;
+                    }
+                };
+                if ws_write.send(Message::Text(json.into())).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        // Main loop: handle incoming messages
+        loop {
+            let msg = ws_read.next().await;
+            match msg {
+                Some(Ok(Message::Text(text))) => {
+                    let client_msg: MuxClientMessage = match serde_json::from_str(&text) {
+                        Ok(m) => m,
+                        Err(e) => {
+                            let _ = output_tx.send(MuxServerMessage::Error {
+                                session_id: None,
+                                message: format!("Invalid message: {e}"),
+                            });
+                            continue;
+                        }
+                    };
+
+                    match client_msg {
+                        MuxClientMessage::Attach {
+                            session_id,
+                            sandbox_id,
+                            cols,
+                            rows,
+                            command,
+                            tty,
+                        } => {
+                            debug!(
+                                "mux_attach: attach request session={} sandbox={} tty={}",
+                                session_id, sandbox_id, tty
+                            );
+
+                            // Resolve sandbox
+                            let entry = match self.resolve_id(&sandbox_id).await {
+                                Ok(id) => {
+                                    let sandboxes = self.sandboxes.lock().await;
+                                    sandboxes.get(&id).cloned()
+                                }
+                                Err(e) => {
+                                    let _ = output_tx.send(MuxServerMessage::Error {
+                                        session_id: Some(session_id),
+                                        message: format!("Failed to resolve sandbox: {e}"),
+                                    });
+                                    continue;
+                                }
+                            };
+
+                            let entry = match entry {
+                                Some(e) => e,
+                                None => {
+                                    let _ = output_tx.send(MuxServerMessage::Error {
+                                        session_id: Some(session_id),
+                                        message: "Sandbox not found".to_string(),
+                                    });
+                                    continue;
+                                }
+                            };
+
+                            let target_command = command
+                                .unwrap_or_else(|| vec!["/bin/bash".to_string(), "-i".to_string()]);
+
+                            if !tty {
+                                // Non-PTY mode: not supported in mux for simplicity
+                                let _ = output_tx.send(MuxServerMessage::Error {
+                                    session_id: Some(session_id),
+                                    message: "Non-TTY mode not supported in multiplexed attach"
+                                        .to_string(),
+                                });
+                                continue;
+                            }
+
+                            // Spawn PTY session
+                            match self
+                                .spawn_mux_pty_session(
+                                    session_id.clone(),
+                                    entry.inner_pid,
+                                    target_command,
+                                    cols,
+                                    rows,
+                                    output_tx.clone(),
+                                )
+                                .await
+                            {
+                                Ok(handle) => {
+                                    let mut sessions = sessions.lock().await;
+                                    sessions.insert(session_id.clone(), handle);
+                                    let _ =
+                                        output_tx.send(MuxServerMessage::Attached { session_id });
+                                }
+                                Err(e) => {
+                                    let _ = output_tx.send(MuxServerMessage::Error {
+                                        session_id: Some(session_id),
+                                        message: format!("Failed to spawn PTY: {e}"),
+                                    });
+                                }
+                            }
+                        }
+
+                        MuxClientMessage::Input { session_id, data } => {
+                            let sessions = sessions.lock().await;
+                            if let Some(handle) = sessions.get(&session_id) {
+                                let _ = handle.input_tx.send(data);
+                            }
+                        }
+
+                        MuxClientMessage::Resize {
+                            session_id,
+                            cols,
+                            rows,
+                        } => {
+                            let sessions = sessions.lock().await;
+                            if let Some(handle) = sessions.get(&session_id) {
+                                let _ = handle.master.resize(PtySize {
+                                    rows,
+                                    cols,
+                                    pixel_width: 0,
+                                    pixel_height: 0,
+                                });
+                            }
+                        }
+
+                        MuxClientMessage::Detach { session_id } => {
+                            debug!("mux_attach: detach request session={}", session_id);
+                            let mut sessions = sessions.lock().await;
+                            if let Some(handle) = sessions.remove(&session_id) {
+                                // Drop handle which will close channels and kill child
+                                drop(handle);
+                                let _ = output_tx.send(MuxServerMessage::Exited {
+                                    session_id,
+                                    exit_code: None,
+                                });
+                            }
+                        }
+
+                        MuxClientMessage::Ping { timestamp } => {
+                            let _ = output_tx.send(MuxServerMessage::Pong { timestamp });
+                        }
+                    }
+                }
+                Some(Ok(Message::Close(_))) | None => {
+                    info!("mux_attach: WebSocket closed");
+                    break;
+                }
+                Some(Err(e)) => {
+                    warn!("mux_attach: WebSocket error: {e}");
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        // Cleanup: kill all sessions
+        {
+            let mut sessions = sessions.lock().await;
+            sessions.clear();
+        }
+
+        output_task.abort();
         Ok(())
     }
 

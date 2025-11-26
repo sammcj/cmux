@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use vte::{Params, Parser, Perform};
 
+use crate::models::{MuxClientMessage, MuxServerMessage, PtySessionId};
 use crate::mux::events::MuxEvent;
 use crate::mux::layout::PaneId;
 
@@ -278,6 +279,35 @@ impl VirtualTerminal {
         self.tab_stops.retain(|&c| c < new_cols);
     }
 
+    /// Resize a grid to current terminal dimensions, used when restoring alternate screen
+    fn resize_grid_to_current(&self, old_grid: Vec<Vec<Cell>>) -> Vec<Vec<Cell>> {
+        let old_rows = old_grid.len();
+        let old_cols = old_grid.first().map(|r| r.len()).unwrap_or(0);
+
+        // If dimensions match, return as-is
+        if old_rows == self.rows && old_cols == self.cols {
+            return old_grid;
+        }
+
+        // Create new grid with current dimensions
+        let mut new_grid = vec![vec![Cell::default(); self.cols]; self.rows];
+
+        // Copy existing content
+        for (row_idx, row) in old_grid.iter().enumerate() {
+            if row_idx >= self.rows {
+                break;
+            }
+            for (col_idx, cell) in row.iter().enumerate() {
+                if col_idx >= self.cols {
+                    break;
+                }
+                new_grid[row_idx][col_idx] = cell.clone();
+            }
+        }
+
+        new_grid
+    }
+
     /// Process raw terminal data
     pub fn process(&mut self, data: &[u8]) {
         let mut parser = Parser::new();
@@ -352,13 +382,24 @@ impl VirtualTerminal {
         // Save for REP (repeat character) command
         self.last_printed_char = Some(display_char);
 
-        if self.cursor_row < self.rows && self.cursor_col < self.cols {
+        // Defensive bounds check - ensure grid is properly sized
+        if self.cursor_row < self.rows
+            && self.cursor_col < self.cols
+            && self.cursor_row < self.grid.len()
+            && self
+                .grid
+                .get(self.cursor_row)
+                .map(|r| self.cursor_col < r.len())
+                .unwrap_or(false)
+        {
             // In insert mode, shift characters right
             if self.insert_mode {
                 let row = &mut self.grid[self.cursor_row];
                 // Shift characters from cursor to end of line right by 1
-                for i in (self.cursor_col + 1..self.cols).rev() {
-                    row[i] = row[i - 1].clone();
+                for i in (self.cursor_col + 1..self.cols.min(row.len())).rev() {
+                    if i > 0 && i < row.len() && i - 1 < row.len() {
+                        row[i] = row[i - 1].clone();
+                    }
                 }
             }
 
@@ -943,9 +984,13 @@ impl Perform for VirtualTerminal {
                                 } else {
                                     // Restore from alternate screen
                                     if let Some(saved) = self.alternate_screen.take() {
-                                        self.grid = saved.grid;
-                                        self.cursor_row = saved.cursor_row;
-                                        self.cursor_col = saved.cursor_col;
+                                        // Resize saved grid to current dimensions if needed
+                                        self.grid = self.resize_grid_to_current(saved.grid);
+                                        // Clamp cursor to current dimensions
+                                        self.cursor_row =
+                                            saved.cursor_row.min(self.rows.saturating_sub(1));
+                                        self.cursor_col =
+                                            saved.cursor_col.min(self.cols.saturating_sub(1));
                                         self.current_style = saved.current_style;
                                     }
                                 }
@@ -961,7 +1006,8 @@ impl Perform for VirtualTerminal {
                                     }));
                                     self.grid = vec![vec![Cell::default(); self.cols]; self.rows];
                                 } else if let Some(saved) = self.alternate_screen.take() {
-                                    self.grid = saved.grid;
+                                    // Resize saved grid to current dimensions if needed
+                                    self.grid = self.resize_grid_to_current(saved.grid);
                                 }
                             }
                             2004 => {
@@ -1064,13 +1110,31 @@ impl Perform for VirtualTerminal {
     }
 }
 
-/// State for a single terminal connection
+/// State for a single terminal session within the multiplexed connection.
 #[derive(Debug)]
-pub struct TerminalConnection {
-    /// WebSocket sender for sending input to the terminal
-    sender: mpsc::UnboundedSender<Vec<u8>>,
-    /// Sandbox ID this terminal is connected to
-    pub sandbox_id: String,
+struct TerminalSession {
+    /// Session ID used in the multiplexed protocol
+    session_id: PtySessionId,
+    /// Sandbox ID this session is connected to
+    sandbox_id: String,
+}
+
+/// Convert PaneId to a session ID string for the multiplexed protocol.
+fn pane_id_to_session_id(pane_id: PaneId) -> PtySessionId {
+    pane_id.to_string()
+}
+
+/// Sender for the multiplexed WebSocket connection.
+#[derive(Clone)]
+pub struct MuxConnectionSender {
+    tx: mpsc::UnboundedSender<MuxClientMessage>,
+}
+
+impl MuxConnectionSender {
+    /// Send a message to the multiplexed connection.
+    fn send(&self, msg: MuxClientMessage) -> bool {
+        self.tx.send(msg).is_ok()
+    }
 }
 
 /// Terminal output buffer for rendering - now using VirtualTerminal
@@ -1217,29 +1281,73 @@ impl TerminalBuffer {
     }
 }
 
-/// Manager for all terminal connections
+/// Manager for all terminal connections using a single multiplexed WebSocket.
 pub struct TerminalManager {
     /// Base URL for WebSocket connections
-    base_url: String,
-    /// Active connections by pane ID
-    connections: HashMap<PaneId, TerminalConnection>,
+    pub base_url: String,
+    /// Active sessions by pane ID
+    sessions: HashMap<PaneId, TerminalSession>,
+    /// Reverse lookup: session_id -> pane_id
+    session_to_pane: HashMap<PtySessionId, PaneId>,
     /// Output buffers by pane ID
     buffers: HashMap<PaneId, TerminalBuffer>,
     /// Last sent terminal sizes by pane ID (rows, cols)
     last_sizes: HashMap<PaneId, (u16, u16)>,
     /// Event channel to send events back to the app
-    event_tx: mpsc::UnboundedSender<MuxEvent>,
+    pub event_tx: mpsc::UnboundedSender<MuxEvent>,
+    /// Sender for the multiplexed WebSocket connection (set after connection established)
+    mux_sender: Option<MuxConnectionSender>,
+    /// Flag indicating if connection is being established
+    connecting: bool,
 }
 
 impl TerminalManager {
     pub fn new(base_url: String, event_tx: mpsc::UnboundedSender<MuxEvent>) -> Self {
         Self {
             base_url,
-            connections: HashMap::new(),
+            sessions: HashMap::new(),
+            session_to_pane: HashMap::new(),
             buffers: HashMap::new(),
             last_sizes: HashMap::new(),
             event_tx,
+            mux_sender: None,
+            connecting: false,
         }
+    }
+
+    /// Check if the multiplexed connection is established.
+    pub fn is_mux_connected(&self) -> bool {
+        self.mux_sender.is_some()
+    }
+
+    /// Check if we're currently trying to connect.
+    pub fn is_connecting(&self) -> bool {
+        self.connecting
+    }
+
+    /// Set the multiplexed connection sender.
+    pub fn set_mux_sender(&mut self, sender: MuxConnectionSender) {
+        self.mux_sender = Some(sender);
+        self.connecting = false;
+    }
+
+    /// Mark that we're starting to connect.
+    pub fn set_connecting(&mut self) {
+        self.connecting = true;
+    }
+
+    /// Clear the multiplexed connection (on disconnect).
+    pub fn clear_mux_connection(&mut self) {
+        self.mux_sender = None;
+        self.connecting = false;
+        // Clear all sessions since they're now invalid
+        self.sessions.clear();
+        self.session_to_pane.clear();
+    }
+
+    /// Get the mux sender for sending messages.
+    pub fn get_mux_sender(&self) -> Option<&MuxConnectionSender> {
+        self.mux_sender.as_ref()
     }
 
     /// Get the output buffer for a pane
@@ -1252,35 +1360,70 @@ impl TerminalManager {
         self.buffers.get_mut(&pane_id)
     }
 
-    /// Check if a pane has an active terminal connection
+    /// Check if a pane has an active terminal session
     pub fn is_connected(&self, pane_id: PaneId) -> bool {
-        self.connections.contains_key(&pane_id)
+        self.sessions.contains_key(&pane_id)
     }
 
-    /// Send input to a terminal
+    /// Send input to a terminal session via the multiplexed connection
     pub fn send_input(&self, pane_id: PaneId, data: Vec<u8>) -> bool {
-        if let Some(conn) = self.connections.get(&pane_id) {
-            conn.sender.send(data).is_ok()
-        } else {
-            false
-        }
+        let session = match self.sessions.get(&pane_id) {
+            Some(s) => s,
+            None => return false,
+        };
+        let sender = match &self.mux_sender {
+            Some(s) => s,
+            None => return false,
+        };
+        sender.send(MuxClientMessage::Input {
+            session_id: session.session_id.clone(),
+            data,
+        })
     }
 
-    /// Handle incoming terminal output
+    /// Handle incoming terminal output from the multiplexed connection
     pub fn handle_output(&mut self, pane_id: PaneId, data: Vec<u8>) {
         let buffer = self.buffers.entry(pane_id).or_default();
         buffer.process(&data);
     }
 
-    /// Disconnect a terminal
+    /// Handle output by session ID (used by the mux connection handler)
+    pub fn handle_output_by_session(&mut self, session_id: &PtySessionId, data: Vec<u8>) {
+        if let Some(&pane_id) = self.session_to_pane.get(session_id) {
+            self.handle_output(pane_id, data);
+        }
+    }
+
+    /// Get pane ID for a session ID
+    pub fn get_pane_for_session(&self, session_id: &PtySessionId) -> Option<PaneId> {
+        self.session_to_pane.get(session_id).copied()
+    }
+
+    /// Disconnect a terminal session
     pub fn disconnect(&mut self, pane_id: PaneId) {
-        self.connections.remove(&pane_id);
+        if let Some(session) = self.sessions.remove(&pane_id) {
+            self.session_to_pane.remove(&session.session_id);
+            // Send detach message to server
+            if let Some(sender) = &self.mux_sender {
+                let _ = sender.send(MuxClientMessage::Detach {
+                    session_id: session.session_id,
+                });
+            }
+        }
         self.last_sizes.remove(&pane_id);
     }
 
     /// Remove all state associated with a pane.
     pub fn remove_pane_state(&mut self, pane_id: PaneId) {
-        self.connections.remove(&pane_id);
+        if let Some(session) = self.sessions.remove(&pane_id) {
+            self.session_to_pane.remove(&session.session_id);
+            // Send detach message to server
+            if let Some(sender) = &self.mux_sender {
+                let _ = sender.send(MuxClientMessage::Detach {
+                    session_id: session.session_id,
+                });
+            }
+        }
         self.last_sizes.remove(&pane_id);
         self.buffers.remove(&pane_id);
     }
@@ -1311,12 +1454,17 @@ impl TerminalManager {
 
         self.last_sizes.insert(pane_id, (rows, cols));
 
-        if let Some(conn) = self.connections.get(&pane_id) {
-            let msg = format!("resize:{}:{}", rows, cols);
-            conn.sender.send(msg.into_bytes()).is_ok()
-        } else {
-            true
+        // Send resize via multiplexed connection
+        if let Some(session) = self.sessions.get(&pane_id) {
+            if let Some(sender) = &self.mux_sender {
+                return sender.send(MuxClientMessage::Resize {
+                    session_id: session.session_id.clone(),
+                    cols,
+                    rows,
+                });
+            }
         }
+        true
     }
 
     /// Initialize a buffer with specific size
@@ -1324,6 +1472,34 @@ impl TerminalManager {
         self.buffers
             .insert(pane_id, TerminalBuffer::with_size(rows.max(1), cols.max(1)));
         self.last_sizes.insert(pane_id, (rows as u16, cols as u16));
+    }
+
+    /// Register a new session for a pane (called after receiving Attached message)
+    pub fn register_session(
+        &mut self,
+        pane_id: PaneId,
+        session_id: PtySessionId,
+        sandbox_id: String,
+    ) {
+        self.sessions.insert(
+            pane_id,
+            TerminalSession {
+                session_id: session_id.clone(),
+                sandbox_id,
+            },
+        );
+        self.session_to_pane.insert(session_id, pane_id);
+    }
+
+    /// Handle session exit (called when Exited message received)
+    pub fn handle_session_exit(&mut self, session_id: &PtySessionId) -> Option<(PaneId, String)> {
+        if let Some(&pane_id) = self.session_to_pane.get(session_id) {
+            if let Some(session) = self.sessions.remove(&pane_id) {
+                self.session_to_pane.remove(session_id);
+                return Some((pane_id, session.sandbox_id));
+            }
+        }
+        None
     }
 }
 
@@ -1338,20 +1514,21 @@ pub fn create_terminal_manager(
     Arc::new(Mutex::new(TerminalManager::new(base_url, event_tx)))
 }
 
-/// Connect to a sandbox terminal via WebSocket
-pub async fn connect_to_sandbox(
-    manager: SharedTerminalManager,
-    pane_id: PaneId,
-    sandbox_id: String,
-    cols: u16,
-    rows: u16,
-) -> anyhow::Result<()> {
-    let (base_url, event_tx) = {
+/// Establish the single multiplexed WebSocket connection.
+/// This should be called once at startup.
+pub async fn establish_mux_connection(manager: SharedTerminalManager) -> anyhow::Result<()> {
+    let (base_url, event_tx, already_connected) = {
         let mut mgr = manager.lock().await;
-        // Initialize buffer with correct size
-        mgr.init_buffer(pane_id, rows as usize, cols as usize);
-        (mgr.base_url.clone(), mgr.event_tx.clone())
+        if mgr.is_mux_connected() || mgr.is_connecting() {
+            return Ok(()); // Already connected or connecting
+        }
+        mgr.set_connecting();
+        (mgr.base_url.clone(), mgr.event_tx.clone(), false)
     };
+
+    if already_connected {
+        return Ok(());
+    }
 
     let ws_url = base_url
         .replace("http://", "ws://")
@@ -1359,89 +1536,117 @@ pub async fn connect_to_sandbox(
         .trim_end_matches('/')
         .to_string();
 
-    let url = format!(
-        "{}/sandboxes/{}/attach?cols={}&rows={}",
-        ws_url, sandbox_id, cols, rows
-    );
+    let url = format!("{}/mux/attach", ws_url);
 
-    let (ws_stream, _) = connect_async(&url).await?;
+    let (ws_stream, _) = match connect_async(&url).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            let mut mgr = manager.lock().await;
+            mgr.clear_mux_connection();
+            return Err(anyhow::anyhow!("Failed to connect to mux endpoint: {}", e));
+        }
+    };
+
     let (mut ws_write, mut ws_read) = ws_stream.split();
 
-    // Create channel for sending input to this terminal
-    let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    // Create channel for sending messages to the WebSocket
+    let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<MuxClientMessage>();
 
-    // Store connection
+    // Store the sender in the manager
     {
         let mut mgr = manager.lock().await;
-        mgr.connections.insert(
-            pane_id,
-            TerminalConnection {
-                sender: input_tx,
-                sandbox_id: sandbox_id.clone(),
-            },
-        );
+        mgr.set_mux_sender(MuxConnectionSender { tx: msg_tx });
     }
-
-    // Notify connection established
-    let _ = event_tx.send(MuxEvent::SandboxConnectionChanged {
-        sandbox_id: sandbox_id.clone(),
-        connected: true,
-    });
 
     // Spawn task to handle WebSocket I/O
     let manager_clone = manager.clone();
     let event_tx_clone = event_tx.clone();
-    let sandbox_id_clone = sandbox_id.clone();
 
     tokio::spawn(async move {
         loop {
             tokio::select! {
-                // Handle incoming data from WebSocket
+                // Handle incoming messages from server
                 msg = ws_read.next() => {
                     match msg {
-                        Some(Ok(Message::Binary(data))) => {
-                            {
-                                let mut mgr = manager_clone.lock().await;
-                                mgr.handle_output(pane_id, data.clone());
-                            }
-                            let _ = event_tx_clone.send(MuxEvent::TerminalOutput {
-                                pane_id,
-                                data,
-                            });
-                        }
                         Some(Ok(Message::Text(text))) => {
-                            let data = text.into_bytes();
-                            {
-                                let mut mgr = manager_clone.lock().await;
-                                mgr.handle_output(pane_id, data.clone());
+                            let server_msg: MuxServerMessage = match serde_json::from_str(&text) {
+                                Ok(m) => m,
+                                Err(e) => {
+                                    let _ = event_tx_clone.send(MuxEvent::Error(format!(
+                                        "Invalid server message: {}", e
+                                    )));
+                                    continue;
+                                }
+                            };
+
+                            match server_msg {
+                                MuxServerMessage::Attached { session_id } => {
+                                    // Session is now attached - this is handled via pending_attaches
+                                    // in connect_to_sandbox
+                                    let _ = event_tx_clone.send(MuxEvent::Notification {
+                                        message: format!("Session {} attached", session_id),
+                                        level: crate::mux::events::NotificationLevel::Info,
+                                    });
+                                }
+                                MuxServerMessage::Output { session_id, data } => {
+                                    let pane_id = {
+                                        let mut mgr = manager_clone.lock().await;
+                                        mgr.handle_output_by_session(&session_id, data.clone());
+                                        mgr.get_pane_for_session(&session_id)
+                                    };
+                                    if let Some(pane_id) = pane_id {
+                                        let _ = event_tx_clone.send(MuxEvent::TerminalOutput {
+                                            pane_id,
+                                            data,
+                                        });
+                                    }
+                                }
+                                MuxServerMessage::Exited { session_id, .. } => {
+                                    let exit_info = {
+                                        let mut mgr = manager_clone.lock().await;
+                                        mgr.handle_session_exit(&session_id)
+                                    };
+                                    if let Some((pane_id, sandbox_id)) = exit_info {
+                                        let _ = event_tx_clone.send(MuxEvent::TerminalExited {
+                                            pane_id,
+                                            sandbox_id,
+                                        });
+                                    }
+                                }
+                                MuxServerMessage::Error { session_id, message } => {
+                                    let _ = event_tx_clone.send(MuxEvent::Error(format!(
+                                        "Session {:?}: {}", session_id, message
+                                    )));
+                                }
+                                MuxServerMessage::Pong { .. } => {
+                                    // Keepalive response, ignore
+                                }
                             }
-                            let _ = event_tx_clone.send(MuxEvent::TerminalOutput {
-                                pane_id,
-                                data,
-                            });
                         }
                         Some(Ok(Message::Close(_))) | None => {
                             break;
                         }
                         Some(Err(e)) => {
                             let _ = event_tx_clone.send(MuxEvent::Error(format!(
-                                "WebSocket error: {}",
-                                e
+                                "Mux WebSocket error: {}", e
                             )));
                             break;
                         }
                         _ => {}
                     }
                 }
-                // Handle outgoing input to WebSocket
-                Some(data) = input_rx.recv() => {
-                    // Check if this is a resize message
-                    let data_str = String::from_utf8_lossy(&data);
-                    if data_str.starts_with("resize:") {
-                        if ws_write.send(Message::Text(data_str.into_owned())).await.is_err() {
-                            break;
+                // Handle outgoing messages to server
+                Some(msg) = msg_rx.recv() => {
+                    let json = match serde_json::to_string(&msg) {
+                        Ok(j) => j,
+                        Err(e) => {
+                            let _ = event_tx_clone.send(MuxEvent::Error(format!(
+                                "Failed to serialize message: {}", e
+                            )));
+                            continue;
                         }
-                    } else if ws_write.send(Message::Binary(data)).await.is_err() {
+                    };
+                    if ws_write.send(Message::Text(json)).await.is_err() {
                         break;
                     }
                 }
@@ -1451,66 +1656,65 @@ pub async fn connect_to_sandbox(
         // Clean up connection
         {
             let mut mgr = manager_clone.lock().await;
-            mgr.disconnect(pane_id);
+            mgr.clear_mux_connection();
         }
 
-        let _ = event_tx_clone.send(MuxEvent::SandboxConnectionChanged {
-            sandbox_id: sandbox_id_clone,
-            connected: false,
-        });
-
-        let _ = event_tx_clone.send(MuxEvent::TerminalExited {
-            pane_id,
-            sandbox_id: sandbox_id.clone(),
-        });
+        let _ = event_tx_clone.send(MuxEvent::Error("Multiplexed connection closed".to_string()));
     });
 
     Ok(())
 }
 
-/// Create a new sandbox and connect to it
-pub async fn create_and_connect_sandbox(
+/// Connect a pane to a sandbox terminal via the multiplexed connection.
+/// This sends an Attach message to create a new PTY session for the pane.
+pub async fn connect_to_sandbox(
     manager: SharedTerminalManager,
     pane_id: PaneId,
-    name: Option<String>,
+    sandbox_id: String,
     cols: u16,
     rows: u16,
-) -> anyhow::Result<String> {
-    let base_url = {
-        let mgr = manager.lock().await;
-        mgr.base_url.clone()
-    };
+) -> anyhow::Result<()> {
+    // Ensure the multiplexed connection is established
+    establish_mux_connection(manager.clone()).await?;
 
-    let client = reqwest::Client::new();
-    let url = format!("{}/sandboxes", base_url.trim_end_matches('/'));
+    let session_id = pane_id_to_session_id(pane_id);
 
-    let body = crate::models::CreateSandboxRequest {
-        name,
-        workspace: None,
-        read_only_paths: vec![],
-        tmpfs: vec![],
-        env: vec![],
-    };
+    // Initialize buffer and send attach message
+    {
+        let mut mgr = manager.lock().await;
 
-    let response = client.post(&url).json(&body).send().await?;
+        // Initialize buffer with correct size
+        mgr.init_buffer(pane_id, rows as usize, cols as usize);
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!(
-            "Failed to create sandbox: {} - {}",
-            status,
-            text
-        ));
+        // Register the session (optimistically - server will confirm)
+        mgr.register_session(pane_id, session_id.clone(), sandbox_id.clone());
+
+        // Send attach message
+        if let Some(sender) = mgr.get_mux_sender() {
+            sender.send(MuxClientMessage::Attach {
+                session_id,
+                sandbox_id: sandbox_id.clone(),
+                cols,
+                rows,
+                command: None,
+                tty: true,
+            });
+        } else {
+            return Err(anyhow::anyhow!("Mux connection not established"));
+        }
     }
 
-    let summary: crate::models::SandboxSummary = response.json().await?;
-    let sandbox_id = summary.id.to_string();
+    // Notify connection established
+    let event_tx = {
+        let mgr = manager.lock().await;
+        mgr.event_tx.clone()
+    };
+    let _ = event_tx.send(MuxEvent::SandboxConnectionChanged {
+        sandbox_id,
+        connected: true,
+    });
 
-    // Connect to the new sandbox
-    connect_to_sandbox(manager, pane_id, sandbox_id.clone(), cols, rows).await?;
-
-    Ok(sandbox_id)
+    Ok(())
 }
 
 #[cfg(test)]
