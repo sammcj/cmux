@@ -19,16 +19,14 @@ use crate::mux::commands::MuxCommand;
 use crate::mux::events::{MuxEvent, NotificationLevel};
 use crate::mux::layout::{ClosedTabInfo, PaneContent, PaneExitOutcome, SandboxId};
 use crate::mux::state::{FocusArea, MuxApp};
-use crate::mux::terminal::{
-    connect_to_sandbox, create_terminal_manager, request_create_sandbox, request_list_sandboxes,
-};
+use crate::mux::terminal::{connect_to_sandbox, create_terminal_manager, request_list_sandboxes};
 use crate::mux::ui::ui;
 use crate::sync_files::{detect_sync_files, upload_sync_files_with_list};
 
 /// Run the multiplexer TUI.
 ///
-/// If `workspace_path` is provided, a new sandbox will be created and the directory
-/// will be uploaded to it. Otherwise, it uses the default behavior.
+/// If `workspace_path` is provided, sandboxes created during the session will upload
+/// that directory (defaulting to the current working directory).
 pub async fn run_mux_tui(base_url: String, workspace_path: Option<PathBuf>) -> Result<()> {
     let mut stdout = std::io::stdout();
     execute!(
@@ -72,9 +70,11 @@ async fn run_main_loop<B: ratatui::backend::Backend>(
     base_url: String,
     workspace_path: Option<PathBuf>,
 ) -> Result<()> {
+    let workspace = workspace_path
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let (event_tx, event_rx) = mpsc::unbounded_channel();
 
-    let mut app = MuxApp::new(base_url.clone(), event_tx.clone());
+    let mut app = MuxApp::new(base_url.clone(), event_tx.clone(), workspace.clone());
 
     // Create terminal manager
     let terminal_manager = create_terminal_manager(base_url.clone(), event_tx.clone());
@@ -90,101 +90,14 @@ async fn run_main_loop<B: ratatui::backend::Backend>(
     // Always create a new sandbox on startup with the current working directory
     let init_tx = event_tx.clone();
     let init_url = base_url.clone();
-    let workspace = workspace_path
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let initial_workspace = workspace.clone();
     tokio::spawn(async move {
         // First refresh to populate sidebar
         let _ = refresh_sandboxes(&init_url, &init_tx).await;
 
-        // Create a new sandbox
-        let _ = init_tx.send(MuxEvent::Notification {
-            message: "Creating new sandbox...".to_string(),
-            level: crate::mux::events::NotificationLevel::Info,
+        let _ = init_tx.send(MuxEvent::CreateSandboxWithWorkspace {
+            workspace_path: initial_workspace,
         });
-
-        // Get directory name for sandbox name
-        let dir_name = workspace
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "workspace".to_string());
-
-        // Create sandbox via API
-        let client = reqwest::Client::new();
-        let url = format!("{}/sandboxes", init_url.trim_end_matches('/'));
-        let body = crate::models::CreateSandboxRequest {
-            name: Some(dir_name.clone()),
-            workspace: None,
-            read_only_paths: vec![],
-            tmpfs: vec![],
-            env: crate::keyring::build_default_env_vars(),
-        };
-
-        match client.post(&url).json(&body).send().await {
-            Ok(response) if response.status().is_success() => {
-                if let Ok(summary) = response.json::<crate::models::SandboxSummary>().await {
-                    let sandbox_id = summary.id.to_string();
-
-                    // Upload workspace directory
-                    let _ = init_tx.send(MuxEvent::Notification {
-                        message: format!("Uploading {}...", dir_name),
-                        level: NotificationLevel::Info,
-                    });
-
-                    if let Err(e) =
-                        upload_workspace(&client, &init_url, &sandbox_id, &workspace).await
-                    {
-                        let _ = init_tx.send(MuxEvent::Error(format!(
-                            "Failed to upload workspace: {}",
-                            e
-                        )));
-                    }
-
-                    let sync_files = detect_sync_files();
-                    if !sync_files.is_empty() {
-                        let _ = init_tx.send(MuxEvent::Notification {
-                            message: format!("Syncing {} file(s)...", sync_files.len()),
-                            level: NotificationLevel::Info,
-                        });
-
-                        if let Err(e) = upload_sync_files_with_list(
-                            &client,
-                            &init_url,
-                            &sandbox_id,
-                            sync_files,
-                            false,
-                        )
-                        .await
-                        {
-                            let _ = init_tx
-                                .send(MuxEvent::Error(format!("Failed to sync files: {}", e)));
-                        }
-                    }
-
-                    let _ = init_tx.send(MuxEvent::SandboxCreated(summary.clone()));
-                    let _ = init_tx.send(MuxEvent::Notification {
-                        message: format!("Created sandbox: {}", sandbox_id),
-                        level: NotificationLevel::Info,
-                    });
-
-                    // Request connection to the new sandbox
-                    let _ = init_tx.send(MuxEvent::ConnectToSandbox { sandbox_id });
-
-                    // Refresh to show the new sandbox
-                    let _ = refresh_sandboxes(&init_url, &init_tx).await;
-                }
-            }
-            Ok(response) => {
-                let status = response.status();
-                let text = response.text().await.unwrap_or_default();
-                let _ = init_tx.send(MuxEvent::Error(format!(
-                    "Failed to create sandbox: {} - {}",
-                    status, text
-                )));
-            }
-            Err(e) => {
-                let _ = init_tx.send(MuxEvent::Error(format!("Failed to create sandbox: {}", e)));
-            }
-        }
     });
 
     run_app(terminal, app, event_rx, terminal_manager).await
@@ -222,6 +135,25 @@ async fn run_app<B: ratatui::backend::Backend>(
                         app.pending_connect = Some(sandbox_id.clone());
                         try_consume_pending_connection(&mut app, &terminal_manager);
                     }
+                    MuxEvent::CreateSandboxWithWorkspace { workspace_path } => {
+                        let event_tx = app.event_tx.clone();
+                        let base_url = app.base_url.clone();
+                        let workspace_path = workspace_path.clone();
+                        tokio::spawn(async move {
+                            if let Err(error) = create_sandbox_with_workspace(
+                                base_url,
+                                workspace_path,
+                                event_tx.clone(),
+                            )
+                            .await
+                            {
+                                let _ = event_tx.send(MuxEvent::Error(format!(
+                                    "Failed to create sandbox: {}",
+                                    error
+                                )));
+                            }
+                        });
+                    }
                     MuxEvent::ConnectActivePaneToSandbox => {
                         let target = app
                             .selected_sandbox_id_string()
@@ -230,22 +162,6 @@ async fn run_app<B: ratatui::backend::Backend>(
                             app.pending_connect = Some(sandbox_id);
                             try_consume_pending_connection(&mut app, &terminal_manager);
                         }
-                    }
-                    MuxEvent::Notification { message, .. } if message.contains("Creating sandbox") => {
-                        // Send CreateSandbox via WebSocket - server responds with SandboxCreated
-                        let manager = terminal_manager.clone();
-                        let event_tx = app.event_tx.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) =
-                                request_create_sandbox(manager, Some("interactive".to_string()))
-                                    .await
-                            {
-                                let _ = event_tx.send(MuxEvent::Error(format!(
-                                    "Failed to create sandbox: {}",
-                                    e
-                                )));
-                            }
-                        });
                     }
                     MuxEvent::Notification { message, .. } if message.contains("Refreshing sandboxes") => {
                         // Request sandbox list via WebSocket - server responds with SandboxList
@@ -851,6 +767,95 @@ fn key_to_terminal_input(modifiers: KeyModifiers, code: KeyCode) -> Vec<u8> {
         }
         _ => vec![],
     }
+}
+
+async fn create_sandbox_with_workspace(
+    base_url: String,
+    workspace_path: PathBuf,
+    event_tx: mpsc::UnboundedSender<MuxEvent>,
+) -> Result<(), anyhow::Error> {
+    let client = reqwest::Client::new();
+    let trimmed_base = base_url.trim_end_matches('/').to_string();
+
+    let dir_name = workspace_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "workspace".to_string());
+
+    let _ = event_tx.send(MuxEvent::Notification {
+        message: format!("Creating sandbox: {}", dir_name),
+        level: NotificationLevel::Info,
+    });
+
+    let body = crate::models::CreateSandboxRequest {
+        name: Some(dir_name.clone()),
+        workspace: None,
+        read_only_paths: vec![],
+        tmpfs: vec![],
+        env: crate::keyring::build_default_env_vars(),
+    };
+
+    let response = client
+        .post(format!("{}/sandboxes", trimmed_base))
+        .json(&body)
+        .send()
+        .await?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| String::from("unknown error"));
+        return Err(anyhow::anyhow!(format!(
+            "Failed to create sandbox: {} - {}",
+            status, text
+        )));
+    }
+
+    let summary: crate::models::SandboxSummary = response.json().await?;
+    let sandbox_id = summary.id.to_string();
+
+    let _ = event_tx.send(MuxEvent::Notification {
+        message: format!("Uploading {}...", dir_name),
+        level: NotificationLevel::Info,
+    });
+
+    if let Err(error) = upload_workspace(&client, &trimmed_base, &sandbox_id, &workspace_path).await
+    {
+        let _ = event_tx.send(MuxEvent::Error(format!(
+            "Failed to upload workspace: {}",
+            error
+        )));
+    }
+
+    let sync_files = detect_sync_files();
+    if !sync_files.is_empty() {
+        let _ = event_tx.send(MuxEvent::Notification {
+            message: format!("Syncing {} file(s)...", sync_files.len()),
+            level: NotificationLevel::Info,
+        });
+
+        if let Err(error) =
+            upload_sync_files_with_list(&client, &trimmed_base, &sandbox_id, sync_files, false)
+                .await
+        {
+            let _ = event_tx.send(MuxEvent::Error(format!("Failed to sync files: {}", error)));
+        }
+    }
+
+    let _ = event_tx.send(MuxEvent::SandboxCreated(summary.clone()));
+    let _ = event_tx.send(MuxEvent::Notification {
+        message: format!("Created sandbox: {}", sandbox_id),
+        level: NotificationLevel::Info,
+    });
+    let _ = event_tx.send(MuxEvent::ConnectToSandbox { sandbox_id });
+
+    if let Err(error) = refresh_sandboxes(&trimmed_base, &event_tx).await {
+        let _ = event_tx.send(MuxEvent::SandboxRefreshFailed(error.to_string()));
+    }
+
+    Ok(())
 }
 
 /// Periodically refresh the sandbox list.

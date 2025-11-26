@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::path::PathBuf;
 
 use chrono::Utc;
 use tokio::sync::mpsc;
@@ -39,6 +40,9 @@ pub struct MuxApp<'a> {
     // Base URL for API calls
     pub base_url: String,
 
+    // Workspace path used for new sandboxes
+    pub workspace_path: PathBuf,
+
     // Status message to display
     pub status_message: Option<(String, std::time::Instant)>,
 
@@ -64,7 +68,11 @@ pub struct MuxApp<'a> {
 }
 
 impl<'a> MuxApp<'a> {
-    pub fn new(base_url: String, event_tx: mpsc::UnboundedSender<MuxEvent>) -> Self {
+    pub fn new(
+        base_url: String,
+        event_tx: mpsc::UnboundedSender<MuxEvent>,
+        workspace_path: PathBuf,
+    ) -> Self {
         Self {
             workspace_manager: WorkspaceManager::new(),
             sidebar: Sidebar::new(),
@@ -74,6 +82,7 @@ impl<'a> MuxApp<'a> {
             show_help: false,
             event_tx,
             base_url,
+            workspace_path,
             status_message: None,
             renaming_tab: false,
             rename_input: None,
@@ -363,9 +372,8 @@ impl<'a> MuxApp<'a> {
             // Sandbox management
             MuxCommand::NewSandbox => {
                 self.set_status("Creating new sandbox...");
-                let _ = self.event_tx.send(MuxEvent::Notification {
-                    message: "Creating sandbox...".to_string(),
-                    level: crate::mux::events::NotificationLevel::Info,
+                let _ = self.event_tx.send(MuxEvent::CreateSandboxWithWorkspace {
+                    workspace_path: self.workspace_path.clone(),
                 });
                 self.add_placeholder_sandbox("Creating sandbox");
             }
@@ -458,6 +466,9 @@ impl<'a> MuxApp<'a> {
     /// Handle an event.
     pub fn handle_event(&mut self, event: MuxEvent) {
         match event {
+            MuxEvent::CreateSandboxWithWorkspace { .. } => {
+                self.set_status("Creating sandbox...");
+            }
             MuxEvent::SandboxesRefreshed(sandboxes) => {
                 let had_active = self.selected_sandbox_id().is_some();
                 // Update sidebar
@@ -664,7 +675,7 @@ mod tests {
     #[test]
     fn sandbox_created_sets_pending_and_selection() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut app = MuxApp::new("http://localhost".to_string(), tx);
+        let mut app = MuxApp::new("http://localhost".to_string(), tx, PathBuf::from("."));
         let sandbox = sample_sandbox("demo");
 
         app.handle_event(MuxEvent::SandboxCreated(sandbox.clone()));
@@ -687,7 +698,7 @@ mod tests {
     #[test]
     fn refresh_without_selection_queues_connect() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut app = MuxApp::new("http://localhost".to_string(), tx);
+        let mut app = MuxApp::new("http://localhost".to_string(), tx, PathBuf::from("."));
         let sandbox = sample_sandbox("demo");
 
         app.handle_event(MuxEvent::SandboxesRefreshed(vec![sandbox.clone()]));

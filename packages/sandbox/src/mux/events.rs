@@ -1,9 +1,13 @@
+use std::path::PathBuf;
+
 use crate::models::SandboxSummary;
 use crate::mux::layout::PaneId;
 
 /// Events that can occur in the multiplexer.
 #[derive(Debug, Clone)]
 pub enum MuxEvent {
+    /// Request to create a sandbox from the launch workspace.
+    CreateSandboxWithWorkspace { workspace_path: PathBuf },
     /// Sandbox list was refreshed.
     SandboxesRefreshed(Vec<SandboxSummary>),
     /// Failed to refresh sandboxes.
