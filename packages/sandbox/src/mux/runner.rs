@@ -16,7 +16,7 @@ use tokio::sync::mpsc;
 
 use crate::mux::commands::MuxCommand;
 use crate::mux::events::MuxEvent;
-use crate::mux::layout::PaneContent;
+use crate::mux::layout::{ClosedTabInfo, PaneContent, PaneExitOutcome};
 use crate::mux::state::{FocusArea, MuxApp};
 use crate::mux::terminal::{
     connect_to_sandbox, create_and_connect_sandbox, create_terminal_manager,
@@ -235,6 +235,14 @@ async fn run_app<B: ratatui::backend::Backend>(
                             let _ = refresh_sandboxes(&url, &tx).await;
                         });
                     }
+                    MuxEvent::TerminalExited { pane_id, sandbox_id } => {
+                        handle_terminal_exit_for_pane(
+                            &mut app,
+                            &terminal_manager,
+                            *pane_id,
+                            sandbox_id,
+                        );
+                    }
                     _ => {}
                 }
                 app.handle_event(event);
@@ -376,6 +384,65 @@ fn sync_terminal_sizes(
     if let Ok(mut guard) = terminal_manager.try_lock() {
         for (pane_id, rows, cols) in targets {
             let _ = guard.update_view_size(pane_id, rows, cols);
+        }
+    }
+}
+
+fn handle_terminal_exit_for_pane(
+    app: &mut MuxApp<'_>,
+    terminal_manager: &crate::mux::terminal::SharedTerminalManager,
+    pane_id: crate::mux::layout::PaneId,
+    sandbox_id: &str,
+) {
+    let mut pane_ids_to_cleanup = vec![pane_id];
+
+    match app.workspace_manager.handle_pane_exit(pane_id) {
+        Some(PaneExitOutcome::TabClosed(info)) => {
+            let ClosedTabInfo {
+                sandbox_id: info_sandbox,
+                sandbox_name,
+                tab_name,
+                was_active_tab,
+                pane_ids,
+            } = info;
+
+            pane_ids_to_cleanup = pane_ids;
+            app.set_status(format!(
+                "Closed tab '{}' in {} (terminal exited)",
+                tab_name, sandbox_name
+            ));
+
+            if was_active_tab && app.workspace_manager.active_sandbox_id == Some(info_sandbox) {
+                app.focus = FocusArea::MainArea;
+            }
+        }
+        Some(PaneExitOutcome::PaneRemoved {
+            sandbox_name,
+            tab_name,
+            ..
+        }) => {
+            app.set_status(format!(
+                "Terminal exited in {} / {} (pane removed)",
+                sandbox_name, tab_name
+            ));
+        }
+        None => {
+            if !sandbox_id.is_empty() {
+                app.set_status(format!("Terminal exited in sandbox {}", sandbox_id));
+            }
+        }
+    }
+
+    if pane_ids_to_cleanup
+        .iter()
+        .any(|id| Some(*id) == app.zoomed_pane)
+    {
+        app.zoomed_pane = None;
+    }
+
+    if let Ok(mut guard) = terminal_manager.try_lock() {
+        for id in pane_ids_to_cleanup {
+            guard.remove_pane_state(id);
         }
     }
 }

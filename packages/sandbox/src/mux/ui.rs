@@ -151,6 +151,14 @@ fn render_tab_bar(f: &mut Frame, app: &MuxApp, area: Rect) {
         return;
     };
 
+    if workspace.tabs.is_empty() {
+        let placeholder = Paragraph::new(" No tabs ")
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Left);
+        f.render_widget(placeholder, area);
+        return;
+    }
+
     let tab_titles: Vec<Line<'_>> = workspace
         .tabs
         .iter()

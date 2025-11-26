@@ -521,6 +521,9 @@ impl<'a> MuxApp<'a> {
             MuxEvent::ConnectActivePaneToSandbox => {
                 // This is handled in the runner, just acknowledge here
             }
+            MuxEvent::TerminalExited { .. } => {
+                // Cleanup is handled in the runner where terminal state is available
+            }
         }
     }
 }

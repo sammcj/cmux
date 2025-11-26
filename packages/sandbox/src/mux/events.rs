@@ -1,4 +1,5 @@
 use crate::models::SandboxSummary;
+use crate::mux::layout::PaneId;
 
 /// Events that can occur in the multiplexer.
 #[derive(Debug, Clone)]
@@ -29,6 +30,8 @@ pub enum MuxEvent {
     ConnectToSandbox { sandbox_id: String },
     /// Request to connect the active pane to the active sandbox's terminal
     ConnectActivePaneToSandbox,
+    /// Terminal connection closed for a pane
+    TerminalExited { pane_id: PaneId, sandbox_id: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

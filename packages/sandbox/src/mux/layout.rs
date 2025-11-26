@@ -540,6 +540,29 @@ impl Tab {
         }
     }
 
+    /// Remove a specific pane by ID, updating the active pane if needed.
+    pub fn remove_pane_by_id(&mut self, pane_id: PaneId) -> bool {
+        let was_active = self.active_pane == Some(pane_id);
+        if !self.layout.remove_pane(pane_id) {
+            return false;
+        }
+
+        if was_active || self.active_pane.is_none() {
+            self.active_pane = self.layout.pane_ids().first().copied();
+        } else if let Some(active) = self.active_pane {
+            if !self.contains_pane(active) {
+                self.active_pane = self.layout.pane_ids().first().copied();
+            }
+        }
+
+        true
+    }
+
+    /// Check if this tab contains the provided pane ID.
+    pub fn contains_pane(&self, pane_id: PaneId) -> bool {
+        self.layout.contains_pane(pane_id)
+    }
+
     /// Navigate to a neighbor pane.
     pub fn navigate(&mut self, direction: NavDirection) {
         let Some(active_id) = self.active_pane else {
@@ -640,6 +663,28 @@ impl SandboxWorkspace {
         id
     }
 
+    fn tab_index_for_pane(&self, pane_id: PaneId) -> Option<usize> {
+        self.tabs.iter().position(|tab| tab.contains_pane(pane_id))
+    }
+
+    fn remove_tab_at(&mut self, index: usize) -> Option<Tab> {
+        if index >= self.tabs.len() {
+            return None;
+        }
+
+        let removed = self.tabs.remove(index);
+
+        if self.tabs.is_empty() {
+            self.active_tab_index = 0;
+        } else if self.active_tab_index > index {
+            self.active_tab_index -= 1;
+        } else if self.active_tab_index >= self.tabs.len() {
+            self.active_tab_index = self.tabs.len() - 1;
+        }
+
+        Some(removed)
+    }
+
     /// Close the active tab.
     pub fn close_active_tab(&mut self) -> bool {
         if self.tabs.len() <= 1 {
@@ -689,7 +734,7 @@ impl SandboxWorkspace {
 
     /// Move the active tab right.
     pub fn move_tab_right(&mut self) {
-        if self.active_tab_index < self.tabs.len() - 1 {
+        if self.tabs.len() > 1 && self.active_tab_index < self.tabs.len() - 1 {
             self.tabs
                 .swap(self.active_tab_index, self.active_tab_index + 1);
             self.active_tab_index += 1;
@@ -702,6 +747,28 @@ impl SandboxWorkspace {
             tab.name = name.into();
         }
     }
+}
+
+/// Information about a tab that was closed.
+#[derive(Debug, Clone)]
+pub struct ClosedTabInfo {
+    pub sandbox_id: SandboxId,
+    pub sandbox_name: String,
+    pub tab_name: String,
+    pub was_active_tab: bool,
+    pub pane_ids: Vec<PaneId>,
+}
+
+/// Result of handling a pane exit.
+#[derive(Debug, Clone)]
+pub enum PaneExitOutcome {
+    TabClosed(ClosedTabInfo),
+    PaneRemoved {
+        sandbox_id: SandboxId,
+        sandbox_name: String,
+        tab_name: String,
+        was_active_tab: bool,
+    },
 }
 
 /// The workspace containing all tabs.
@@ -795,7 +862,7 @@ impl Workspace {
 
     /// Move the active tab right.
     pub fn move_tab_right(&mut self) {
-        if self.active_tab_index < self.tabs.len() - 1 {
+        if self.tabs.len() > 1 && self.active_tab_index < self.tabs.len() - 1 {
             self.tabs
                 .swap(self.active_tab_index, self.active_tab_index + 1);
             self.active_tab_index += 1;
@@ -970,6 +1037,43 @@ impl WorkspaceManager {
         }
     }
 
+    /// Handle a pane exit by either closing its tab (if it's the only pane) or removing the pane.
+    pub fn handle_pane_exit(&mut self, pane_id: PaneId) -> Option<PaneExitOutcome> {
+        for (sandbox_id, workspace) in self.workspaces.iter_mut() {
+            if let Some(index) = workspace.tab_index_for_pane(pane_id) {
+                let pane_ids = workspace
+                    .tabs
+                    .get(index)
+                    .map(|tab| tab.layout.pane_ids())
+                    .unwrap_or_default();
+                let was_active_tab = workspace.active_tab_index == index;
+                if pane_ids.len() == 1 {
+                    let removed = workspace.remove_tab_at(index)?;
+                    return Some(PaneExitOutcome::TabClosed(ClosedTabInfo {
+                        sandbox_id: *sandbox_id,
+                        sandbox_name: workspace.name.clone(),
+                        tab_name: removed.name,
+                        was_active_tab,
+                        pane_ids,
+                    }));
+                }
+
+                if let Some(tab) = workspace.tabs.get_mut(index) {
+                    if tab.remove_pane_by_id(pane_id) {
+                        return Some(PaneExitOutcome::PaneRemoved {
+                            sandbox_id: *sandbox_id,
+                            sandbox_name: workspace.name.clone(),
+                            tab_name: tab.name.clone(),
+                            was_active_tab,
+                        });
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     /// Update sandbox name.
     pub fn update_sandbox_name(&mut self, sandbox_id: SandboxId, name: impl Into<String>) {
         if let Some(ws) = self.workspaces.get_mut(&sandbox_id) {
@@ -1064,5 +1168,96 @@ mod tests {
             tab.close_active_pane();
             assert_eq!(tab.layout.pane_count(), count_before - 1);
         }
+    }
+
+    #[test]
+    fn closing_tab_by_pane_removes_last_tab() {
+        let mut manager = WorkspaceManager::new();
+        let sandbox_id = SandboxId::new();
+        manager.add_sandbox(sandbox_id, "Test");
+
+        let pane_id = manager
+            .active_tab()
+            .and_then(|tab| tab.layout.pane_ids().first().copied())
+            .expect("tab should have a pane");
+
+        let info = match manager.handle_pane_exit(pane_id) {
+            Some(PaneExitOutcome::TabClosed(info)) => info,
+            other => panic!("expected tab to close, got {:?}", other),
+        };
+
+        assert_eq!(info.sandbox_id, sandbox_id);
+        assert_eq!(info.tab_name, "Tab 1");
+        assert!(info.was_active_tab);
+        assert_eq!(info.pane_ids, vec![pane_id]);
+
+        let workspace = manager
+            .active_workspace()
+            .expect("workspace should still exist");
+        assert!(workspace.tabs.is_empty());
+        assert_eq!(workspace.active_tab_index, 0);
+    }
+
+    #[test]
+    fn closing_non_active_tab_updates_selection() {
+        let mut manager = WorkspaceManager::new();
+        let sandbox_id = SandboxId::new();
+        manager.add_sandbox(sandbox_id, "Test");
+
+        {
+            let workspace = manager
+                .active_workspace_mut()
+                .expect("workspace should be active");
+            workspace.new_tab();
+        }
+
+        let pane_ids: Vec<_> = manager
+            .active_workspace()
+            .expect("workspace should exist")
+            .tabs
+            .iter()
+            .map(|tab| tab.layout.pane_ids()[0])
+            .collect();
+
+        let info = match manager.handle_pane_exit(pane_ids[0]) {
+            Some(PaneExitOutcome::TabClosed(info)) => info,
+            other => panic!("expected tab to close, got {:?}", other),
+        };
+
+        assert!(!info.was_active_tab);
+        let workspace = manager
+            .active_workspace()
+            .expect("workspace should still exist");
+        assert_eq!(workspace.tabs.len(), 1);
+        assert_eq!(workspace.active_tab_index, 0);
+        assert_eq!(workspace.tabs[0].id, manager.active_tab().unwrap().id);
+    }
+
+    #[test]
+    fn pane_exit_removes_pane_when_tab_has_multiple_panes() {
+        let mut manager = WorkspaceManager::new();
+        let sandbox_id = SandboxId::new();
+        manager.add_sandbox(sandbox_id, "Test");
+
+        let exiting_pane = {
+            let workspace = manager
+                .active_workspace_mut()
+                .expect("workspace should be active");
+            let tab = workspace.active_tab_mut().expect("tab should exist");
+            let current_pane = tab.active_pane.expect("pane should exist");
+            tab.split(Direction::Vertical, Pane::terminal(None, "Second"));
+            current_pane
+        };
+
+        let outcome = manager.handle_pane_exit(exiting_pane);
+        assert!(matches!(outcome, Some(PaneExitOutcome::PaneRemoved { .. })));
+
+        let workspace = manager
+            .active_workspace()
+            .expect("workspace should still exist");
+        assert_eq!(workspace.tabs.len(), 1);
+        let tab = workspace.tabs.first().expect("tab should remain");
+        assert_eq!(tab.layout.pane_count(), 1);
+        assert!(tab.contains_pane(tab.active_pane.expect("active pane should exist")));
     }
 }

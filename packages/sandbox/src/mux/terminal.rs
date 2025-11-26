@@ -1278,6 +1278,13 @@ impl TerminalManager {
         self.last_sizes.remove(&pane_id);
     }
 
+    /// Remove all state associated with a pane.
+    pub fn remove_pane_state(&mut self, pane_id: PaneId) {
+        self.connections.remove(&pane_id);
+        self.last_sizes.remove(&pane_id);
+        self.buffers.remove(&pane_id);
+    }
+
     /// Clear a terminal buffer
     pub fn clear_buffer(&mut self, pane_id: PaneId) {
         if let Some(buffer) = self.buffers.get_mut(&pane_id) {
@@ -1450,6 +1457,11 @@ pub async fn connect_to_sandbox(
         let _ = event_tx_clone.send(MuxEvent::SandboxConnectionChanged {
             sandbox_id: sandbox_id_clone,
             connected: false,
+        });
+
+        let _ = event_tx_clone.send(MuxEvent::TerminalExited {
+            pane_id,
+            sandbox_id: sandbox_id.clone(),
         });
     });
 
