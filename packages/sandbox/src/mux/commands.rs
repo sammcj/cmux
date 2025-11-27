@@ -67,6 +67,7 @@ pub enum MuxCommand {
     // UI
     OpenCommandPalette,
     ToggleHelp,
+    ShowNotifications,
     Quit,
     ScrollUp,
     ScrollDown,
@@ -142,6 +143,7 @@ impl MuxCommand {
             // UI
             MuxCommand::OpenCommandPalette,
             MuxCommand::ToggleHelp,
+            MuxCommand::ShowNotifications,
             MuxCommand::Quit,
             MuxCommand::ScrollUp,
             MuxCommand::ScrollDown,
@@ -203,6 +205,7 @@ impl MuxCommand {
             MuxCommand::DetachSandbox => "Detach from Sandbox",
             MuxCommand::OpenCommandPalette => "Command Palette",
             MuxCommand::ToggleHelp => "Toggle Help",
+            MuxCommand::ShowNotifications => "Show Notifications",
             MuxCommand::Quit => "Quit",
             MuxCommand::ScrollUp => "Scroll Up",
             MuxCommand::ScrollDown => "Scroll Down",
@@ -264,6 +267,7 @@ impl MuxCommand {
             MuxCommand::DetachSandbox => "Detach from the current sandbox",
             MuxCommand::OpenCommandPalette => "Open the command palette",
             MuxCommand::ToggleHelp => "Show or hide help overlay",
+            MuxCommand::ShowNotifications => "Show notifications panel",
             MuxCommand::Quit => "Exit the multiplexer",
             MuxCommand::ScrollUp => "Scroll up one line",
             MuxCommand::ScrollDown => "Scroll down one line",
@@ -331,6 +335,7 @@ impl MuxCommand {
 
             MuxCommand::OpenCommandPalette
             | MuxCommand::ToggleHelp
+            | MuxCommand::ShowNotifications
             | MuxCommand::Quit
             | MuxCommand::ScrollUp
             | MuxCommand::ScrollDown
@@ -446,6 +451,9 @@ impl MuxCommand {
             // UI - Ctrl+Q for quit is safe, use Alt for others
             MuxCommand::OpenCommandPalette => Some((KeyModifiers::ALT, KeyCode::Char('p'))),
             MuxCommand::ToggleHelp => Some((KeyModifiers::ALT, KeyCode::Char('?'))),
+            MuxCommand::ShowNotifications => {
+                Some((KeyModifiers::ALT | KeyModifiers::SHIFT, KeyCode::Char('n')))
+            }
             MuxCommand::Quit => Some((KeyModifiers::CONTROL, KeyCode::Char('q'))),
             // Scroll - only when NOT focused on terminal (handled separately)
             MuxCommand::ScrollUp => None,

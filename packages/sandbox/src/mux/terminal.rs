@@ -2098,9 +2098,24 @@ pub async fn establish_mux_connection(manager: SharedTerminalManager) -> anyhow:
     let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<MuxClientMessage>();
 
     // Store the sender in the manager
-    {
+    let msg_tx_for_cache = {
         let mut mgr = manager.lock().await;
         mgr.set_mux_sender(MuxConnectionSender { tx: msg_tx });
+        mgr.get_mux_sender().map(|s| s.tx.clone())
+    };
+
+    // Pre-fetch gh auth status and send to server for caching
+    // This runs in the background so it doesn't block connection setup
+    if let Some(tx) = msg_tx_for_cache {
+        tokio::spawn(async move {
+            let (exit_code, stdout, stderr) =
+                run_gh_command(&["auth".to_string(), "status".to_string()], None).await;
+            let _ = tx.send(MuxClientMessage::GhAuthCache {
+                exit_code,
+                stdout,
+                stderr,
+            });
+        });
     }
 
     // Spawn task to handle WebSocket I/O
@@ -2134,11 +2149,8 @@ pub async fn establish_mux_connection(manager: SharedTerminalManager) -> anyhow:
                                 MuxServerMessage::Attached { session_id } => {
                                     // Session is now attached - this is handled via pending_attaches
                                     // in connect_to_sandbox
-                                    let _ = event_tx_clone.send(MuxEvent::Notification {
+                                    let _ = event_tx_clone.send(MuxEvent::StatusMessage {
                                         message: format!("Session {} attached", session_id),
-                                        level: crate::models::NotificationLevel::Info,
-                                        sandbox_id: None,
-                                        tab_id: None,
                                     });
                                 }
                                 MuxServerMessage::Output { session_id, data } => {
@@ -2192,6 +2204,24 @@ pub async fn establish_mux_connection(manager: SharedTerminalManager) -> anyhow:
                                         sandbox_id,
                                         tab_id,
                                     });
+                                }
+                                MuxServerMessage::GhRequest {
+                                    request_id,
+                                    args,
+                                    stdin,
+                                    ..
+                                } => {
+                                    // Run gh command locally and send response back
+                                    let mgr = manager_clone.lock().await;
+                                    if let Some(sender) = mgr.mux_sender.as_ref() {
+                                        let response = run_gh_command(&args, stdin.as_deref()).await;
+                                        let _ = sender.tx.send(MuxClientMessage::GhResponse {
+                                            request_id,
+                                            exit_code: response.0,
+                                            stdout: response.1,
+                                            stderr: response.2,
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -2322,6 +2352,53 @@ pub async fn request_list_sandboxes(manager: SharedTerminalManager) -> anyhow::R
         Ok(())
     } else {
         Err(anyhow::anyhow!("Mux connection not established"))
+    }
+}
+
+/// Run a gh command locally on the host machine.
+/// Returns (exit_code, stdout, stderr).
+async fn run_gh_command(args: &[String], stdin: Option<&str>) -> (i32, String, String) {
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
+    use tokio::process::Command;
+
+    let mut cmd = Command::new("gh");
+    cmd.args(args);
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    if stdin.is_some() {
+        cmd.stdin(Stdio::piped());
+    }
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            return (1, String::new(), format!("Failed to spawn gh: {}", e));
+        }
+    };
+
+    // Write stdin if provided
+    if let Some(input) = stdin {
+        if let Some(mut child_stdin) = child.stdin.take() {
+            if let Err(e) = child_stdin.write_all(input.as_bytes()).await {
+                return (
+                    1,
+                    String::new(),
+                    format!("Failed to write to gh stdin: {}", e),
+                );
+            }
+            drop(child_stdin); // Close stdin to signal EOF
+        }
+    }
+
+    match child.wait_with_output().await {
+        Ok(output) => (
+            output.status.code().unwrap_or(1),
+            String::from_utf8_lossy(&output.stdout).to_string(),
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ),
+        Err(e) => (1, String::new(), format!("Failed to wait for gh: {}", e)),
     }
 }
 

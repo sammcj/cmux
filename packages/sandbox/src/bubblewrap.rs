@@ -564,8 +564,8 @@ fi
         command.env("IS_SANDBOX", "1");
         // Docker socket is bind-mounted to /run/docker.sock
         command.env("DOCKER_HOST", "unix:///run/docker.sock");
-        // Socket path for open-url (mapped from /var/run/cmux to /run/cmux inside sandbox)
-        command.env("CMUX_OPEN_URL_SOCKET", "/run/cmux/open-url.sock");
+        // Bridge socket path (mapped from /var/run/cmux to /run/cmux inside sandbox)
+        command.env("CMUX_BRIDGE_SOCKET", "/run/cmux/bridge.sock");
 
         // SSH agent forwarding: if the socket exists in the container, bind-mount it into the sandbox
         let ssh_socket_path = Path::new("/ssh-agent.sock");
@@ -1422,6 +1422,8 @@ impl SandboxService for BubblewrapService {
         &self,
         socket: WebSocket,
         mut host_event_rx: crate::service::HostEventReceiver,
+        gh_responses: crate::service::GhResponseRegistry,
+        gh_auth_cache: crate::service::GhAuthCache,
     ) -> SandboxResult<()> {
         info!("mux_attach: new multiplexed connection");
 
@@ -1470,6 +1472,15 @@ impl SandboxService for BubblewrapService {
                                     level: notification.level,
                                     sandbox_id: notification.sandbox_id,
                                     tab_id: notification.tab_id,
+                                });
+                            }
+                            HostEvent::GhRequest(request) => {
+                                let _ = output_tx.send(MuxServerMessage::GhRequest {
+                                    request_id: request.request_id,
+                                    args: request.args,
+                                    stdin: request.stdin,
+                                    sandbox_id: request.sandbox_id,
+                                    tab_id: request.tab_id,
                                 });
                             }
                         }
@@ -1651,6 +1662,53 @@ impl SandboxService for BubblewrapService {
 
                         MuxClientMessage::Ping { timestamp } => {
                             let _ = output_tx.send(MuxServerMessage::Pong { timestamp });
+                        }
+
+                        MuxClientMessage::GhResponse {
+                            request_id,
+                            exit_code,
+                            stdout,
+                            stderr,
+                        } => {
+                            debug!(
+                                "mux_attach: gh response request_id={} exit_code={}",
+                                request_id, exit_code
+                            );
+                            // Look up the pending request and send the response
+                            let mut registry = gh_responses.lock().await;
+                            if let Some(sender) = registry.remove(&request_id) {
+                                let response = crate::models::GhResponse {
+                                    request_id: request_id.clone(),
+                                    exit_code,
+                                    stdout,
+                                    stderr,
+                                };
+                                if sender.send(response).is_err() {
+                                    warn!(
+                                        "mux_attach: failed to send gh response for request_id={}",
+                                        request_id
+                                    );
+                                }
+                            } else {
+                                warn!(
+                                    "mux_attach: no pending request for gh response request_id={}",
+                                    request_id
+                                );
+                            }
+                        }
+
+                        MuxClientMessage::GhAuthCache {
+                            exit_code,
+                            stdout,
+                            stderr,
+                        } => {
+                            debug!("mux_attach: caching gh auth status exit_code={}", exit_code);
+                            let mut cache = gh_auth_cache.lock().await;
+                            *cache = Some(crate::service::CachedGhAuth {
+                                exit_code,
+                                stdout,
+                                stderr,
+                            });
                         }
                     }
                 }

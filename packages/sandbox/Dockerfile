@@ -220,7 +220,19 @@ COPY --from=acp-builder --link /workspace/target/release/codex-acp /usr/local/bi
 COPY --link packages/sandbox/scripts/bootstrap-dind.sh /usr/local/bin/bootstrap-dind.sh
 RUN chmod +x /usr/local/bin/bootstrap-dind.sh && \
     ln -sf /usr/local/bin/cmux-bridge /usr/local/bin/open-url && \
-    ln -sf /usr/local/bin/cmux-bridge /usr/local/bin/xdg-open
+    ln -sf /usr/local/bin/cmux-bridge /usr/local/bin/xdg-open && \
+    # Replace gh CLI with symlinks to cmux-bridge so git credential helpers work
+    # This proxies gh commands to the host where the user is authenticated
+    rm -f /usr/bin/gh && \
+    ln -sf /usr/local/bin/cmux-bridge /usr/bin/gh && \
+    # Common gh installation paths (macOS Homebrew, Linux Homebrew, snap, etc.)
+    mkdir -p /opt/homebrew/bin && \
+    ln -sf /usr/local/bin/cmux-bridge /opt/homebrew/bin/gh && \
+    mkdir -p /home/linuxbrew/.linuxbrew/bin && \
+    ln -sf /usr/local/bin/cmux-bridge /home/linuxbrew/.linuxbrew/bin/gh && \
+    mkdir -p /snap/bin && \
+    ln -sf /usr/local/bin/cmux-bridge /snap/bin/gh && \
+    ln -sf /usr/local/bin/cmux-bridge /usr/local/bin/gh
 
 # systemd service units
 COPY --link packages/sandbox/systemd/dockerd.service /etc/systemd/system/dockerd.service

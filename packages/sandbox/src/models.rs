@@ -112,6 +112,84 @@ pub struct OpenUrlRequest {
 pub enum HostEvent {
     OpenUrl(OpenUrlRequest),
     Notification(NotificationRequest),
+    GhRequest(GhRequest),
+}
+
+/// Request to run a `gh` CLI command on the host machine.
+/// Used for git credential helpers and other gh commands that need host auth.
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct GhRequest {
+    /// Unique request ID for correlating responses
+    pub request_id: String,
+    /// Arguments to pass to the `gh` command (e.g., ["auth", "git-credential", "get"])
+    pub args: Vec<String>,
+    /// Optional stdin to pass to the command
+    #[serde(default)]
+    pub stdin: Option<String>,
+    #[serde(default)]
+    pub sandbox_id: Option<String>,
+    #[serde(default)]
+    pub tab_id: Option<String>,
+}
+
+/// Response from running a `gh` CLI command on the host.
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct GhResponse {
+    /// Request ID this response corresponds to
+    pub request_id: String,
+    pub exit_code: i32,
+    /// Stdout from the command
+    pub stdout: String,
+    /// Stderr from the command
+    pub stderr: String,
+}
+
+// ============================================================================
+// Unified Bridge Socket Protocol
+// ============================================================================
+
+/// Request sent from sandbox to host via the bridge socket.
+/// Uses tagged enum for type discrimination.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum BridgeRequest {
+    /// Open a URL on the host machine
+    OpenUrl {
+        url: String,
+        #[serde(default)]
+        sandbox_id: Option<String>,
+        #[serde(default)]
+        tab_id: Option<String>,
+    },
+    /// Run a gh CLI command on the host machine
+    Gh {
+        #[serde(default)]
+        request_id: String,
+        args: Vec<String>,
+        #[serde(default)]
+        stdin: Option<String>,
+        #[serde(default)]
+        sandbox_id: Option<String>,
+        #[serde(default)]
+        tab_id: Option<String>,
+    },
+}
+
+/// Response from the bridge socket.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum BridgeResponse {
+    /// Response to open-url request
+    Ok,
+    /// Error response
+    Error { message: String },
+    /// Response to gh command
+    Gh {
+        request_id: String,
+        exit_code: i32,
+        stdout: String,
+        stderr: String,
+    },
 }
 
 // ============================================================================
@@ -164,6 +242,20 @@ pub enum MuxClientMessage {
     Detach { session_id: PtySessionId },
     /// Ping to keep connection alive.
     Ping { timestamp: u64 },
+    /// Response to a gh command request from the server.
+    GhResponse {
+        request_id: String,
+        exit_code: i32,
+        stdout: String,
+        stderr: String,
+    },
+    /// Cache gh auth status for faster responses to sandboxes.
+    /// Sent by client on connect after running `gh auth status` locally.
+    GhAuthCache {
+        exit_code: i32,
+        stdout: String,
+        stderr: String,
+    },
 }
 
 /// Server-to-client messages for the multiplexed WebSocket protocol.
@@ -209,6 +301,18 @@ pub enum MuxServerMessage {
         message: String,
         #[serde(default)]
         level: NotificationLevel,
+        #[serde(default)]
+        sandbox_id: Option<String>,
+        #[serde(default)]
+        tab_id: Option<String>,
+    },
+    /// Request to run a gh CLI command on the client (host) machine.
+    /// Client should respond with MuxClientMessage::GhResponse.
+    GhRequest {
+        request_id: String,
+        args: Vec<String>,
+        #[serde(default)]
+        stdin: Option<String>,
         #[serde(default)]
         sandbox_id: Option<String>,
         #[serde(default)]

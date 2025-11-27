@@ -65,6 +65,10 @@ impl TabId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
+
+    pub fn from_uuid(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
 }
 
 impl Default for TabId {
@@ -759,6 +763,18 @@ impl SandboxWorkspace {
             tab.name = name.into();
         }
     }
+
+    pub fn select_tab_by_id(&mut self, tab_id: TabId) -> bool {
+        if let Some(index) = self.tabs.iter().position(|tab| tab.id == tab_id) {
+            self.active_tab_index = index;
+            return true;
+        }
+        false
+    }
+
+    pub fn contains_tab(&self, tab_id: TabId) -> bool {
+        self.tabs.iter().any(|tab| tab.id == tab_id)
+    }
 }
 
 /// Information about a tab that was closed.
@@ -1052,6 +1068,44 @@ impl WorkspaceManager {
         if let Some(ws) = self.active_workspace_mut() {
             ws.rename_active_tab(name);
         }
+    }
+
+    /// Select a tab by ID in the active workspace.
+    pub fn select_tab_in_workspace_for_active(&mut self, tab_id: TabId) -> bool {
+        if let Some(active_id) = self.active_sandbox_id {
+            return self.select_tab_in_workspace(active_id, tab_id);
+        }
+        false
+    }
+
+    /// Select a tab by ID in a specific sandbox workspace.
+    pub fn select_tab_in_workspace(&mut self, sandbox_id: SandboxId, tab_id: TabId) -> bool {
+        if let Some(ws) = self.workspaces.get_mut(&sandbox_id) {
+            if ws.select_tab_by_id(tab_id) {
+                self.active_sandbox_id = Some(sandbox_id);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Select a tab by ID in any workspace.
+    pub fn select_tab_in_any_workspace(&mut self, tab_id: TabId) -> bool {
+        if let Some(active) = self.active_sandbox_id {
+            if self.select_tab_in_workspace(active, tab_id) {
+                return true;
+            }
+        }
+
+        for sandbox_id in self.sandbox_order.clone() {
+            if Some(sandbox_id) == self.active_sandbox_id {
+                continue;
+            }
+            if self.select_tab_in_workspace(sandbox_id, tab_id) {
+                return true;
+            }
+        }
+        false
     }
 
     /// Handle a pane exit by either closing its tab (if it's the only pane) or removing the pane.

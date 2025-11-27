@@ -14,8 +14,11 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 fn make_test_router(service: Arc<MockService>) -> Router {
+    use std::collections::HashMap;
     let (host_event_tx, _) = tokio::sync::broadcast::channel(16);
-    build_router(service, host_event_tx)
+    let gh_responses = Arc::new(Mutex::new(HashMap::new()));
+    let gh_auth_cache = Arc::new(Mutex::new(None));
+    build_router(service, host_event_tx, gh_responses, gh_auth_cache)
 }
 
 struct MockService {
@@ -107,6 +110,8 @@ impl SandboxService for MockService {
         &self,
         _socket: axum::extract::ws::WebSocket,
         _host_event_rx: cmux_sandbox::service::HostEventReceiver,
+        _gh_responses: cmux_sandbox::service::GhResponseRegistry,
+        _gh_auth_cache: cmux_sandbox::service::GhAuthCache,
     ) -> cmux_sandbox::errors::SandboxResult<()> {
         Ok(())
     }

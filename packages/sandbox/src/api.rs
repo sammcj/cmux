@@ -3,7 +3,7 @@ use crate::models::{
     CreateSandboxRequest, ExecRequest, ExecResponse, HealthResponse, HostEvent, NotificationLevel,
     NotificationRequest, OpenUrlRequest, SandboxSummary,
 };
-use crate::service::{AppState, HostEventSender, SandboxService};
+use crate::service::{AppState, GhResponseRegistry, HostEventSender, SandboxService};
 use axum::body::Body;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{DefaultBodyLimit, Path, Query, State};
@@ -65,9 +65,14 @@ fn default_tty() -> bool {
 )]
 pub struct ApiDoc;
 
-pub fn build_router(service: Arc<dyn SandboxService>, host_events: HostEventSender) -> Router {
+pub fn build_router(
+    service: Arc<dyn SandboxService>,
+    host_events: HostEventSender,
+    gh_responses: GhResponseRegistry,
+    gh_auth_cache: crate::service::GhAuthCache,
+) -> Router {
+    let state = AppState::new(service, host_events, gh_responses, gh_auth_cache);
     let openapi = ApiDoc::openapi();
-    let state = AppState::new(service, host_events);
     let swagger_routes: Router<AppState> =
         SwaggerUi::new("/docs").url("/openapi.json", openapi).into();
 
@@ -237,8 +242,14 @@ async fn proxy_sandbox(
 /// Multiplexed WebSocket endpoint - handles multiple PTY sessions over a single connection.
 async fn mux_attach(state: axum::extract::State<AppState>, ws: WebSocketUpgrade) -> Response {
     let host_event_rx = state.host_events.subscribe();
+    let gh_responses = state.gh_responses.clone();
+    let gh_auth_cache = state.gh_auth_cache.clone();
     ws.on_upgrade(move |socket| async move {
-        if let Err(e) = state.service.mux_attach(socket, host_event_rx).await {
+        if let Err(e) = state
+            .service
+            .mux_attach(socket, host_event_rx, gh_responses, gh_auth_cache)
+            .await
+        {
             tracing::error!("mux_attach failed: {e}");
         }
     })
@@ -404,6 +415,8 @@ mod tests {
             &self,
             _socket: WebSocket,
             _host_event_rx: crate::service::HostEventReceiver,
+            _gh_responses: crate::service::GhResponseRegistry,
+            _gh_auth_cache: crate::service::GhAuthCache,
         ) -> SandboxResult<()> {
             Ok(())
         }
@@ -440,8 +453,16 @@ mod tests {
     }
 
     fn make_test_router() -> Router {
-        let (url_tx, _) = tokio::sync::broadcast::channel(16);
-        build_router(Arc::new(MockService::default()), url_tx)
+        use std::collections::HashMap;
+        let (host_event_tx, _) = tokio::sync::broadcast::channel(16);
+        let gh_responses = Arc::new(Mutex::new(HashMap::new()));
+        let gh_auth_cache = Arc::new(Mutex::new(None));
+        build_router(
+            Arc::new(MockService::default()),
+            host_event_tx,
+            gh_responses,
+            gh_auth_cache,
+        )
     }
 
     #[tokio::test]

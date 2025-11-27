@@ -5,9 +5,10 @@ use cmux_sandbox::bubblewrap::BubblewrapService;
 use cmux_sandbox::build_router;
 use cmux_sandbox::errors::{SandboxError, SandboxResult};
 use cmux_sandbox::models::{
-    CreateSandboxRequest, ExecRequest, ExecResponse, HostEvent, OpenUrlRequest, SandboxSummary,
+    BridgeRequest, BridgeResponse, CreateSandboxRequest, ExecRequest, ExecResponse, GhRequest,
+    GhResponse, HostEvent, OpenUrlRequest, SandboxSummary,
 };
-use cmux_sandbox::service::{HostEventSender, SandboxService};
+use cmux_sandbox::service::{GhAuthCache, GhResponseRegistry, HostEventSender, SandboxService};
 use cmux_sandbox::DEFAULT_HTTP_PORT;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
@@ -32,13 +33,13 @@ struct Options {
     /// Directory used for logs
     #[arg(long, default_value = "/var/log/cmux", env = "CMUX_SANDBOX_LOG_DIR")]
     log_dir: PathBuf,
-    /// Path for the Unix socket used by sandboxes to open URLs
+    /// Path for the Unix socket used by sandboxes for bridge commands (open-url, gh, etc.)
     #[arg(
         long,
-        default_value = "/var/run/cmux/open-url.sock",
-        env = "CMUX_OPEN_URL_SOCKET"
+        default_value = "/var/run/cmux/bridge.sock",
+        env = "CMUX_BRIDGE_SOCKET"
     )]
-    open_url_socket: PathBuf,
+    bridge_socket: PathBuf,
 }
 
 #[tokio::main]
@@ -94,18 +95,42 @@ async fn shutdown_signal() {
 }
 
 async fn run_server(options: Options) {
+    use std::collections::HashMap;
+    use tokio::sync::Mutex;
+
     let bind_ip = parse_bind_ip(&options.bind);
-    // Broadcast channel for host-directed events (open-url, notifications)
+    // Broadcast channel for host-directed events (open-url, notifications, gh)
     let (host_event_tx, _) = tokio::sync::broadcast::channel::<HostEvent>(64);
 
-    let service = build_service(&options).await;
-    let app = build_router(service, host_event_tx.clone());
+    // Registry for pending gh requests
+    let gh_responses: GhResponseRegistry = Arc::new(Mutex::new(HashMap::new()));
 
-    // Start the Unix socket listener for open-url requests from sandboxes
-    let socket_path = options.open_url_socket.clone();
+    // Cache for gh auth status (populated by TUI client on connect)
+    let gh_auth_cache: GhAuthCache = Arc::new(Mutex::new(None));
+
+    let service = build_service(&options).await;
+    let app = build_router(
+        service,
+        host_event_tx.clone(),
+        gh_responses.clone(),
+        gh_auth_cache.clone(),
+    );
+
+    // Start the unified Unix socket listener for bridge requests from sandboxes
+    let socket_path = options.bridge_socket.clone();
+    let bridge_host_events = host_event_tx.clone();
+    let bridge_gh_responses = gh_responses.clone();
+    let bridge_gh_auth_cache = gh_auth_cache.clone();
     tokio::spawn(async move {
-        if let Err(e) = run_open_url_socket(&socket_path, host_event_tx).await {
-            tracing::error!("open-url socket failed: {e}");
+        if let Err(e) = run_bridge_socket(
+            &socket_path,
+            bridge_host_events,
+            bridge_gh_responses,
+            bridge_gh_auth_cache,
+        )
+        .await
+        {
+            tracing::error!("bridge socket failed: {e}");
         }
     });
 
@@ -171,11 +196,13 @@ async fn build_service(options: &Options) -> Arc<dyn SandboxService> {
     }
 }
 
-/// Run a Unix socket listener for open-url requests from sandboxes.
-/// Protocol: Each request is a single line containing the URL, response is "OK\n" or "ERROR: message\n".
-async fn run_open_url_socket(
+/// Run a unified Unix socket listener for bridge requests from sandboxes.
+/// Protocol: JSON request line with tagged union, JSON response line.
+async fn run_bridge_socket(
     socket_path: &PathBuf,
     host_events: HostEventSender,
+    gh_responses: GhResponseRegistry,
+    gh_auth_cache: GhAuthCache,
 ) -> anyhow::Result<()> {
     // Ensure parent directory exists
     if let Some(parent) = socket_path.parent() {
@@ -188,7 +215,7 @@ async fn run_open_url_socket(
     }
 
     let listener = UnixListener::bind(socket_path)?;
-    tracing::info!("open-url socket listening on {:?}", socket_path);
+    tracing::info!("bridge socket listening on {:?}", socket_path);
 
     // Make socket world-writable so sandboxes can connect
     #[cfg(unix)]
@@ -201,87 +228,248 @@ async fn run_open_url_socket(
         match listener.accept().await {
             Ok((stream, _addr)) => {
                 let host_events = host_events.clone();
+                let gh_responses = gh_responses.clone();
+                let gh_auth_cache = gh_auth_cache.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_open_url_connection(stream, host_events).await {
-                        tracing::warn!("open-url connection error: {e}");
+                    if let Err(e) =
+                        handle_bridge_connection(stream, host_events, gh_responses, gh_auth_cache)
+                            .await
+                    {
+                        tracing::warn!("bridge connection error: {e}");
                     }
                 });
             }
             Err(e) => {
-                tracing::error!("open-url socket accept error: {e}");
+                tracing::error!("bridge socket accept error: {e}");
             }
         }
     }
 }
 
-/// Handle a single open-url connection.
-async fn handle_open_url_connection(
+/// Handle a single bridge connection.
+async fn handle_bridge_connection(
     stream: tokio::net::UnixStream,
     host_events: HostEventSender,
+    gh_responses: GhResponseRegistry,
+    gh_auth_cache: GhAuthCache,
 ) -> anyhow::Result<()> {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
 
-    // Read a single line containing the URL
+    // Read a single line containing the JSON request
     reader.read_line(&mut line).await?;
     let trimmed = line.trim();
 
     if trimmed.is_empty() {
-        writer.write_all(b"ERROR: URL must not be empty\n").await?;
+        let response = BridgeResponse::Error {
+            message: "Empty request".to_string(),
+        };
+        writer
+            .write_all(serde_json::to_string(&response)?.as_bytes())
+            .await?;
+        writer.write_all(b"\n").await?;
         return Ok(());
     }
 
-    let mut request = match serde_json::from_str::<OpenUrlRequest>(trimmed) {
+    let request: BridgeRequest = match serde_json::from_str(trimmed) {
         Ok(req) => req,
-        Err(_) => OpenUrlRequest {
-            url: trimmed.to_string(),
-            sandbox_id: None,
-            tab_id: None,
-        },
+        Err(e) => {
+            let response = BridgeResponse::Error {
+                message: format!("Invalid JSON request: {e}"),
+            };
+            writer
+                .write_all(serde_json::to_string(&response)?.as_bytes())
+                .await?;
+            writer.write_all(b"\n").await?;
+            return Ok(());
+        }
     };
 
-    if request
-        .sandbox_id
-        .as_ref()
-        .is_some_and(|value| value.trim().is_empty())
-    {
-        request.sandbox_id = None;
-    }
-    if request
-        .tab_id
-        .as_ref()
-        .is_some_and(|value| value.trim().is_empty())
-    {
-        request.tab_id = None;
-    }
-
-    // Validate URL
-    if !request.url.starts_with("http://") && !request.url.starts_with("https://") {
-        writer
-            .write_all(b"ERROR: URL must start with http:// or https://\n")
-            .await?;
-        return Ok(());
-    }
-
-    // Broadcast URL to connected clients (they will open it on the host)
-    match host_events.send(HostEvent::OpenUrl(OpenUrlRequest {
-        url: request.url.clone(),
-        sandbox_id: request.sandbox_id.clone(),
-        tab_id: request.tab_id.clone(),
-    })) {
-        Ok(receivers) => {
-            tracing::info!("broadcast URL to {} clients: {}", receivers, request.url);
-            writer.write_all(b"OK\n").await?;
+    let response = match request {
+        BridgeRequest::OpenUrl {
+            url,
+            sandbox_id,
+            tab_id,
+        } => handle_open_url_request(&host_events, url, sandbox_id, tab_id).await,
+        BridgeRequest::Gh {
+            request_id,
+            args,
+            stdin,
+            sandbox_id,
+            tab_id,
+        } => {
+            handle_gh_request(
+                &host_events,
+                &gh_responses,
+                &gh_auth_cache,
+                request_id,
+                args,
+                stdin,
+                sandbox_id,
+                tab_id,
+            )
+            .await
         }
-        Err(_) => {
-            // No receivers - no mux clients connected
-            tracing::warn!("no clients connected to receive URL: {}", request.url);
-            writer.write_all(b"ERROR: no clients connected\n").await?;
-        }
-    }
+    };
+
+    writer
+        .write_all(serde_json::to_string(&response)?.as_bytes())
+        .await?;
+    writer.write_all(b"\n").await?;
 
     Ok(())
+}
+
+async fn handle_open_url_request(
+    host_events: &HostEventSender,
+    url: String,
+    sandbox_id: Option<String>,
+    tab_id: Option<String>,
+) -> BridgeResponse {
+    // Validate URL
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return BridgeResponse::Error {
+            message: "URL must start with http:// or https://".to_string(),
+        };
+    }
+
+    // Broadcast URL to connected clients
+    match host_events.send(HostEvent::OpenUrl(OpenUrlRequest {
+        url: url.clone(),
+        sandbox_id,
+        tab_id,
+    })) {
+        Ok(receivers) => {
+            tracing::info!("broadcast URL to {} clients: {}", receivers, url);
+            BridgeResponse::Ok
+        }
+        Err(_) => {
+            tracing::warn!("no clients connected to receive URL: {}", url);
+            BridgeResponse::Error {
+                message: "No clients connected".to_string(),
+            }
+        }
+    }
+}
+
+/// Check if args represent a `gh auth status` command that can use cache.
+/// Matches `gh auth status` and variations like `gh auth status --hostname github.com`.
+fn is_gh_auth_status(args: &[String]) -> bool {
+    args.len() >= 2 && args[0] == "auth" && args[1] == "status"
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_gh_request(
+    host_events: &HostEventSender,
+    gh_responses: &GhResponseRegistry,
+    gh_auth_cache: &GhAuthCache,
+    mut request_id: String,
+    args: Vec<String>,
+    stdin: Option<String>,
+    sandbox_id: Option<String>,
+    tab_id: Option<String>,
+) -> BridgeResponse {
+    // Generate a request ID if not provided
+    if request_id.is_empty() {
+        request_id = uuid::Uuid::new_v4().to_string();
+    }
+
+    tracing::info!("gh request: id={} args={:?}", request_id, args);
+
+    // Check cache for `gh auth status` requests
+    if is_gh_auth_status(&args) && stdin.is_none() {
+        let cache = gh_auth_cache.lock().await;
+        if let Some(cached) = cache.as_ref() {
+            tracing::info!("gh auth status: returning cached result");
+            return BridgeResponse::Gh {
+                request_id,
+                exit_code: cached.exit_code,
+                stdout: cached.stdout.clone(),
+                stderr: cached.stderr.clone(),
+            };
+        }
+        // Cache empty - fall through to original codepath
+        tracing::info!("gh auth status: cache empty, using WebSocket round-trip");
+    }
+
+    // Create a oneshot channel for the response
+    let (response_tx, response_rx) = tokio::sync::oneshot::channel::<GhResponse>();
+
+    // Register the pending request
+    {
+        let mut registry = gh_responses.lock().await;
+        registry.insert(request_id.clone(), response_tx);
+    }
+
+    // Broadcast the request to connected clients
+    let gh_request = GhRequest {
+        request_id: request_id.clone(),
+        args,
+        stdin,
+        sandbox_id,
+        tab_id,
+    };
+
+    match host_events.send(HostEvent::GhRequest(gh_request)) {
+        Ok(receivers) => {
+            tracing::info!(
+                "broadcast gh request to {} clients: id={}",
+                receivers,
+                request_id
+            );
+        }
+        Err(_) => {
+            // No receivers - clean up and return error
+            {
+                let mut registry = gh_responses.lock().await;
+                registry.remove(&request_id);
+            }
+            return BridgeResponse::Gh {
+                request_id,
+                exit_code: 1,
+                stdout: String::new(),
+                stderr: "No clients connected to handle gh request".to_string(),
+            };
+        }
+    }
+
+    // Wait for the response with a timeout
+    let response = match tokio::time::timeout(Duration::from_secs(30), response_rx).await {
+        Ok(Ok(response)) => response,
+        Ok(Err(_)) => GhResponse {
+            request_id: request_id.clone(),
+            exit_code: 1,
+            stdout: String::new(),
+            stderr: "Response channel closed".to_string(),
+        },
+        Err(_) => {
+            // Timeout - clean up pending request
+            {
+                let mut registry = gh_responses.lock().await;
+                registry.remove(&request_id);
+            }
+            GhResponse {
+                request_id: request_id.clone(),
+                exit_code: 1,
+                stdout: String::new(),
+                stderr: "Timeout waiting for gh response".to_string(),
+            }
+        }
+    };
+
+    tracing::info!(
+        "gh response: id={} exit_code={}",
+        response.request_id,
+        response.exit_code
+    );
+
+    BridgeResponse::Gh {
+        request_id: response.request_id,
+        exit_code: response.exit_code,
+        stdout: response.stdout,
+        stderr: response.stderr,
+    }
 }
 
 #[derive(Clone)]
@@ -335,6 +523,8 @@ impl SandboxService for UnavailableSandboxService {
         &self,
         _socket: axum::extract::ws::WebSocket,
         _host_event_rx: cmux_sandbox::service::HostEventReceiver,
+        _gh_responses: GhResponseRegistry,
+        _gh_auth_cache: GhAuthCache,
     ) -> SandboxResult<()> {
         Err(self.error("mux attach"))
     }

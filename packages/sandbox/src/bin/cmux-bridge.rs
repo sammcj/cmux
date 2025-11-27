@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context};
 use clap::{Parser, Subcommand};
-use cmux_sandbox::models::{NotificationLevel, NotificationRequest, OpenUrlRequest};
+use cmux_sandbox::models::{
+    BridgeRequest, BridgeResponse, NotificationLevel, NotificationRequest, OpenUrlRequest,
+};
 use cmux_sandbox::DEFAULT_HTTP_PORT;
 use reqwest::Client;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -24,11 +26,11 @@ struct Cli {
     )]
     base_url: String,
 
-    /// Path to the Unix socket for local control (preferred)
+    /// Path to the Unix socket for bridge requests (open-url, gh, etc.)
     #[arg(
         long,
-        env = "CMUX_OPEN_URL_SOCKET",
-        default_value = "/run/cmux/open-url.sock"
+        env = "CMUX_BRIDGE_SOCKET",
+        default_value = "/run/cmux/bridge.sock"
     )]
     socket: String,
 
@@ -46,6 +48,13 @@ enum Command {
         message: String,
         #[arg(long, value_enum, default_value_t = NotificationLevel::Info)]
         level: NotificationLevel,
+    },
+    /// Proxy a gh CLI command to the host machine.
+    /// Used for git credential helpers and other gh commands that need host auth.
+    Gh {
+        /// Arguments to pass to the gh command
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
 }
 
@@ -70,6 +79,7 @@ async fn main() {
         Command::Notify { message, level } => {
             handle_notify(&cli, message.clone(), *level, sandbox_id, tab_id).await
         }
+        Command::Gh { args } => handle_gh(&cli, args.clone(), sandbox_id, tab_id).await,
     };
 
     if let Err(error) = result {
@@ -91,6 +101,9 @@ fn prepare_args() -> Vec<String> {
     {
         if exe_name == "open-url" || exe_name == "xdg-open" {
             args.insert(1, "open-url".to_string());
+        } else if exe_name == "gh" {
+            // When invoked as `gh`, inject the `gh` subcommand
+            args.insert(1, "gh".to_string());
         }
     }
     args
@@ -168,7 +181,10 @@ fn socket_available(_path: &str) -> bool {
     false
 }
 
-async fn send_open_via_socket(path: &str, request: &OpenUrlRequest) -> anyhow::Result<()> {
+async fn send_bridge_request(
+    path: &str,
+    request: &BridgeRequest,
+) -> anyhow::Result<BridgeResponse> {
     let mut stream = UnixStream::connect(path)
         .await
         .with_context(|| format!("failed to connect to socket {path}"))?;
@@ -178,15 +194,13 @@ async fn send_open_via_socket(path: &str, request: &OpenUrlRequest) -> anyhow::R
     stream.flush().await?;
 
     let mut reader = BufReader::new(stream);
-    let mut response = String::new();
-    reader.read_line(&mut response).await?;
-    let trimmed = response.trim();
+    let mut response_line = String::new();
+    reader.read_line(&mut response_line).await?;
 
-    if trimmed.is_empty() || trimmed == "OK" {
-        return Ok(());
-    }
+    let response: BridgeResponse =
+        serde_json::from_str(response_line.trim()).context("failed to parse bridge response")?;
 
-    Err(anyhow!("socket response error: {trimmed}"))
+    Ok(response)
 }
 
 fn build_http_client() -> anyhow::Result<Client> {
@@ -283,8 +297,8 @@ async fn handle_open_url(
         return Err(anyhow!("URL must start with http:// or https://"));
     }
 
-    let request = OpenUrlRequest {
-        url,
+    let request = BridgeRequest::OpenUrl {
+        url: url.clone(),
         sandbox_id,
         tab_id,
     };
@@ -292,15 +306,28 @@ async fn handle_open_url(
     let mut socket_error = None;
 
     if socket_available(&cli.socket) {
-        match send_open_via_socket(&cli.socket, &request).await {
-            Ok(()) => return Ok(()),
+        match send_bridge_request(&cli.socket, &request).await {
+            Ok(BridgeResponse::Ok) => return Ok(()),
+            Ok(BridgeResponse::Error { message }) => {
+                socket_error = Some(anyhow!("socket error: {message}"));
+            }
+            Ok(_) => {
+                socket_error = Some(anyhow!("unexpected response type"));
+            }
             Err(error) => socket_error = Some(error),
         }
     }
 
+    // HTTP fallback using the old OpenUrlRequest format
+    let http_request = OpenUrlRequest {
+        url,
+        sandbox_id: None,
+        tab_id: None,
+    };
+
     let client = build_http_client()?;
     let bases = candidate_base_urls(&cli.base_url);
-    match send_open_via_http(&client, &bases, &request).await {
+    match send_open_via_http(&client, &bases, &http_request).await {
         Ok(()) => Ok(()),
         Err(http_error) => {
             if let Some(socket_error) = socket_error {
@@ -331,4 +358,63 @@ async fn handle_notify(
     let client = build_http_client()?;
     let bases = candidate_base_urls(&cli.base_url);
     send_notification_via_http(&client, &bases, &request).await
+}
+
+async fn handle_gh(
+    cli: &Cli,
+    args: Vec<String>,
+    sandbox_id: Option<String>,
+    tab_id: Option<String>,
+) -> anyhow::Result<()> {
+    use std::io::{self, IsTerminal, Read};
+
+    // Read stdin if available (non-blocking check)
+    let stdin_data = if !io::stdin().is_terminal() {
+        let mut buffer = String::new();
+        io::stdin().read_to_string(&mut buffer)?;
+        if buffer.is_empty() {
+            None
+        } else {
+            Some(buffer)
+        }
+    } else {
+        None
+    };
+
+    let request = BridgeRequest::Gh {
+        request_id: String::new(), // Server will generate if empty
+        args,
+        stdin: stdin_data,
+        sandbox_id,
+        tab_id,
+    };
+
+    // Try Unix socket - no HTTP fallback for gh (security)
+    if !socket_available(&cli.socket) {
+        return Err(anyhow!("bridge socket not available at {}", cli.socket));
+    }
+
+    let response = send_bridge_request(&cli.socket, &request).await?;
+
+    match response {
+        BridgeResponse::Gh {
+            exit_code,
+            stdout,
+            stderr,
+            ..
+        } => {
+            if !stdout.is_empty() {
+                print!("{}", stdout);
+            }
+            if !stderr.is_empty() {
+                eprint!("{}", stderr);
+            }
+            if exit_code != 0 {
+                std::process::exit(exit_code);
+            }
+            Ok(())
+        }
+        BridgeResponse::Error { message } => Err(anyhow!("gh request failed: {}", message)),
+        BridgeResponse::Ok => Err(anyhow!("unexpected response type for gh request")),
+    }
 }

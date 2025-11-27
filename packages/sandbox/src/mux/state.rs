@@ -1,16 +1,17 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use tokio::sync::mpsc;
 
-use crate::models::{SandboxNetwork, SandboxStatus, SandboxSummary};
+use crate::models::{NotificationLevel, SandboxNetwork, SandboxStatus, SandboxSummary};
 use crate::mux::commands::MuxCommand;
 use crate::mux::events::MuxEvent;
 use crate::mux::layout::{Direction, NavDirection, Pane, PaneId, SandboxId, WorkspaceManager};
 use crate::mux::palette::CommandPalette;
 use crate::mux::sidebar::Sidebar;
 use crate::mux::terminal::{SharedTerminalManager, TerminalRenderView};
+use uuid::Uuid;
 
 /// Which area of the UI has focus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,6 +19,132 @@ pub enum FocusArea {
     Sidebar,
     MainArea,
     CommandPalette,
+    Notifications,
+}
+
+#[derive(Debug, Clone)]
+pub struct NotificationEntry {
+    pub id: Uuid,
+    pub message: String,
+    pub level: NotificationLevel,
+    pub sandbox_id: Option<String>,
+    pub tab_id: Option<String>,
+    pub sent_at: DateTime<Utc>,
+    pub read_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Default)]
+pub struct NotificationsState {
+    pub items: Vec<NotificationEntry>,
+    pub selected_index: usize,
+    pub is_open: bool,
+}
+
+impl NotificationsState {
+    pub fn new() -> Self {
+        Self {
+            items: Vec::new(),
+            selected_index: 0,
+            is_open: false,
+        }
+    }
+
+    pub fn unread_count(&self) -> usize {
+        self.items
+            .iter()
+            .filter(|item| item.read_at.is_none())
+            .count()
+    }
+
+    pub fn add_notification(&mut self, entry: NotificationEntry) {
+        let insert_at = self
+            .items
+            .iter()
+            .position(|existing| existing.sent_at <= entry.sent_at)
+            .unwrap_or(self.items.len());
+        self.items.insert(insert_at, entry);
+        self.selected_index = 0;
+    }
+
+    pub fn combined_order(&self) -> Vec<usize> {
+        let mut unread: Vec<usize> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, item)| (item.read_at.is_none()).then_some(idx))
+            .collect();
+        let mut read: Vec<usize> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, item)| item.read_at.is_some().then_some(idx))
+            .collect();
+        // Items are already sorted by sent_at desc; preserve that order
+        unread.sort_by_key(|idx| std::cmp::Reverse(self.items[*idx].sent_at));
+        read.sort_by_key(|idx| std::cmp::Reverse(self.items[*idx].sent_at));
+        unread.extend(read);
+        unread
+    }
+
+    pub fn selected_item_index(&self) -> Option<usize> {
+        let order = self.combined_order();
+        if order.is_empty() {
+            return None;
+        }
+        let clamped = self.selected_index.min(order.len().saturating_sub(1));
+        order.get(clamped).copied()
+    }
+
+    pub fn selected_item(&self) -> Option<&NotificationEntry> {
+        self.selected_item_index()
+            .and_then(|idx| self.items.get(idx))
+    }
+
+    pub fn selected_item_mut(&mut self) -> Option<&mut NotificationEntry> {
+        let order = self.combined_order();
+        let idx = order.get(self.selected_index).copied()?;
+        self.items.get_mut(idx)
+    }
+
+    pub fn select_next(&mut self) {
+        let total = self.combined_order().len();
+        if total == 0 {
+            self.selected_index = 0;
+            return;
+        }
+        self.selected_index = (self.selected_index + 1).min(total.saturating_sub(1));
+    }
+
+    pub fn select_previous(&mut self) {
+        if self.selected_index == 0 {
+            return;
+        }
+        self.selected_index -= 1;
+    }
+
+    pub fn mark_read(&mut self) {
+        if let Some(item) = self.selected_item_mut() {
+            if item.read_at.is_none() {
+                item.read_at = Some(Utc::now());
+            }
+        }
+    }
+
+    pub fn mark_unread(&mut self) {
+        if let Some(item) = self.selected_item_mut() {
+            item.read_at = None;
+        }
+    }
+
+    pub fn toggle_read(&mut self) {
+        if let Some(item) = self.selected_item_mut() {
+            if item.read_at.is_some() {
+                item.read_at = None;
+            } else {
+                item.read_at = Some(Utc::now());
+            }
+        }
+    }
 }
 
 /// The main application state for the multiplexer.
@@ -33,6 +160,8 @@ pub struct MuxApp<'a> {
 
     // Help overlay
     pub show_help: bool,
+    // Notifications overlay/state
+    pub notifications: NotificationsState,
 
     // Event channel
     pub event_tx: mpsc::UnboundedSender<MuxEvent>,
@@ -80,6 +209,7 @@ impl<'a> MuxApp<'a> {
             focus: FocusArea::MainArea,
             zoomed_pane: None,
             show_help: false,
+            notifications: NotificationsState::new(),
             event_tx,
             base_url,
             workspace_path,
@@ -167,6 +297,70 @@ impl<'a> MuxApp<'a> {
                 self.status_message = None;
             }
         }
+    }
+
+    pub fn open_notifications(&mut self) {
+        self.notifications.is_open = true;
+        self.focus = FocusArea::Notifications;
+    }
+
+    pub fn close_notifications(&mut self) {
+        self.notifications.is_open = false;
+        if self.focus == FocusArea::Notifications {
+            self.focus = FocusArea::MainArea;
+        }
+    }
+
+    pub fn record_notification(
+        &mut self,
+        message: String,
+        level: NotificationLevel,
+        sandbox_id: Option<String>,
+        tab_id: Option<String>,
+    ) {
+        let entry = NotificationEntry {
+            id: Uuid::new_v4(),
+            message: message.clone(),
+            level,
+            sandbox_id,
+            tab_id,
+            sent_at: Utc::now(),
+            read_at: None,
+        };
+        self.notifications.add_notification(entry);
+    }
+
+    pub fn open_notification_target(&mut self, entry: &NotificationEntry) {
+        let mut target_selected = false;
+        if let Some(sandbox_id_str) = &entry.sandbox_id {
+            if let Ok(uuid) = Uuid::parse_str(sandbox_id_str) {
+                let sandbox_id = SandboxId::from_uuid(uuid);
+                if self.workspace_manager.has_sandbox(sandbox_id) {
+                    self.workspace_manager.select_sandbox(sandbox_id);
+                    self.sidebar.select_by_id(sandbox_id_str);
+                    target_selected = true;
+                }
+            }
+        }
+
+        if let Some(tab_id_str) = &entry.tab_id {
+            if let Ok(uuid) = Uuid::parse_str(tab_id_str) {
+                let tab_id = crate::mux::layout::TabId::from_uuid(uuid);
+                if target_selected {
+                    let _ = self
+                        .workspace_manager
+                        .select_tab_in_workspace_for_active(tab_id);
+                } else if self.workspace_manager.select_tab_in_any_workspace(tab_id) {
+                    target_selected = true;
+                }
+            }
+        }
+
+        if target_selected {
+            self.focus = FocusArea::MainArea;
+        }
+
+        self.set_status("Opened notification");
     }
 
     /// Execute a command.
@@ -422,6 +616,13 @@ impl<'a> MuxApp<'a> {
             MuxCommand::ToggleHelp => {
                 self.show_help = !self.show_help;
             }
+            MuxCommand::ShowNotifications => {
+                if self.notifications.is_open {
+                    self.close_notifications();
+                } else {
+                    self.open_notifications();
+                }
+            }
             MuxCommand::Quit => {
                 // Handled by the runner
             }
@@ -557,7 +758,15 @@ impl<'a> MuxApp<'a> {
             MuxEvent::Error(msg) => {
                 self.set_status(format!("Error: {}", msg));
             }
-            MuxEvent::Notification { message, .. } => {
+            MuxEvent::Notification {
+                message,
+                level,
+                sandbox_id,
+                tab_id,
+            } => {
+                self.record_notification(message, level, sandbox_id, tab_id);
+            }
+            MuxEvent::StatusMessage { message } => {
                 self.set_status(message);
             }
             MuxEvent::ConnectToSandbox { sandbox_id } => {
@@ -673,7 +882,7 @@ impl<'a> MuxApp<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{SandboxNetwork, SandboxStatus, SandboxSummary};
+    use crate::models::{NotificationLevel, SandboxNetwork, SandboxStatus, SandboxSummary};
     use chrono::Utc;
     use uuid::Uuid;
 
@@ -717,6 +926,36 @@ mod tests {
             app.selected_sandbox_id_string(),
             Some(sandbox.id.to_string())
         );
+    }
+
+    #[test]
+    fn notifications_track_read_state() {
+        let mut notifications = NotificationsState::new();
+        let entry = NotificationEntry {
+            id: Uuid::new_v4(),
+            message: "hello".to_string(),
+            level: NotificationLevel::Info,
+            sandbox_id: None,
+            tab_id: None,
+            sent_at: Utc::now(),
+            read_at: None,
+        };
+        notifications.add_notification(entry);
+        assert_eq!(notifications.unread_count(), 1);
+
+        notifications.mark_read();
+        assert_eq!(notifications.unread_count(), 0);
+        assert!(notifications
+            .selected_item()
+            .and_then(|item| item.read_at)
+            .is_some());
+
+        notifications.mark_unread();
+        assert_eq!(notifications.unread_count(), 1);
+        assert!(notifications
+            .selected_item()
+            .and_then(|item| item.read_at)
+            .is_none());
     }
 
     fn sample_sandbox(name: &str) -> SandboxSummary {

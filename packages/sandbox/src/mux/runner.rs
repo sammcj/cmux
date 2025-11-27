@@ -15,7 +15,6 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
 
-use crate::models::NotificationLevel;
 use crate::mux::commands::MuxCommand;
 use crate::mux::events::MuxEvent;
 use crate::mux::layout::{ClosedTabInfo, PaneContent, PaneExitOutcome, SandboxId};
@@ -170,7 +169,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                             try_consume_pending_connection(&mut app, &terminal_manager);
                         }
                     }
-                    MuxEvent::Notification { message, .. } if message.contains("Refreshing sandboxes") => {
+                    MuxEvent::StatusMessage { message } if message.contains("Refreshing sandboxes") => {
                         // Request sandbox list via WebSocket - server responds with SandboxList
                         let manager = terminal_manager.clone();
                         let event_tx = app.event_tx.clone();
@@ -182,6 +181,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 )));
                             }
                         });
+                        app.set_status(message.clone());
                     }
                     MuxEvent::TerminalExited { pane_id, sandbox_id } => {
                         handle_terminal_exit_for_pane(
@@ -428,6 +428,39 @@ fn handle_input(
                 }
             }
 
+            // Handle notifications overlay
+            if app.notifications.is_open && app.focus == FocusArea::Notifications {
+                match key.code {
+                    KeyCode::Esc => {
+                        app.close_notifications();
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        app.notifications.select_previous();
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        app.notifications.select_next();
+                    }
+                    KeyCode::Enter => {
+                        app.notifications.mark_read();
+                        if let Some(entry) = app.notifications.selected_item().cloned() {
+                            app.open_notification_target(&entry);
+                        }
+                        app.close_notifications();
+                    }
+                    KeyCode::Char(' ') => {
+                        app.notifications.toggle_read();
+                    }
+                    KeyCode::Char('r') => {
+                        app.notifications.mark_read();
+                    }
+                    KeyCode::Char('u') => {
+                        app.notifications.mark_unread();
+                    }
+                    _ => {}
+                }
+                return false;
+            }
+
             // Handle command palette mode
             if app.focus == FocusArea::CommandPalette {
                 match key.code {
@@ -580,6 +613,9 @@ fn handle_input(
                 }
                 FocusArea::CommandPalette => {
                     // Already handled above
+                }
+                FocusArea::Notifications => {
+                    // Notifications overlay is handled before focus-specific input.
                 }
             }
         }
@@ -903,11 +939,8 @@ async fn create_sandbox_with_workspace(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "workspace".to_string());
 
-    let _ = event_tx.send(MuxEvent::Notification {
+    let _ = event_tx.send(MuxEvent::StatusMessage {
         message: format!("Creating sandbox: {}", dir_name),
-        level: NotificationLevel::Info,
-        sandbox_id: None,
-        tab_id: tab_id.clone(),
     });
 
     let request_tab_id = tab_id.clone();
@@ -941,11 +974,8 @@ async fn create_sandbox_with_workspace(
     let summary: crate::models::SandboxSummary = response.json().await?;
     let sandbox_id = summary.id.to_string();
 
-    let _ = event_tx.send(MuxEvent::Notification {
+    let _ = event_tx.send(MuxEvent::StatusMessage {
         message: format!("Uploading {}...", dir_name),
-        level: NotificationLevel::Info,
-        sandbox_id: Some(sandbox_id.clone()),
-        tab_id: tab_id.clone(),
     });
 
     if let Err(error) = upload_workspace(&client, &trimmed_base, &sandbox_id, &workspace_path).await
@@ -958,11 +988,8 @@ async fn create_sandbox_with_workspace(
 
     let sync_files = detect_sync_files();
     if !sync_files.is_empty() {
-        let _ = event_tx.send(MuxEvent::Notification {
+        let _ = event_tx.send(MuxEvent::StatusMessage {
             message: format!("Syncing {} file(s)...", sync_files.len()),
-            level: NotificationLevel::Info,
-            sandbox_id: Some(sandbox_id.clone()),
-            tab_id: tab_id.clone(),
         });
 
         if let Err(error) =
@@ -974,11 +1001,8 @@ async fn create_sandbox_with_workspace(
     }
 
     let _ = event_tx.send(MuxEvent::SandboxCreated(summary.clone()));
-    let _ = event_tx.send(MuxEvent::Notification {
+    let _ = event_tx.send(MuxEvent::StatusMessage {
         message: format!("Created sandbox: {}", sandbox_id),
-        level: NotificationLevel::Info,
-        sandbox_id: Some(sandbox_id.clone()),
-        tab_id,
     });
     let _ = event_tx.send(MuxEvent::ConnectToSandbox { sandbox_id });
 

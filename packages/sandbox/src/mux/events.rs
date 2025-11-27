@@ -32,6 +32,8 @@ pub enum MuxEvent {
         sandbox_id: Option<String>,
         tab_id: Option<String>,
     },
+    /// Local status message (does not become a stored notification).
+    StatusMessage { message: String },
     /// Request to connect to a sandbox (used for auto-connect on startup)
     ConnectToSandbox { sandbox_id: String },
     /// Request to connect the active pane to the active sandbox's terminal

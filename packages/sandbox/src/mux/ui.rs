@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -54,6 +55,10 @@ pub fn ui(f: &mut Frame, app: &mut MuxApp) {
     // Render overlays
     if app.command_palette.is_visible() {
         render_command_palette(f, app);
+    }
+
+    if app.notifications.is_open {
+        render_notifications_overlay(f, app);
     }
 
     if app.show_help {
@@ -439,6 +444,7 @@ fn render_status_bar(f: &mut Frame, app: &mut MuxApp, area: Rect) {
         FocusArea::Sidebar => "SIDEBAR",
         FocusArea::MainArea => "NORMAL",
         FocusArea::CommandPalette => "COMMAND",
+        FocusArea::Notifications => "NOTIFS",
     };
     spans.push(Span::styled(
         format!(" {} ", mode),
@@ -497,8 +503,22 @@ fn render_status_bar(f: &mut Frame, app: &mut MuxApp, area: Rect) {
         ));
     }
 
+    // Unread notifications
+    let unread = app.notifications.unread_count();
+    spans.push(Span::raw(" │ "));
+    spans.push(Span::styled(
+        format!("Notifs: {}", unread),
+        if unread > 0 {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        },
+    ));
+
     // Right side: keybinding hints
-    let hints = " Alt+P: Commands │ Ctrl+S: Sidebar │ Ctrl+Q: Quit ";
+    let hints = " Alt+P: Commands │ Alt+Shift+N: Notifications │ Ctrl+S: Sidebar │ Ctrl+Q: Quit ";
     let hints_width = hints.len() as u16;
     let left_width: u16 = spans.iter().map(|s| s.content.len() as u16).sum();
     let padding = area.width.saturating_sub(left_width + hints_width);
@@ -645,6 +665,174 @@ fn render_command_palette(f: &mut Frame, app: &mut MuxApp) {
     f.render_widget(help, help_area);
 }
 
+fn render_notifications_overlay(f: &mut Frame, app: &mut MuxApp) {
+    let area = f.area();
+    let overlay_width = 80u16.min(area.width.saturating_sub(4));
+    let overlay_height = 24u16.min(area.height.saturating_sub(4));
+    let x = (area.width.saturating_sub(overlay_width)) / 2;
+    let y = (area.height.saturating_sub(overlay_height)) / 5;
+
+    let overlay_area = Rect::new(x, y, overlay_width, overlay_height);
+    f.render_widget(Clear, overlay_area);
+
+    let title = format!(
+        " Notifications (unread: {}) ",
+        app.notifications.unread_count()
+    );
+    let block = Block::default()
+        .title(title)
+        .title_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let inner_area = block.inner(overlay_area);
+    f.render_widget(block, overlay_area);
+
+    if app.notifications.items.is_empty() {
+        let empty = Paragraph::new("No notifications yet")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::DarkGray));
+        f.render_widget(empty, inner_area);
+        return;
+    }
+
+    let list_height = inner_area.height.saturating_sub(2);
+    let list_area = Rect::new(inner_area.x, inner_area.y, inner_area.width, list_height);
+
+    let order = app.notifications.combined_order();
+    let mut unread_indices: Vec<usize> = Vec::new();
+    let mut read_indices: Vec<usize> = Vec::new();
+    for idx in order {
+        if app
+            .notifications
+            .items
+            .get(idx)
+            .map(|n| n.read_at.is_none())
+            .unwrap_or(false)
+        {
+            unread_indices.push(idx);
+        } else {
+            read_indices.push(idx);
+        }
+    }
+
+    let total_items = unread_indices.len() + read_indices.len();
+    let desired_selection = if total_items == 0 {
+        None
+    } else {
+        Some(
+            app.notifications
+                .selected_index
+                .min(total_items.saturating_sub(1)),
+        )
+    };
+
+    let mut lines: Vec<Line<'_>> = Vec::new();
+    let mut selected_line: Option<usize> = None;
+    let mut selection_counter = 0usize;
+
+    for (header, group) in [("Unread", unread_indices), ("Read", read_indices)] {
+        if group.is_empty() {
+            continue;
+        }
+        lines.push(Line::styled(
+            format!(" {header} "),
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        ));
+
+        for idx in group {
+            let Some(item) = app.notifications.items.get(idx) else {
+                continue;
+            };
+            let is_selected = desired_selection.is_some_and(|target| selection_counter == target);
+            if is_selected {
+                selected_line = Some(lines.len());
+            }
+            selection_counter += 1;
+
+            let level_style = match item.level {
+                crate::models::NotificationLevel::Info => Style::default().fg(Color::White),
+                crate::models::NotificationLevel::Warning => Style::default().fg(Color::Yellow),
+                crate::models::NotificationLevel::Error => Style::default().fg(Color::Red),
+            };
+
+            let mut spans = Vec::new();
+            let state_prefix = if item.read_at.is_none() { "[ ]" } else { "[r]" };
+            spans.push(Span::styled(state_prefix, level_style));
+            spans.push(Span::raw(" "));
+            let time_label = relative_time_string(item.sent_at);
+            spans.push(Span::styled(
+                time_label,
+                Style::default().fg(Color::DarkGray),
+            ));
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(item.message.clone(), level_style));
+            if let Some(sandbox_id) = &item.sandbox_id {
+                if let Some(label) = sandbox_short_label(app, sandbox_id) {
+                    spans.push(Span::raw("  "));
+                    spans.push(Span::styled(
+                        format!("sandbox {}", label),
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                }
+            }
+            if let Some(tab_id) = &item.tab_id {
+                spans.push(Span::raw("  "));
+                spans.push(Span::styled(
+                    format!("tab: {}", tab_id),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+            if let Some(read_at) = item.read_at {
+                spans.push(Span::raw("  "));
+                spans.push(Span::styled(
+                    format!("read {}", relative_time_string(read_at)),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+
+            let mut line = Line::from(spans);
+            if is_selected {
+                line = line.style(
+                    Style::default()
+                        .bg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                );
+            }
+            lines.push(line);
+        }
+    }
+
+    let visible_lines = list_height as usize;
+    let target_line = selected_line.unwrap_or(0);
+    let scroll_offset = if visible_lines == 0 {
+        0
+    } else {
+        target_line.saturating_sub(visible_lines.saturating_sub(1))
+    };
+
+    let paragraph = Paragraph::new(lines).scroll((scroll_offset as u16, 0));
+    f.render_widget(paragraph, list_area);
+
+    let help_area = Rect::new(
+        inner_area.x,
+        inner_area.y + inner_area.height.saturating_sub(1),
+        inner_area.width,
+        1,
+    );
+    let help = Paragraph::new(Line::styled(
+        "↑↓: navigate │ Enter: open target │ Space/r: mark read │ u: mark unread │ Esc: close",
+        Style::default().fg(Color::DarkGray),
+    ));
+    f.render_widget(help, help_area);
+}
+
 fn highlighted_spans<'a>(
     text: &'a str,
     highlights: &[usize],
@@ -688,6 +876,35 @@ fn highlighted_spans<'a>(
     }
 
     spans
+}
+
+fn relative_time_string(timestamp: DateTime<Utc>) -> String {
+    let now = Utc::now();
+    let delta = now.signed_duration_since(timestamp);
+    if delta.num_seconds() < 0 {
+        return "just now".to_string();
+    }
+    let seconds = delta.num_seconds();
+    if seconds < 90 {
+        return format!("{}s ago", seconds);
+    }
+    let minutes = delta.num_minutes();
+    if minutes < 90 {
+        return format!("{}m ago", minutes);
+    }
+    let hours = delta.num_hours();
+    if hours < 48 {
+        return format!("{}h ago", hours);
+    }
+    timestamp.format("%Y-%m-%d").to_string()
+}
+
+fn sandbox_short_label(app: &MuxApp, sandbox_id: &str) -> Option<String> {
+    app.sidebar
+        .sandboxes
+        .iter()
+        .find(|s| s.id.to_string() == sandbox_id)
+        .map(|s| format!("#{}", s.index))
 }
 
 /// Render help overlay showing all keybindings.
