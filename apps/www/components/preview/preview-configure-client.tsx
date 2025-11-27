@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
   type ReactNode,
-  type ChangeEvent,
 } from "react";
 import {
   Loader2,
@@ -580,8 +579,8 @@ export function PreviewConfigureClient({
   const [hasUserEditedScripts, setHasUserEditedScripts] = useState(false);
   const [isFrameworkMenuOpen, setIsFrameworkMenuOpen] = useState(false);
   const [hasCompletedSetup, setHasCompletedSetup] = useState(false);
-  const [isEnvOpen, setIsEnvOpen] = useState(() => !initialHasEnvValues);
-  const [isBuildOpen, setIsBuildOpen] = useState(true);
+  const [isEnvOpen, setIsEnvOpen] = useState(false);
+  const [isBuildOpen, setIsBuildOpen] = useState(false);
   const [envNone, setEnvNone] = useState(false);
   const [maintenanceNone, setMaintenanceNone] = useState(() => initialMaintenanceNone);
   const [devNone, setDevNone] = useState(() => initialDevNone);
@@ -1157,7 +1156,7 @@ export function PreviewConfigureClient({
               className="inline-flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
             >
               <ArrowLeft className="h-3 w-3" />
-              Back to preview.new
+              Go to preview.new
             </Link>
           </div>
 
@@ -1251,28 +1250,28 @@ export function PreviewConfigureClient({
                   <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">
                     Maintenance Script
                   </label>
-                  <input
-                    type="text"
+                  <textarea
                     value={maintenanceScript ?? ""}
                     onChange={(e) => handleMaintenanceScriptChange(e.target.value)}
-                    placeholder="npm install"
-                    className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700"
+                    placeholder={"npm install, bun install, pip install -r requirements.txt"}
+                    rows={2}
+                    className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none"
                   />
-                  <p className="text-xs text-neutral-400 mt-1">Runs after git pull to install dependencies</p>
+                  <p className="text-xs text-neutral-400 mt-1">Runs after git pull to install dependencies (e.g. npm install, bun install, pip install -r requirements.txt)</p>
                 </div>
                 <div>
                   <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">
                     Dev Script
                   </label>
-                  <input
-                    type="text"
+                  <textarea
                     value={devScript ?? ""}
-                  onChange={(e) => handleDevScriptChange(e.target.value)}
-                  placeholder="npm run dev"
-                  className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700"
-                />
-                <p className="text-xs text-neutral-400 mt-1">Starts the development server</p>
-              </div>
+                    onChange={(e) => handleDevScriptChange(e.target.value)}
+                    placeholder={"npm run dev, bun dev, python manage.py runserver"}
+                    rows={2}
+                    className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none"
+                  />
+                  <p className="text-xs text-neutral-400 mt-1">Starts the development server (e.g. npm run dev, bun dev, python manage.py runserver)</p>
+                </div>
             </div>
           </details>
 
@@ -1484,128 +1483,102 @@ export function PreviewConfigureClient({
   const StepBadge = ({ step, done }: { step: number; done: boolean }) => (
     <span
       className={clsx(
-        "flex h-7 w-7 items-center justify-center rounded-full border text-sm",
+        "flex h-5 w-5 items-center justify-center rounded-full border text-[11px]",
         done
           ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400/70 dark:bg-emerald-900/40 dark:text-emerald-100"
           : "border-neutral-300 text-neutral-600 dark:border-neutral-700 dark:text-neutral-400"
       )}
     >
-      {done ? <Check className="h-4 w-4" /> : step}
+      {done ? <Check className="h-3 w-3" /> : step}
     </span>
   );
 
-  const getPanelClasses = (isOpen: boolean) =>
-    clsx(
-      "group relative rounded-xl border border-neutral-800/80 bg-neutral-950/80 shadow-[0_12px_40px_rgba(0,0,0,0.45)] transition-all duration-200",
-      isOpen ? "ring-1 ring-sky-500/35" : "hover:border-neutral-700 hover:bg-neutral-900/80"
-    );
-
   const fieldInputClass =
-    "w-full min-w-0 rounded-lg border border-neutral-800/80 bg-neutral-900/70 px-3 py-2.5 text-sm font-mono text-neutral-100 placeholder:text-neutral-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/30 disabled:opacity-60 disabled:cursor-not-allowed";
+    "w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-2.5 py-1.5 text-[12px] font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 disabled:opacity-60 disabled:cursor-not-allowed";
 
   const checkboxClass =
-    "h-4 w-4 rounded border-neutral-700 bg-neutral-950/80 text-sky-400 focus:ring-2 focus:ring-sky-500/40";
+    "h-3.5 w-3.5 rounded border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-emerald-500 focus:ring-2 focus:ring-emerald-500/40";
 
   const renderStep1Content = () => (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Workspace Info */}
-      <p className="text-sm text-neutral-400 leading-6">
-        Your workspace root at <code className="px-1 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300">/root/workspace</code> maps directly to your repo root. Setup your VSCode workspace on the right.
+      <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+        Your workspace root at <code className="px-1 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-[10px] text-neutral-700 dark:text-neutral-300">/root/workspace</code> maps directly to your repo root.
       </p>
 
       {/* Maintenance Script */}
-      <details
-        className={getPanelClasses(isMaintenanceSectionOpen)}
-        open={isMaintenanceSectionOpen}
-        onToggle={(e) => setIsMaintenanceSectionOpen(e.currentTarget.open)}
-      >
-        <summary className="flex items-center gap-3 cursor-pointer px-5 py-4 list-none text-neutral-100">
-          <ChevronDown className="h-4 w-4 text-neutral-400 transition-transform group-open:rotate-180" />
+      <details className="group" open={isMaintenanceSectionOpen} onToggle={(e) => setIsMaintenanceSectionOpen(e.currentTarget.open)}>
+        <summary className="flex items-center gap-2 cursor-pointer list-none">
+          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform group-open:rotate-180" />
           <StepBadge step={1} done={maintenanceAck} />
-          <h3 className="text-[15px] font-semibold text-neutral-50 flex-1 tracking-tight">
-            Maintenance script
-          </h3>
+          <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">Maintenance script</span>
         </summary>
-        <div className="border-t border-neutral-800/80 px-6 py-5 bg-neutral-950/60">
-          <p className="text-sm text-neutral-400 mb-3 leading-6">
-            Runs after git pull to install dependencies
+        <div className="mt-3 ml-6 space-y-2">
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+            Runs after git pull to install dependencies.
           </p>
           <textarea
             value={maintenanceScript ?? ""}
-            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => handleMaintenanceScriptChange(e.target.value)}
-            placeholder="npm install"
-            rows={2}
+            onChange={(e) => handleMaintenanceScriptChange(e.target.value)}
+            placeholder={"npm install, bun install, pip install -r requirements.txt"}
             disabled={maintenanceNone}
-            className={clsx(fieldInputClass, "resize-y")}
+            rows={2}
+            className={fieldInputClass + " resize-none"}
           />
-          <div className="flex items-center justify-end pt-2">
-            <label className="flex items-center gap-2 text-sm text-neutral-400">
-              <input
-                type="checkbox"
-                checked={maintenanceNone}
-                onChange={(e) => handleToggleMaintenanceNone(e.target.checked)}
-                className={checkboxClass}
-              />
-              No maintenance script
+          <div className="flex items-center justify-end">
+            <label className="flex items-center gap-1.5 text-[10px] text-neutral-400 cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300">
+              <input type="checkbox" checked={maintenanceNone} onChange={(e) => handleToggleMaintenanceNone(e.target.checked)} className={checkboxClass} />
+              None
             </label>
           </div>
         </div>
       </details>
 
       {/* Dev Script */}
-      <details
-        className={getPanelClasses(isDevSectionOpen)}
-        open={isDevSectionOpen}
-        onToggle={(e) => setIsDevSectionOpen(e.currentTarget.open)}
-      >
-        <summary className="flex items-center gap-3 cursor-pointer px-5 py-4 list-none text-neutral-100">
-          <ChevronDown className="h-4 w-4 text-neutral-400 transition-transform group-open:rotate-180" />
+      <details className="group" open={isDevSectionOpen} onToggle={(e) => setIsDevSectionOpen(e.currentTarget.open)}>
+        <summary className="flex items-center gap-2 cursor-pointer list-none">
+          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform group-open:rotate-180" />
           <StepBadge step={2} done={devAck} />
-          <h3 className="text-[15px] font-semibold text-neutral-50 flex-1 tracking-tight">
-            Dev script
-          </h3>
+          <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">Dev script</span>
         </summary>
-        <div className="border-t border-neutral-800/80 px-6 py-5 bg-neutral-950/60">
-          <p className="text-sm text-neutral-400 mb-3 leading-6">
-            Starts the development server
+        <div className="mt-3 ml-6 space-y-2">
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+            Starts the development server.
           </p>
           <textarea
             value={devScript ?? ""}
-            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => handleDevScriptChange(e.target.value)}
-            placeholder="npm run dev"
-            rows={2}
+            onChange={(e) => handleDevScriptChange(e.target.value)}
+            placeholder={"npm run dev, bun dev, python manage.py runserver"}
             disabled={devNone}
-            className={clsx(fieldInputClass, "resize-y")}
+            rows={2}
+            className={fieldInputClass + " resize-none"}
           />
-          <div className="flex items-center justify-end pt-2">
-            <label className="flex items-center gap-2 text-sm text-neutral-400">
-              <input
-                type="checkbox"
-                checked={devNone}
-                onChange={(e) => handleToggleDevNone(e.target.checked)}
-                className={checkboxClass}
-              />
-              No dev script
+          <div className="flex items-center justify-end">
+            <label className="flex items-center gap-1.5 text-[10px] text-neutral-400 cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300">
+              <input type="checkbox" checked={devNone} onChange={(e) => handleToggleDevNone(e.target.checked)} className={checkboxClass} />
+              None
             </label>
           </div>
         </div>
       </details>
 
       {/* Environment Variables */}
-      <details
-        className={getPanelClasses(isEnvSectionOpen)}
-        open={isEnvSectionOpen}
-        onToggle={(e) => setIsEnvSectionOpen(e.currentTarget.open)}
-      >
-        <summary className="flex items-center gap-3 cursor-pointer px-5 py-4 list-none text-neutral-100">
-          <ChevronDown className="h-4 w-4 text-neutral-400 transition-transform group-open:rotate-180" />
+      <details className="group" open={isEnvSectionOpen} onToggle={(e) => setIsEnvSectionOpen(e.currentTarget.open)}>
+        <summary className="flex items-center gap-2 cursor-pointer list-none">
+          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform group-open:rotate-180" />
           <StepBadge step={3} done={envDone} />
-          <h3 className="text-[15px] font-semibold text-neutral-50 flex-1 tracking-tight">
-            Environment variables
-          </h3>
+          <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">Environment variables</span>
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); setActiveEnvValueIndex(null); setAreEnvValuesHidden((prev) => !prev); }}
+            className="ml-auto text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 p-0.5"
+            aria-label={areEnvValuesHidden ? "Reveal values" : "Hide values"}
+          >
+            {areEnvValuesHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </button>
         </summary>
         <div
-          className="border-t border-neutral-800/80 px-6 py-5 bg-neutral-950/60"
+          className="mt-3 ml-6 space-y-2"
           onPasteCapture={(e) => {
             const text = e.clipboardData?.getData("text") ?? "";
             if (text && (/\n/.test(text) || /(=|:)\s*\S/.test(text))) {
@@ -1614,19 +1587,12 @@ export function PreviewConfigureClient({
               if (items.length > 0) {
                 setEnvNone(false);
                 updateEnvVars((prev) => {
-                  const map = new Map(
-                    prev
-                      .filter((r) => r.name.trim().length > 0 || r.value.trim().length > 0)
-                      .map((r) => [r.name, r] as const)
-                  );
+                  const map = new Map(prev.filter((r) => r.name.trim().length > 0 || r.value.trim().length > 0).map((r) => [r.name, r] as const));
                   for (const it of items) {
                     if (!it.name) continue;
                     const existing = map.get(it.name);
-                    if (existing) {
-                      map.set(it.name, { ...existing, value: it.value });
-                    } else {
-                      map.set(it.name, { name: it.name, value: it.value, isSecret: true });
-                    }
+                    if (existing) map.set(it.name, { ...existing, value: it.value });
+                    else map.set(it.name, { name: it.name, value: it.value, isSecret: true });
                   }
                   const next = Array.from(map.values());
                   next.push({ name: "", value: "", isSecret: true });
@@ -1637,261 +1603,139 @@ export function PreviewConfigureClient({
             }
           }}
         >
-          <div className="flex items-center justify-between pb-4">
-            <p className="text-sm text-neutral-400">
-              Environment variables are encrypted and securely injected at runtime.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveEnvValueIndex(null);
-                setAreEnvValuesHidden((previous) => !previous);
-              }}
-              className="inline-flex items-center rounded-md border border-neutral-800/80 bg-neutral-900/70 p-2 text-neutral-400 transition hover:border-neutral-700 hover:text-neutral-200"
-              aria-label={areEnvValuesHidden ? "Reveal values" : "Hide values"}
-            >
-              {areEnvValuesHidden ? (
-                <EyeOff className="h-4 w-4" />
-              ) : (
-                <Eye className="h-4 w-4" />
-              )}
-            </button>
-          </div>
-
-          <div
-            className="grid gap-3 text-[13px] text-neutral-500 items-center pb-2"
-            style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.4fr) 44px" }}
-          >
+          <div className="grid gap-2 text-[10px] text-neutral-500 items-center" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.5fr) 28px" }}>
             <span>Key</span>
             <span>Value</span>
             <span />
           </div>
-
-          <div className="space-y-2">
-            {envVars.map((row, idx) => {
-              const rowKey = idx;
-              const isEditingValue = activeEnvValueIndex === idx;
-              const shouldMaskValue = areEnvValuesHidden && row.value.trim().length > 0 && !isEditingValue;
-              return (
-                <div
-                  key={rowKey}
-                  className="grid gap-3 items-center"
-                  style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.4fr) 44px" }}
+          {envVars.map((row, idx) => {
+            const isEditingValue = activeEnvValueIndex === idx;
+            const shouldMaskValue = areEnvValuesHidden && row.value.trim().length > 0 && !isEditingValue;
+            return (
+              <div key={idx} className="grid gap-2 items-center" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.5fr) 28px" }}>
+                <input
+                  type="text"
+                  value={row.name}
+                  disabled={envNone}
+                  ref={(el) => { keyInputRefs.current[idx] = el; }}
+                  onChange={(e) => { setEnvNone(false); updateEnvVars((prev) => { const next = [...prev]; if (next[idx]) next[idx] = { ...next[idx], name: e.target.value }; return next; }); }}
+                  placeholder="KEY"
+                  className={fieldInputClass}
+                />
+                <input
+                  type="text"
+                  value={shouldMaskValue ? MASKED_ENV_VALUE : row.value}
+                  disabled={envNone}
+                  onChange={shouldMaskValue ? undefined : (e) => { setEnvNone(false); updateEnvVars((prev) => { const next = [...prev]; if (next[idx]) next[idx] = { ...next[idx], value: e.target.value }; return next; }); }}
+                  onFocus={() => setActiveEnvValueIndex(idx)}
+                  onBlur={() => setActiveEnvValueIndex((current) => (current === idx ? null : current))}
+                  readOnly={shouldMaskValue}
+                  placeholder="value"
+                  className={fieldInputClass}
+                />
+                <button
+                  type="button"
+                  disabled={envNone}
+                  onClick={() => updateEnvVars((prev) => { const next = prev.filter((_, i) => i !== idx); return next.length > 0 ? next : [{ name: "", value: "", isSecret: true }]; })}
+                  className="h-7 w-7 rounded border border-neutral-200 dark:border-neutral-800 text-neutral-400 grid place-items-center hover:border-neutral-300 dark:hover:border-neutral-700 hover:text-neutral-600 dark:hover:text-neutral-200 disabled:opacity-50"
+                  aria-label="Remove"
                 >
-                  <input
-                    type="text"
-                    value={row.name}
-                    disabled={envNone}
-                    ref={(el) => {
-                      keyInputRefs.current[idx] = el;
-                    }}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setEnvNone(false);
-                      updateEnvVars((prev) => {
-                        const next = [...prev];
-                        const current = next[idx];
-                        if (current) {
-                          next[idx] = { ...current, name: v };
-                        }
-                        return next;
-                      });
-                    }}
-                    placeholder="EXAMPLE_NAME"
-                    className={fieldInputClass}
-                  />
-                  <textarea
-                    value={shouldMaskValue ? MASKED_ENV_VALUE : row.value}
-                    disabled={envNone}
-                    onChange={
-                      shouldMaskValue
-                        ? undefined
-                        : (e: ChangeEvent<HTMLTextAreaElement>) => {
-                            const v = e.target.value;
-                            setEnvNone(false);
-                            updateEnvVars((prev) => {
-                              const next = [...prev];
-                              const current = next[idx];
-                              if (current) {
-                                next[idx] = { ...current, value: v };
-                              }
-                              return next;
-                            });
-                        }
-                    }
-                    onFocus={() => setActiveEnvValueIndex(idx)}
-                    onBlur={() => setActiveEnvValueIndex((current) => (current === idx ? null : current))}
-                    readOnly={shouldMaskValue}
-                    placeholder="value"
-                    rows={1}
-                    className={clsx(fieldInputClass, "resize-y")}
-                  />
-                  <div className="self-start flex items-center justify-end w-[44px]">
-                    <button
-                      type="button"
-                      disabled={envNone}
-                      onClick={() => {
-                        updateEnvVars((prev) => {
-                          const next = prev.filter((_, i) => i !== idx);
-                          return next.length > 0 ? next : [{ name: "", value: "", isSecret: true }];
-                        });
-                      }}
-                      className="h-10 w-[44px] rounded-lg border border-neutral-800/80 text-neutral-200 grid place-items-center bg-neutral-900/70 hover:border-neutral-700 hover:bg-neutral-800 disabled:opacity-60 disabled:cursor-not-allowed"
-                      aria-label="Remove variable"
-                    >
-                      <Minus className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center justify-between pt-3">
+                  <Minus className="w-3 h-3" />
+                </button>
+              </div>
+            );
+          })}
+          <div className="flex items-center justify-between pt-1">
             <button
               type="button"
               disabled={envNone}
-              onClick={() =>
-                updateEnvVars((prev) => [...prev, { name: "", value: "", isSecret: true }])
-              }
-              className="inline-flex items-center gap-2 rounded-lg border border-neutral-800/80 bg-neutral-900/70 px-3 py-2 text-sm font-medium text-neutral-50 hover:border-neutral-700 hover:bg-neutral-800 transition disabled:opacity-60 disabled:cursor-not-allowed"
+              onClick={() => updateEnvVars((prev) => [...prev, { name: "", value: "", isSecret: true }])}
+              className="inline-flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 disabled:opacity-50"
             >
-              <Plus className="w-4 h-4" /> Add More
+              <Plus className="w-3 h-3" /> Add
             </button>
-            <label className="flex items-center gap-2 text-sm text-neutral-400">
-              <input
-                type="checkbox"
-                checked={envNone}
-                onChange={(e) => handleToggleEnvNone(e.target.checked)}
-                className={checkboxClass}
-              />
-              No env vars
+            <label className="flex items-center gap-1.5 text-[10px] text-neutral-400 cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300">
+              <input type="checkbox" checked={envNone} onChange={(e) => handleToggleEnvNone(e.target.checked)} className={checkboxClass} />
+              None
             </label>
           </div>
-
-          <p className="text-xs text-neutral-500 pt-3">
-            Tip: Paste a .env file to auto-fill
-          </p>
+          <p className="text-[10px] text-neutral-400">Tip: Paste .env to auto-fill</p>
         </div>
       </details>
 
       {/* Run Scripts */}
-      <details
-        className={getPanelClasses(isRunSectionOpen)}
-        open={isRunSectionOpen}
-        onToggle={(e) => setIsRunSectionOpen(e.currentTarget.open)}
-      >
-        <summary className="flex items-center gap-3 cursor-pointer px-5 py-4 list-none text-neutral-100">
-          <ChevronDown className="h-4 w-4 text-neutral-400 transition-transform group-open:rotate-180" />
+      <details className="group" open={isRunSectionOpen} onToggle={(e) => setIsRunSectionOpen(e.currentTarget.open)}>
+        <summary className="flex items-center gap-2 cursor-pointer list-none">
+          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform group-open:rotate-180" />
           <StepBadge step={4} done={runAck} />
-          <h3 className="text-[15px] font-semibold text-neutral-50 flex-1 tracking-tight">
-            Run scripts in VS Code terminal
-          </h3>
+          <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">Run scripts in VS Code terminal</span>
         </summary>
-        <div className="border-t border-neutral-800/80 px-6 py-5 space-y-4 bg-neutral-950/60">
-          <p className="text-sm text-neutral-400 leading-6">
-            Open the terminal in VS Code (<kbd className="px-1.5 py-0.5 rounded bg-neutral-900 text-neutral-200 text-xs border border-neutral-800">Cmd+J</kbd> or <kbd className="px-1.5 py-0.5 rounded bg-neutral-900 text-neutral-200 text-xs border border-neutral-800">Ctrl+`</kbd>) and paste:
+        <div className="mt-3 ml-6 space-y-3">
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+            Open terminal (<kbd className="px-1 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-[10px] font-sans">Ctrl+Shift+`</kbd> or <kbd className="px-1 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-[10px] font-sans">Cmd+J</kbd>) and paste:
           </p>
           {(maintenanceScriptValue || devScriptValue) ? (
-            <div className="rounded-xl border border-neutral-800/80 bg-neutral-950/70 overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-              <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-800 bg-neutral-900/80">
-                <span className="text-xs uppercase tracking-wide text-neutral-500">
-                  Commands
-                </span>
-                <button
-                  type="button"
-                  onClick={handleCopyCommands}
-                  className={clsx(
-                    "transition p-1 rounded-md border border-transparent",
-                    commandsCopied
-                      ? "text-emerald-400 hover:text-emerald-300"
-                      : "text-neutral-400 hover:text-neutral-200 hover:border-neutral-700"
-                  )}
-                  aria-label={commandsCopied ? "Commands copied" : "Copy commands"}
-                >
-                  {commandsCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-1.5 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-800/50">
+                <span className="text-[10px] uppercase tracking-wide text-neutral-500">Commands</span>
+                <button type="button" onClick={handleCopyCommands} className={clsx("p-0.5", commandsCopied ? "text-emerald-500" : "text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300")}>
+                  {commandsCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                 </button>
               </div>
-              <pre className="px-4 py-3 text-sm font-mono text-neutral-100 overflow-x-auto whitespace-pre-wrap break-all select-all">
+              <pre className="px-3 py-2 text-[11px] font-mono text-neutral-900 dark:text-neutral-100 overflow-x-auto whitespace-pre-wrap break-all select-all">
                 {[maintenanceScript.trim(), devScript.trim()].filter(Boolean).join(" && ")}
               </pre>
             </div>
-          ) : maintenanceNone && devNone ? (
-            <p className="text-sm text-neutral-500 italic">
-              No maintenance or dev scripts configured.
-            </p>
           ) : (
-            <p className="text-sm text-neutral-500 italic">
-              Enter scripts above to see commands to run
-            </p>
+            <p className="text-[11px] text-neutral-400 italic">Enter scripts above to see commands</p>
           )}
-           <div className="flex items-center justify-end pt-2">
-            <label className="flex items-center gap-2 text-sm text-neutral-400">
-              <input
-              type="checkbox"
-              checked={runConfirmed}
-              onChange={(e) => setRunConfirmed(e.target.checked)}
-              className={checkboxClass}
-            />
-              Proceed once dev script is running
-            </label>
-          </div>
+          <label className="flex items-center gap-1.5 text-[11px] text-neutral-500 dark:text-neutral-400 cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-300">
+            <input type="checkbox" checked={runConfirmed} onChange={(e) => setRunConfirmed(e.target.checked)} className={checkboxClass} />
+            Proceed once dev script is running
+          </label>
         </div>
       </details>
     </div>
   );
 
   const renderStep2Content = () => (
-    <div className="space-y-8">
+    <div className="space-y-5">
       {/* Browser Setup Info */}
-      <details
-        className="group rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950"
-        open={isBrowserSetupSectionOpen}
-        onToggle={(event) => setIsBrowserSetupSectionOpen(event.currentTarget.open)}
-      >
-        <summary className="flex items-center gap-3 cursor-pointer px-4 py-3 list-none">
-          <ChevronDown className="h-4 w-4 text-neutral-400 transition-transform group-open:rotate-180" />
+      <details className="group" open={isBrowserSetupSectionOpen} onToggle={(e) => setIsBrowserSetupSectionOpen(e.currentTarget.open)}>
+        <summary className="flex items-center gap-2 cursor-pointer list-none">
+          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform group-open:rotate-180" />
           <StepBadge step={5} done={browserAck} />
-          <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 flex-1">
-            Prepare browser for automation
-          </h3>
+          <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">Configure browser</span>
         </summary>
-        <div className="border-t border-neutral-200 dark:border-neutral-800 px-6 py-4 space-y-4">
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            Use the browser on the right to set up any authentication or configuration needed:
+        <div className="mt-3 ml-6 space-y-3">
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+            Use the browser on the right to set up authentication:
           </p>
-          <ul className="space-y-3 text-sm text-neutral-600 dark:text-neutral-400">
-            <li className="flex items-start gap-3">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-xs text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5">1</span>
+          <ul className="space-y-2 text-[11px] text-neutral-600 dark:text-neutral-400">
+            <li className="flex items-start gap-2">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-[10px] text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5">1</span>
               <span>Sign in to any dashboards or SaaS tools</span>
             </li>
-            <li className="flex items-start gap-3">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-xs text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5">2</span>
+            <li className="flex items-start gap-2">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-[10px] text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5">2</span>
               <span>Dismiss cookie banners, popups, or MFA prompts</span>
             </li>
-            <li className="flex items-start gap-3">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-xs text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5">3</span>
+            <li className="flex items-start gap-2">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-[10px] text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5">3</span>
               <span>Navigate to your dev server URL (e.g., localhost:3000)</span>
             </li>
           </ul>
-          <div className="flex items-center gap-3 pt-2">
-            <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-              <input
-                type="checkbox"
-                checked={browserConfirmed}
-                onChange={(event) => setBrowserConfirmed(event.target.checked)}
-                className="h-4 w-4 rounded border-neutral-300 text-neutral-900 focus:ring-2 focus:ring-neutral-500 dark:border-neutral-700 dark:bg-neutral-900"
-              />
-              Browser is set up properly
-            </label>
-          </div>
+          <label className="flex items-center gap-1.5 text-[11px] text-neutral-500 dark:text-neutral-400 cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-300 pt-1">
+            <input type="checkbox" checked={browserConfirmed} onChange={(e) => setBrowserConfirmed(e.target.checked)} className={checkboxClass} />
+            Browser is set up properly
+          </label>
         </div>
       </details>
 
       {/* Note about terminal */}
-      <div className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 p-4">
-        <p className="text-sm text-amber-800 dark:text-amber-200">
-          <strong>Note:</strong> Any running terminals will be stopped when you save. The dev script you configured will run automatically on each preview.
+      <div className="rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-3 py-2.5">
+        <p className="text-[11px] text-amber-800 dark:text-amber-200">
+          <strong>Note:</strong> Running terminals will be stopped on save. The maintenance and dev scripts run automatically on each preview.
         </p>
       </div>
     </div>
@@ -1939,20 +1783,20 @@ export function PreviewConfigureClient({
     <div className="flex h-screen overflow-hidden bg-neutral-50 dark:bg-neutral-950 font-mono text-[15px] leading-6">
       {/* Left: Configuration Form */}
       <div className="w-[420px] flex flex-col overflow-hidden border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
-        <div className="flex-shrink-0 px-6 pt-4 pb-6">
+        <div className="flex-shrink-0 px-5 pt-4 pb-2">
           <Link
             href="/preview"
-            className="inline-flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 mb-3"
+            className="inline-flex items-center gap-1 text-[11px] text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 mb-3"
           >
             <ArrowLeft className="h-3 w-3" />
-            Back to preview.new
+            Go to preview.new
           </Link>
-          <h1 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+          <h1 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 tracking-tight">
             Configure environment
           </h1>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 pb-6">
+        <div className="flex-1 overflow-y-auto px-5 pb-5">
           {currentStep === 1 ? renderStep1Content() : renderStep2Content()}
         </div>
 
@@ -1971,7 +1815,7 @@ export function PreviewConfigureClient({
                 className="inline-flex items-center gap-2 rounded-md border border-neutral-200 dark:border-neutral-800 px-4 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition"
               >
                 <ArrowLeft className="w-4 h-4" />
-                Previous
+                Back
               </button>
             ) : (
               <div />
