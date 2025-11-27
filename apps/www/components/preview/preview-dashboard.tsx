@@ -346,7 +346,7 @@ export function PreviewDashboard({
           throw new Error(await response.text());
         }
         const payload = (await response.json()) as { repos: RepoSearchResult[] };
-        setRepos(payload.repos);
+        setRepos(trimmed ? payload.repos : payload.repos.slice(0, 5));
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to load repositories";
         setErrorMessage(message);
