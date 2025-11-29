@@ -28,6 +28,20 @@ const Query = z
       .default(1)
       .optional()
       .openapi({ description: "1-based page index (default 1)" }),
+    limit: z.coerce
+      .number()
+      .min(1)
+      .max(100)
+      .default(5)
+      .optional()
+      .openapi({ description: "Items per page (default 5)" }),
+    pages: z.coerce
+      .number()
+      .min(1)
+      .max(10)
+      .default(1)
+      .optional()
+      .openapi({ description: "Max pages to fetch (default 1)" }),
   })
   .openapi("GithubReposQuery");
 
@@ -72,9 +86,16 @@ githubReposRouter.openapi(
     const accessToken = await getAccessTokenFromRequest(c.req.raw);
     if (!accessToken) return c.text("Unauthorized", 401);
 
-    const { team, installationId, search, page = 1 } = c.req.valid("query");
-    const perPage = 50;
-    const maxPages = 10;
+    const {
+      team,
+      installationId,
+      search,
+      page = 1,
+      limit = 5,
+      pages = 1,
+    } = c.req.valid("query");
+    const perPage = limit;
+    const maxPages = pages;
     const maxResults = perPage * maxPages;
 
     // Fetch provider connections for this team using Convex (enforces membership)
