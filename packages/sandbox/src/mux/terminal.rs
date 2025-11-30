@@ -267,6 +267,8 @@ pub struct VirtualTerminal {
     pub default_fg_color: Option<(u8, u8, u8)>,
     /// Default background color (OSC 11) - None means use terminal's native color
     pub default_bg_color: Option<(u8, u8, u8)>,
+    /// Cursor color (OSC 12) - None means use terminal's native cursor color
+    pub cursor_color: Option<(u8, u8, u8)>,
     /// Flag to signal alt screen was entered/exited (for UI to reset scroll state)
     pub alt_screen_toggled: bool,
 }
@@ -334,6 +336,7 @@ impl VirtualTerminal {
             pending_responses: Vec::new(),
             default_fg_color: None, // Use terminal's native color
             default_bg_color: None, // Use terminal's native color
+            cursor_color: None,     // Use terminal's native cursor color
             alt_screen_toggled: false,
         }
     }
@@ -1022,6 +1025,34 @@ impl Perform for VirtualTerminal {
                 "111" => {
                     self.default_bg_color = None;
                 }
+                // OSC 12 - Query/Set cursor color
+                "12" => {
+                    if params.len() > 1 {
+                        if let Ok(color_str) = std::str::from_utf8(params[1]) {
+                            if color_str == "?" {
+                                // Query - respond with current cursor color (default to white if not set)
+                                let (r, g, b) = self.cursor_color.unwrap_or((255, 255, 255));
+                                let response = format!(
+                                    "\x1b]12;rgb:{:04x}/{:04x}/{:04x}\x1b\\",
+                                    (r as u16) * 257,
+                                    (g as u16) * 257,
+                                    (b as u16) * 257
+                                );
+                                self.pending_responses.push(response.into_bytes());
+                            } else if color_str == "default" {
+                                // Special value "default" resets cursor color
+                                self.cursor_color = None;
+                            } else if let Some(color) = parse_osc_color(color_str) {
+                                // Set cursor color
+                                self.cursor_color = Some(color);
+                            }
+                        }
+                    }
+                }
+                // OSC 112 - Reset cursor color to terminal default
+                "112" => {
+                    self.cursor_color = None;
+                }
                 _ => {}
             }
         }
@@ -1555,6 +1586,7 @@ pub struct TerminalRenderView {
     pub cursor: Option<(u16, u16)>,
     pub cursor_visible: bool,
     pub cursor_blink: bool,
+    pub cursor_color: Option<(u8, u8, u8)>,
     pub has_content: bool,
     pub changed_lines: Arc<[usize]>,
     pub is_alt_screen: bool,
@@ -1568,6 +1600,7 @@ struct RenderCache {
     cursor: Option<(u16, u16)>,
     cursor_visible: bool,
     cursor_blink: bool,
+    cursor_color: Option<(u8, u8, u8)>,
     has_content: bool,
     changed_lines: Arc<[usize]>,
     is_alt_screen: bool,
@@ -1586,6 +1619,7 @@ impl RenderCache {
             cursor: self.cursor,
             cursor_visible: self.cursor_visible,
             cursor_blink: self.cursor_blink,
+            cursor_color: self.cursor_color,
             has_content: self.has_content,
             changed_lines: self.changed_lines.clone(),
             is_alt_screen: self.is_alt_screen,
@@ -1842,6 +1876,7 @@ impl TerminalBuffer {
         let cursor = self.cursor_position();
         let cursor_visible = self.cursor_visible();
         let cursor_blink = self.terminal.cursor_blink;
+        let cursor_color = self.terminal.cursor_color;
         let is_alt_screen = self.terminal.alternate_screen.is_some();
         let lines: Arc<[ratatui::text::Line<'static>]> = lines.into();
 
@@ -1871,6 +1906,7 @@ impl TerminalBuffer {
             cursor,
             cursor_visible,
             cursor_blink,
+            cursor_color,
             has_content,
             changed_lines: changed_lines.clone(),
             is_alt_screen,
@@ -1882,6 +1918,7 @@ impl TerminalBuffer {
             cursor,
             cursor_visible,
             cursor_blink,
+            cursor_color,
             has_content,
             changed_lines,
             is_alt_screen,
@@ -2852,6 +2889,71 @@ mod tests {
         // Reset background (OSC 111)
         term.process(b"\x1b]111\x1b\\");
         assert_eq!(term.default_bg_color, None);
+    }
+
+    #[test]
+    fn virtual_terminal_osc12_set_cursor_color() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        // Initially cursor color should be None (terminal default)
+        assert_eq!(term.cursor_color, None);
+
+        // Set cursor color to green
+        term.process(b"\x1b]12;#00ff00\x1b\\");
+        assert_eq!(term.cursor_color, Some((0, 255, 0)));
+
+        // Set cursor color to red using X11 format
+        term.process(b"\x1b]12;rgb:ff/00/00\x1b\\");
+        assert_eq!(term.cursor_color, Some((255, 0, 0)));
+
+        // Set cursor color to "default" resets it
+        term.process(b"\x1b]12;default\x1b\\");
+        assert_eq!(term.cursor_color, None);
+    }
+
+    #[test]
+    fn virtual_terminal_osc12_query_cursor_color() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        // Query cursor color when not set (default white)
+        term.process(b"\x1b]12;?\x1b\\");
+        assert_eq!(term.pending_responses.len(), 1);
+        let response = String::from_utf8_lossy(&term.pending_responses[0]);
+        assert!(response.contains("rgb:ffff/ffff/ffff"));
+        term.pending_responses.clear();
+
+        // Set cursor color to blue and query
+        term.process(b"\x1b]12;#0000ff\x1b\\");
+        term.process(b"\x1b]12;?\x1b\\");
+        assert_eq!(term.pending_responses.len(), 1);
+        let response = String::from_utf8_lossy(&term.pending_responses[0]);
+        assert!(response.contains("rgb:0000/0000/ffff"));
+    }
+
+    #[test]
+    fn virtual_terminal_osc112_reset_cursor_color() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        // Set cursor color to magenta
+        term.process(b"\x1b]12;#ff00ff\x1b\\");
+        assert_eq!(term.cursor_color, Some((255, 0, 255)));
+
+        // Reset cursor color (OSC 112)
+        term.process(b"\x1b]112\x1b\\");
+        assert_eq!(term.cursor_color, None);
+    }
+
+    #[test]
+    fn virtual_terminal_osc112_with_bell_terminator() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        // Set cursor color
+        term.process(b"\x1b]12;#aabbcc\x07");
+        assert_eq!(term.cursor_color, Some((0xaa, 0xbb, 0xcc)));
+
+        // Reset cursor color with bell terminator
+        term.process(b"\x1b]112\x07");
+        assert_eq!(term.cursor_color, None);
     }
 
     #[test]

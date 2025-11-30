@@ -6,6 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Tabs},
     Frame,
 };
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::mux::commands::MuxCommand;
 use crate::mux::layout::LayoutNode;
@@ -386,6 +387,10 @@ fn render_pane(
                     // 1. Pane is active
                     // 2. Main area is focused (not sidebar or command palette)
                     if is_active && is_main_focused {
+                        // Update app's cursor state from terminal's state
+                        app.cursor_blink = view.cursor_blink;
+                        app.cursor_color = view.cursor_color;
+
                         if let Some((cursor_row, cursor_col)) = view.cursor {
                             // Ensure cursor is within visible area
                             let cursor_x = inner_area.x + cursor_col;
@@ -393,7 +398,44 @@ fn render_pane(
                             if cursor_x < inner_area.x + inner_area.width
                                 && cursor_y < inner_area.y + inner_area.height
                             {
-                                f.set_cursor_position((cursor_x, cursor_y));
+                                // If cursor_color is set, render a colored cursor block
+                                // and DON'T use the native cursor (to avoid blinking conflict)
+                                if let Some((r, g, b)) = view.cursor_color {
+                                    // Determine if cursor should be visible in current blink phase
+                                    // Blink cycle: 500ms visible, 500ms hidden
+                                    let cursor_visible_in_blink = if view.cursor_blink {
+                                        let millis = SystemTime::now()
+                                            .duration_since(UNIX_EPOCH)
+                                            .map(|d| d.as_millis())
+                                            .unwrap_or(0);
+                                        (millis % 1000) < 500
+                                    } else {
+                                        // Steady cursor - always visible
+                                        true
+                                    };
+
+                                    if cursor_visible_in_blink {
+                                        let buf = f.buffer_mut();
+                                        if let Some(cell) = buf.cell_mut((cursor_x, cursor_y)) {
+                                            // Set cursor background color
+                                            let cursor_bg = Color::Rgb(r, g, b);
+                                            // Use contrasting foreground for visibility
+                                            let cursor_fg =
+                                                if (r as u16 + g as u16 + b as u16) > 384 {
+                                                    Color::Black
+                                                } else {
+                                                    Color::White
+                                                };
+                                            cell.set_style(
+                                                Style::default().bg(cursor_bg).fg(cursor_fg),
+                                            );
+                                        }
+                                    }
+                                    // Don't set native cursor - we rendered our own colored block
+                                } else {
+                                    // Use native terminal cursor when no custom color is set
+                                    f.set_cursor_position((cursor_x, cursor_y));
+                                }
                             }
                         }
                     }

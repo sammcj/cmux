@@ -40,9 +40,10 @@ See `src/mux/terminal.rs` for the current implementation. Key supported sequence
   - Set: `OSC 10 ; <color> ST`
   - OSC 110/111 = reset to terminal defaults
 
-- [ ] **OSC 112** - Reset Cursor Color
+- [x] **OSC 112** - Reset Cursor Color
   - Simple: reset cursor color to default
   - `OSC 112 ST`
+  - Also implemented OSC 12 (set/query cursor color)
 
 - [ ] **CSI ? 1004 h/l** - Focus Reporting
   - `CSI ? 1004 h` = enable focus events

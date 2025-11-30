@@ -200,6 +200,9 @@ pub struct MuxApp<'a> {
 
     /// Cursor blink state for the active terminal pane (set during render)
     pub cursor_blink: bool,
+    /// Cursor color for the active terminal pane (set during render)
+    /// When Some, we render our own colored cursor instead of using native cursor
+    pub cursor_color: Option<(u8, u8, u8)>,
 }
 
 impl<'a> MuxApp<'a> {
@@ -229,6 +232,7 @@ impl<'a> MuxApp<'a> {
             needs_initial_sandbox: false,
             last_terminal_views: std::collections::HashMap::new(),
             cursor_blink: true,
+            cursor_color: None,
         }
     }
 

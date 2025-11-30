@@ -136,7 +136,8 @@ async fn run_app<B: ratatui::backend::Backend + std::io::Write>(
                 };
                 let _ = execute!(terminal.backend_mut(), cursor_style);
                 sync_terminal_sizes(&app, &terminal_manager);
-                redraw_needed = false;
+                // Keep redrawing if we have a blinking colored cursor (we manage the blink ourselves)
+                redraw_needed = app.cursor_blink && app.cursor_color.is_some();
             }
             Some(event) = event_rx.recv() => {
                 match &event {
