@@ -267,6 +267,8 @@ pub struct VirtualTerminal {
     pub default_fg_color: Option<(u8, u8, u8)>,
     /// Default background color (OSC 11) - None means use terminal's native color
     pub default_bg_color: Option<(u8, u8, u8)>,
+    /// Flag to signal alt screen was entered/exited (for UI to reset scroll state)
+    pub alt_screen_toggled: bool,
 }
 
 /// Saved cursor state (DECSC/DECRC)
@@ -289,6 +291,19 @@ struct AlternateScreen {
     cursor_row: usize,
     cursor_col: usize,
     current_styles: CharacterStyles,
+    // Terminal modes that affect cursor positioning (per xterm behavior)
+    origin_mode: bool,
+    auto_wrap: bool,
+    pending_wrap: bool,
+    // Cursor visibility modes (per-screen state)
+    cursor_visible: bool,
+    cursor_blink: bool,
+    // Charset state
+    charset_index: usize,
+    g0_charset_line_drawing: bool,
+    g1_charset_line_drawing: bool,
+    // Each screen has its own saved cursor (DECSC/DECRC)
+    saved_cursor: Option<SavedCursor>,
 }
 
 impl VirtualTerminal {
@@ -321,6 +336,7 @@ impl VirtualTerminal {
             pending_responses: Vec::new(),
             default_fg_color: None, // Use terminal's native color
             default_bg_color: None, // Use terminal's native color
+            alt_screen_toggled: false,
         }
     }
 
@@ -1252,16 +1268,35 @@ impl Perform for VirtualTerminal {
                             }
                             1049 => {
                                 // Alternate screen buffer (save cursor + switch)
+                                // Per xterm, mode 1049 combines 1047 (alt screen) + 1048 (save/restore cursor)
                                 if enable {
-                                    self.alternate_screen = Some(Box::new(AlternateScreen {
-                                        grid: self.internal_grid.clone(),
-                                        cursor_row: self.internal_grid.cursor_row,
-                                        cursor_col: self.internal_grid.cursor_col,
-                                        current_styles: self.internal_grid.current_styles,
-                                    }));
-                                    let rows = self.internal_grid.rows;
-                                    let cols = self.internal_grid.cols;
-                                    self.internal_grid = Grid::new(rows, cols);
+                                    // Only enter if not already in alternate screen
+                                    // (prevents losing main screen if app sends 1049h twice)
+                                    if self.alternate_screen.is_none() {
+                                        self.alternate_screen = Some(Box::new(AlternateScreen {
+                                            grid: self.internal_grid.clone(),
+                                            cursor_row: self.internal_grid.cursor_row,
+                                            cursor_col: self.internal_grid.cursor_col,
+                                            current_styles: self.internal_grid.current_styles,
+                                            // Save terminal modes that affect cursor positioning
+                                            origin_mode: self.origin_mode,
+                                            auto_wrap: self.auto_wrap,
+                                            pending_wrap: self.pending_wrap,
+                                            // Save cursor visibility (per-screen state)
+                                            cursor_visible: self.cursor_visible,
+                                            cursor_blink: self.cursor_blink,
+                                            // Save charset state
+                                            charset_index: self.charset_index,
+                                            g0_charset_line_drawing: self.g0_charset_line_drawing,
+                                            g1_charset_line_drawing: self.g1_charset_line_drawing,
+                                            // Save the screen's saved_cursor (each screen has its own)
+                                            saved_cursor: self.saved_cursor.take(),
+                                        }));
+                                        let rows = self.internal_grid.rows;
+                                        let cols = self.internal_grid.cols;
+                                        self.internal_grid = Grid::new(rows, cols);
+                                        self.alt_screen_toggled = true;
+                                    }
                                 } else if let Some(saved) = self.alternate_screen.take() {
                                     // Resize saved grid to current dimensions if needed
                                     let mut restored = saved.grid;
@@ -1275,25 +1310,61 @@ impl Perform for VirtualTerminal {
                                         .cursor_col
                                         .min(self.internal_grid.cols.saturating_sub(1));
                                     self.internal_grid.set_current_styles(saved.current_styles);
+                                    // Restore terminal modes
+                                    self.origin_mode = saved.origin_mode;
+                                    self.auto_wrap = saved.auto_wrap;
+                                    self.pending_wrap = saved.pending_wrap;
+                                    // Restore cursor visibility
+                                    self.cursor_visible = saved.cursor_visible;
+                                    self.cursor_blink = saved.cursor_blink;
+                                    // Restore charset state
+                                    self.charset_index = saved.charset_index;
+                                    self.g0_charset_line_drawing = saved.g0_charset_line_drawing;
+                                    self.g1_charset_line_drawing = saved.g1_charset_line_drawing;
+                                    // Restore the screen's saved_cursor
+                                    self.saved_cursor = saved.saved_cursor;
+                                    self.alt_screen_toggled = true;
                                 }
                             }
                             47 | 1047 => {
                                 // Alternate screen buffer (without save cursor)
+                                // Per xterm, mode 47/1047 switches screen but doesn't save/restore cursor
                                 if enable {
-                                    self.alternate_screen = Some(Box::new(AlternateScreen {
-                                        grid: self.internal_grid.clone(),
-                                        cursor_row: self.internal_grid.cursor_row,
-                                        cursor_col: self.internal_grid.cursor_col,
-                                        current_styles: self.internal_grid.current_styles,
-                                    }));
-                                    let rows = self.internal_grid.rows;
-                                    let cols = self.internal_grid.cols;
-                                    self.internal_grid = Grid::new(rows, cols);
+                                    // Only enter if not already in alternate screen
+                                    if self.alternate_screen.is_none() {
+                                        self.alternate_screen = Some(Box::new(AlternateScreen {
+                                            grid: self.internal_grid.clone(),
+                                            cursor_row: self.internal_grid.cursor_row,
+                                            cursor_col: self.internal_grid.cursor_col,
+                                            current_styles: self.internal_grid.current_styles,
+                                            // Save terminal modes (struct fields required)
+                                            origin_mode: self.origin_mode,
+                                            auto_wrap: self.auto_wrap,
+                                            pending_wrap: self.pending_wrap,
+                                            cursor_visible: self.cursor_visible,
+                                            cursor_blink: self.cursor_blink,
+                                            charset_index: self.charset_index,
+                                            g0_charset_line_drawing: self.g0_charset_line_drawing,
+                                            g1_charset_line_drawing: self.g1_charset_line_drawing,
+                                            saved_cursor: self.saved_cursor.take(),
+                                        }));
+                                        let rows = self.internal_grid.rows;
+                                        let cols = self.internal_grid.cols;
+                                        self.internal_grid = Grid::new(rows, cols);
+                                        self.alt_screen_toggled = true;
+                                    }
                                 } else if let Some(saved) = self.alternate_screen.take() {
                                     let mut restored = saved.grid;
                                     restored
                                         .resize(self.internal_grid.rows, self.internal_grid.cols);
                                     self.internal_grid = restored;
+                                    // Note: modes 47/1047 don't restore cursor position or terminal modes
+                                    // Only the grid content is restored
+                                    // But we do restore cursor visibility and saved_cursor
+                                    self.cursor_visible = saved.cursor_visible;
+                                    self.cursor_blink = saved.cursor_blink;
+                                    self.saved_cursor = saved.saved_cursor;
+                                    self.alt_screen_toggled = true;
                                 }
                             }
                             2004 => {
@@ -1476,6 +1547,7 @@ pub struct TerminalRenderView {
     pub cursor_blink: bool,
     pub has_content: bool,
     pub changed_lines: Arc<[usize]>,
+    pub is_alt_screen: bool,
 }
 
 struct RenderCache {
@@ -1488,6 +1560,7 @@ struct RenderCache {
     cursor_blink: bool,
     has_content: bool,
     changed_lines: Arc<[usize]>,
+    is_alt_screen: bool,
 }
 
 impl RenderCache {
@@ -1505,6 +1578,7 @@ impl RenderCache {
             cursor_blink: self.cursor_blink,
             has_content: self.has_content,
             changed_lines: self.changed_lines.clone(),
+            is_alt_screen: self.is_alt_screen,
         }
     }
 }
@@ -1516,6 +1590,8 @@ pub struct TerminalBuffer {
     render_cache: Option<RenderCache>,
     generation: u64,
     scroll_offset: usize,
+    /// Flag indicating the buffer needs a full clear (e.g., after alt screen switch)
+    pub needs_full_clear: bool,
 }
 
 impl std::fmt::Debug for TerminalBuffer {
@@ -1541,6 +1617,7 @@ impl TerminalBuffer {
             render_cache: None,
             generation: 0,
             scroll_offset: 0,
+            needs_full_clear: false,
         }
     }
 
@@ -1551,6 +1628,7 @@ impl TerminalBuffer {
             render_cache: None,
             generation: 0,
             scroll_offset: 0,
+            needs_full_clear: false,
         }
     }
 
@@ -1562,6 +1640,13 @@ impl TerminalBuffer {
     /// Process raw terminal data
     pub fn process(&mut self, data: &[u8]) {
         self.parser.advance(&mut self.terminal, data);
+        // Reset scroll position when alternate screen is entered/exited
+        if self.terminal.alt_screen_toggled {
+            self.terminal.alt_screen_toggled = false;
+            self.scroll_offset = 0;
+            // Signal UI to do a full clear of the render area
+            self.needs_full_clear = true;
+        }
         self.mark_dirty();
     }
 
@@ -1588,6 +1673,11 @@ impl TerminalBuffer {
     pub fn scroll_to_bottom(&mut self) {
         self.scroll_offset = 0;
         self.mark_dirty();
+    }
+
+    /// Get current scroll offset (0 = bottom)
+    pub fn scroll_offset(&self) -> usize {
+        self.scroll_offset
     }
 
     /// Clear the terminal
@@ -1748,6 +1838,7 @@ impl TerminalBuffer {
         let cursor = self.cursor_position();
         let cursor_visible = self.cursor_visible();
         let cursor_blink = self.terminal.cursor_blink;
+        let is_alt_screen = self.terminal.alternate_screen.is_some();
         let lines: Arc<[ratatui::text::Line<'static>]> = lines.into();
 
         // Compute damage vs previous cache (line-level)
@@ -1778,6 +1869,7 @@ impl TerminalBuffer {
             cursor_blink,
             has_content,
             changed_lines: changed_lines.clone(),
+            is_alt_screen,
         };
         self.render_cache = Some(cache);
 
@@ -1788,6 +1880,7 @@ impl TerminalBuffer {
             cursor_blink,
             has_content,
             changed_lines,
+            is_alt_screen,
         }
     }
 
@@ -2781,5 +2874,322 @@ mod tests {
         // Invalid
         assert_eq!(parse_osc_color("invalid"), None);
         assert_eq!(parse_osc_color("#gg0000"), None);
+    }
+
+    #[test]
+    fn alternate_screen_preserves_cursor_position() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        // Write some content and move cursor
+        term.process(b"Hello");
+        term.process(b"\x1b[10;20H"); // Move to row 10, col 20 (1-indexed)
+        assert_eq!(term.cursor_row(), 9); // 0-indexed
+        assert_eq!(term.cursor_col(), 19);
+
+        // Enter alternate screen (CSI ? 1049 h)
+        term.process(b"\x1b[?1049h");
+
+        // Cursor should be at origin in alternate screen
+        assert_eq!(term.cursor_row(), 0);
+        assert_eq!(term.cursor_col(), 0);
+
+        // Move cursor in alternate screen
+        term.process(b"\x1b[5;10H");
+        assert_eq!(term.cursor_row(), 4);
+        assert_eq!(term.cursor_col(), 9);
+
+        // Exit alternate screen (CSI ? 1049 l)
+        term.process(b"\x1b[?1049l");
+
+        // Cursor should be restored to original position
+        assert_eq!(term.cursor_row(), 9);
+        assert_eq!(term.cursor_col(), 19);
+    }
+
+    #[test]
+    fn alternate_screen_preserves_origin_mode() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        // Verify origin mode is off by default
+        assert!(!term.origin_mode);
+
+        // Enter alternate screen
+        term.process(b"\x1b[?1049h");
+
+        // Enable origin mode in alternate screen (CSI ? 6 h)
+        term.process(b"\x1b[?6h");
+        assert!(term.origin_mode);
+
+        // Exit alternate screen
+        term.process(b"\x1b[?1049l");
+
+        // Origin mode should be restored (off)
+        assert!(!term.origin_mode);
+    }
+
+    #[test]
+    fn alternate_screen_preserves_auto_wrap() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        // Verify auto wrap is on by default
+        assert!(term.auto_wrap);
+
+        // Disable auto wrap before entering alternate screen
+        term.process(b"\x1b[?7l");
+        assert!(!term.auto_wrap);
+
+        // Enter alternate screen
+        term.process(b"\x1b[?1049h");
+
+        // Re-enable auto wrap in alternate screen
+        term.process(b"\x1b[?7h");
+        assert!(term.auto_wrap);
+
+        // Exit alternate screen
+        term.process(b"\x1b[?1049l");
+
+        // Auto wrap should be restored (off)
+        assert!(!term.auto_wrap);
+    }
+
+    #[test]
+    fn alternate_screen_preserves_charset() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        // Verify charset defaults
+        assert_eq!(term.charset_index, 0);
+        assert!(!term.g0_charset_line_drawing);
+
+        // Enable line drawing for G0 and switch to G1
+        term.process(b"\x1b(0"); // G0 = line drawing
+        term.process(b"\x0e"); // Shift Out (switch to G1)
+        assert!(term.g0_charset_line_drawing);
+        assert_eq!(term.charset_index, 1);
+
+        // Enter alternate screen
+        term.process(b"\x1b[?1049h");
+
+        // Change charset in alternate screen
+        term.process(b"\x1b(B"); // G0 = ASCII
+        term.process(b"\x0f"); // Shift In (switch to G0)
+        assert!(!term.g0_charset_line_drawing);
+        assert_eq!(term.charset_index, 0);
+
+        // Exit alternate screen
+        term.process(b"\x1b[?1049l");
+
+        // Charset should be restored
+        assert!(term.g0_charset_line_drawing);
+        assert_eq!(term.charset_index, 1);
+    }
+
+    #[test]
+    fn alternate_screen_preserves_saved_cursor() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        // Save cursor at specific position (DECSC = ESC 7)
+        term.process(b"\x1b[15;30H"); // Move to row 15, col 30
+        term.process(b"\x1b7"); // Save cursor
+        assert!(term.saved_cursor.is_some());
+
+        // Enter alternate screen
+        term.process(b"\x1b[?1049h");
+
+        // Main screen's saved cursor should be preserved (moved to alternate screen state)
+        // and current saved_cursor should be None for the new alternate screen
+        assert!(term.saved_cursor.is_none());
+
+        // Save a different cursor position in alternate screen
+        term.process(b"\x1b[3;5H");
+        term.process(b"\x1b7");
+        assert!(term.saved_cursor.is_some());
+
+        // Exit alternate screen
+        term.process(b"\x1b[?1049l");
+
+        // Main screen's saved cursor should be restored
+        assert!(term.saved_cursor.is_some());
+
+        // Restore cursor (DECRC = ESC 8) - should go to original saved position
+        term.process(b"\x1b8");
+        assert_eq!(term.cursor_row(), 14); // Row 15 (0-indexed)
+        assert_eq!(term.cursor_col(), 29); // Col 30 (0-indexed)
+    }
+
+    #[test]
+    fn alternate_screen_mode_47_doesnt_restore_cursor() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        // Move cursor to specific position
+        term.process(b"\x1b[10;20H");
+        assert_eq!(term.cursor_row(), 9);
+        assert_eq!(term.cursor_col(), 19);
+
+        // Enter alternate screen with mode 47 (no cursor save/restore)
+        term.process(b"\x1b[?47h");
+
+        // Move cursor in alternate screen
+        term.process(b"\x1b[5;10H");
+        assert_eq!(term.cursor_row(), 4);
+        assert_eq!(term.cursor_col(), 9);
+
+        // Exit alternate screen with mode 47
+        term.process(b"\x1b[?47l");
+
+        // Cursor position should NOT be restored (stays from restored grid)
+        // Mode 47/1047 only restores grid content, not cursor position
+        // The cursor position will be whatever was in the saved grid
+        assert_eq!(term.cursor_row(), 9);
+        assert_eq!(term.cursor_col(), 19);
+    }
+
+    #[test]
+    fn alternate_screen_content_preserved() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        // Write content to main screen
+        term.process(b"Main screen content");
+        let grid = term.legacy_grid();
+        assert_eq!(grid[0][0].c, 'M');
+        assert_eq!(grid[0][5].c, 's');
+
+        // Enter alternate screen
+        term.process(b"\x1b[?1049h");
+
+        // Alternate screen should be empty
+        let grid = term.legacy_grid();
+        assert_eq!(grid[0][0].c, ' ');
+
+        // Write to alternate screen
+        term.process(b"Alternate content");
+        let grid = term.legacy_grid();
+        assert_eq!(grid[0][0].c, 'A');
+
+        // Exit alternate screen
+        term.process(b"\x1b[?1049l");
+
+        // Main screen content should be restored
+        let grid = term.legacy_grid();
+        assert_eq!(grid[0][0].c, 'M');
+        assert_eq!(grid[0][5].c, 's');
+    }
+
+    // Debug test - run with: cargo test debug_alt_screen_cursor -- --nocapture
+    fn dump_state(term: &VirtualTerminal, label: &str) {
+        println!("\n=== {} ===", label);
+        println!("  cursor: ({}, {})", term.cursor_row(), term.cursor_col());
+        println!("  origin_mode: {}", term.origin_mode);
+        println!("  auto_wrap: {}", term.auto_wrap);
+        println!("  scroll_region: {:?}", term.scroll_region());
+        println!("  pending_wrap: {}", term.pending_wrap);
+        println!("  alternate_screen: {}", term.alternate_screen.is_some());
+        println!("  saved_cursor: {}", term.saved_cursor.is_some());
+
+        // Show viewport content
+        println!("  viewport (first 8 lines):");
+        for (i, row) in term.internal_grid.viewport.iter().take(8).enumerate() {
+            let line: String = row.columns.iter().take(50).map(|c| c.character).collect();
+            let trimmed = line.trim_end();
+            if !trimmed.is_empty() {
+                println!("    [{}]: '{}'", i, trimmed);
+            } else {
+                println!("    [{}]: (empty)", i);
+            }
+        }
+    }
+
+    #[test]
+    fn debug_alt_screen_cursor() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        dump_state(&term, "Initial");
+
+        term.process(b"Line1\n");
+        term.process(b"Line2\n");
+        term.process(b"Line3\n");
+        term.process(b"Before->");
+        dump_state(&term, "After initial content (cursor should be at row 3)");
+
+        // Enter alternate screen
+        term.process(b"\x1b[?1049h");
+        dump_state(&term, "After entering alt screen (cursor should be at 0,0)");
+
+        // Clear and write in alt screen
+        term.process(b"\x1b[H\x1b[2J");
+        term.process(b"ALT CONTENT");
+        term.process(b"\x1b[10;20H"); // Move cursor
+        term.process(b"At 10,20");
+        dump_state(&term, "After writing in alt screen (cursor at 9,26)");
+
+        // Exit alternate screen
+        term.process(b"\x1b[?1049l");
+        dump_state(
+            &term,
+            "After exiting alt screen (cursor should be at row 3, col 8)",
+        );
+
+        // Verify cursor position
+        assert_eq!(term.cursor_row(), 3, "cursor row should be 3");
+        assert_eq!(
+            term.cursor_col(),
+            8,
+            "cursor col should be 8 (after 'Before->')"
+        );
+
+        // Write more content
+        term.process(b"<-After\n");
+        term.process(b"NextLine\n");
+        dump_state(&term, "After writing post-alt content");
+    }
+
+    #[test]
+    fn debug_with_scrollback() {
+        let mut term = VirtualTerminal::new(5, 40); // Small terminal to force scrolling
+
+        dump_state(&term, "Initial 5x40 terminal");
+
+        // Fill screen and cause scrolling
+        for i in 1..=10 {
+            term.process(format!("Line{}\n", i).as_bytes());
+        }
+        term.process(b"BeforeAlt->");
+
+        println!("\n  scrollback_len: {}", term.scrollback_len());
+        dump_state(&term, "After scrolling (10 lines in 5-row term)");
+
+        let saved_row = term.cursor_row();
+        let saved_col = term.cursor_col();
+        println!(
+            "  >>> Saved cursor position: ({}, {})",
+            saved_row, saved_col
+        );
+
+        term.process(b"\x1b[?1049h");
+        term.process(b"\x1b[H\x1b[2JALT");
+        dump_state(&term, "In alt screen");
+
+        term.process(b"\x1b[?1049l");
+        dump_state(&term, "After exiting alt screen");
+        println!(
+            "  >>> Restored cursor position: ({}, {})",
+            term.cursor_row(),
+            term.cursor_col()
+        );
+        println!("  scrollback_len after restore: {}", term.scrollback_len());
+
+        // The cursor should be restored to the same position
+        assert_eq!(
+            term.cursor_row(),
+            saved_row,
+            "cursor row should be restored"
+        );
+        assert_eq!(
+            term.cursor_col(),
+            saved_col,
+            "cursor col should be restored"
+        );
+
+        term.process(b"<-After\n");
+        dump_state(&term, "After post-alt content");
     }
 }

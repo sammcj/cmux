@@ -268,12 +268,22 @@ impl<'a> MuxApp<'a> {
     }
 
     /// Get a render-ready snapshot of the terminal for a pane.
-    pub fn get_terminal_view(&self, pane_id: PaneId, height: usize) -> Option<TerminalRenderView> {
+    /// Returns the view and a boolean indicating if a full clear is needed (e.g. alt screen switch).
+    pub fn get_terminal_view(
+        &self,
+        pane_id: PaneId,
+        height: usize,
+    ) -> Option<(TerminalRenderView, bool)> {
         let manager = self.terminal_manager.as_ref()?;
         // We need to use try_lock for non-async context
         let mut guard = manager.try_lock().ok()?;
         let buffer = guard.get_buffer_mut(pane_id)?;
-        Some(buffer.render_view(height))
+        let view = buffer.render_view(height);
+        let needs_clear = buffer.needs_full_clear;
+        if needs_clear {
+            buffer.needs_full_clear = false;
+        }
+        Some((view, needs_clear))
     }
 
     /// Get the active pane ID from the active workspace.
