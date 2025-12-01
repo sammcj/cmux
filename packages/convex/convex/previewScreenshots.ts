@@ -14,7 +14,7 @@ export const createScreenshotSet = internalMutation({
     status: v.union(
       v.literal("completed"),
       v.literal("failed"),
-      v.literal("skipped"),
+      v.literal("skipped")
     ),
     commitSha: v.string(),
     error: v.optional(v.string()),
@@ -27,7 +27,7 @@ export const createScreenshotSet = internalMutation({
         width: v.optional(v.number()),
         height: v.optional(v.number()),
         description: v.optional(v.string()),
-      }),
+      })
     ),
   },
   handler: async (ctx, args): Promise<Id<"taskRunScreenshotSets">> => {
@@ -46,7 +46,9 @@ export const createScreenshotSet = internalMutation({
     }
 
     if (args.status === "completed" && args.images.length === 0) {
-      throw new Error("At least one screenshot is required for completed status");
+      throw new Error(
+        "At least one screenshot is required for completed status"
+      );
     }
 
     const screenshots = args.images.map((image) => ({
@@ -65,7 +67,7 @@ export const createScreenshotSet = internalMutation({
         status: args.status,
         screenshots,
         error: args.error,
-      },
+      }
     );
 
     const primaryScreenshot = screenshots[0];
@@ -183,7 +185,7 @@ export const uploadAndComment = action({
     status: v.union(
       v.literal("completed"),
       v.literal("failed"),
-      v.literal("skipped"),
+      v.literal("skipped")
     ),
     commitSha: v.string(),
     error: v.optional(v.string()),
@@ -197,8 +199,8 @@ export const uploadAndComment = action({
           width: v.optional(v.number()),
           height: v.optional(v.number()),
           description: v.optional(v.string()),
-        }),
-      ),
+        })
+      )
     ),
   },
   returns: v.object({
@@ -208,7 +210,7 @@ export const uploadAndComment = action({
   }),
   handler: async (
     ctx,
-    args,
+    args
   ): Promise<{
     ok: boolean;
     screenshotSetId?: string;
@@ -238,7 +240,7 @@ export const uploadAndComment = action({
       height?: number;
       description?: string;
     }> = (args.images ?? []).map((img) => ({
-      storageId: img.storageId as unknown as Id<"_storage">,
+      storageId: img.storageId as Id<"_storage">,
       mimeType: img.mimeType,
       fileName: img.fileName,
       commitSha: img.commitSha,
@@ -255,7 +257,7 @@ export const uploadAndComment = action({
         commitSha: args.commitSha,
         error: args.error,
         images: typedImages,
-      },
+      }
     );
 
     let githubCommentUrl: string | undefined;
@@ -271,7 +273,7 @@ export const uploadAndComment = action({
           previewRunId: args.previewRunId,
           repoFullName: previewRun.repoFullName,
           prNumber: previewRun.prNumber,
-        },
+        }
       );
 
       try {
@@ -283,7 +285,7 @@ export const uploadAndComment = action({
             prNumber: previewRun.prNumber,
             previewRunId: args.previewRunId,
             screenshotSetId,
-          },
+          }
         );
 
         if (commentResult && "commentUrl" in commentResult) {
@@ -292,7 +294,7 @@ export const uploadAndComment = action({
       } catch (error) {
         console.error(
           "[previewScreenshots] Failed to post GitHub comment:",
-          error,
+          error
         );
       }
     } else if (!previewRun.repoInstallationId) {
@@ -301,7 +303,7 @@ export const uploadAndComment = action({
         {
           previewRunId: args.previewRunId,
           repoFullName: previewRun.repoFullName,
-        },
+        }
       );
     }
 
