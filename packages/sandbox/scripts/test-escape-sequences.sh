@@ -53,15 +53,15 @@ echo -n "Testing DA1 (CSI c): "
 old_stty=$(stty -g)
 stty raw -echo min 0 time 10
 printf '\033[c'
-response=$(dd bs=1 count=50 2>/dev/null | cat -v)
+response=$(dd bs=1 count=100 2>/dev/null | cat -v)
 stty "$old_stty"
-if [[ "$response" == *"[?62;1;2;4c"* ]]; then
+if [[ "$response" == *"[?64;1;2;6;9;15;16;17;18;21;22;28;29c"* ]]; then
     echo -e "${GREEN}PASS${NC}"
     echo "  Response: $response"
-    echo "  Decoded: VT220 (62) with 132-col (1), printer (2), sixel (4)"
+    echo "  Decoded: VT420 (64) with many capabilities"
 else
     echo -e "${RED}FAIL${NC}"
-    echo "  Expected: ^[[?62;1;2;4c"
+    echo "  Expected: ^[[?64;1;2;6;9;15;16;17;18;21;22;28;29c"
     echo "  Got: $response"
 fi
 
@@ -74,13 +74,13 @@ stty raw -echo min 0 time 10
 printf '\033[>c'
 response=$(dd bs=1 count=50 2>/dev/null | cat -v)
 stty "$old_stty"
-if [[ "$response" == *"[>41;0;0c"* ]]; then
+if [[ "$response" == *"[>41;354;0c"* ]]; then
     echo -e "${GREEN}PASS${NC}"
     echo "  Response: $response"
-    echo "  Decoded: Screen-like terminal (41), version 0"
+    echo "  Decoded: xterm-like terminal (41), version 354"
 else
     echo -e "${RED}FAIL${NC}"
-    echo "  Expected: ^[[>41;0;0c"
+    echo "  Expected: ^[[>41;354;0c"
     echo "  Got: $response"
 fi
 
