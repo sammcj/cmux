@@ -16,9 +16,7 @@ function parsePRUrl(prUrl: string): {
   // Match patterns like:
   // https://github.com/owner/repo/pull/123
   // github.com/owner/repo/pull/123
-  const match = prUrl.match(
-    /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/
-  );
+  const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
 
   if (match && match[1] && match[2] && match[3]) {
     return {
@@ -244,11 +242,7 @@ async function main() {
     console.log(`📄 Found ${changedFiles.length} changed files`);
 
     // Set up git repository
-    const { workspaceDir, cleanup } = await setupGitRepo(
-      owner,
-      repo,
-      prNumber
-    );
+    const { workspaceDir, cleanup } = await setupGitRepo(owner, repo, prNumber);
 
     // Store cleanup function for signal handlers
     cleanupFn = cleanup;
@@ -271,18 +265,18 @@ async function main() {
         headBranch: prInfo.headBranch,
         outputDir,
         auth: { anthropicApiKey: apiKey },
-    });
+      });
 
-    if (result.status === "completed") {
-      console.log("✓ Screenshots captured successfully");
-      const screenshots = result.screenshots ?? [];
-      console.log(`  Screenshots: ${screenshots.length}`);
-      const firstScreenshot = screenshots[0]?.path;
-      if (firstScreenshot) {
-        console.log(`  Location: ${path.dirname(firstScreenshot)}`);
-      }
-      process.exit(0);
-    } else if (result.status === "skipped") {
+      if (result.status === "completed") {
+        console.log("✓ Screenshots captured successfully");
+        const screenshots = result.screenshots ?? [];
+        console.log(`  Screenshots: ${screenshots.length}`);
+        const firstScreenshot = screenshots[0]?.path;
+        if (firstScreenshot) {
+          console.log(`  Location: ${path.dirname(firstScreenshot)}`);
+        }
+        process.exit(0);
+      } else if (result.status === "skipped") {
         console.log(`⊘ Skipped: ${result.reason}`);
         process.exit(0);
       } else {
