@@ -14,7 +14,6 @@ import {
   Shield,
   Star,
   Trash2,
-  User,
 } from "lucide-react";
 import Link from "next/link";
 import clsx from "clsx";
@@ -433,17 +432,52 @@ export function PreviewDashboard({
 
   // Repo selection box - only this part, not configured repos
   const repoSelectionBox = !isAuthenticated ? (
-    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-white/5 bg-white/[0.02]">
-      <User className="h-6 w-6 text-neutral-500 mb-3" />
-      <h3 className="text-base font-medium text-white mb-1.5">Sign in to continue</h3>
-      <p className="text-sm text-neutral-500 mb-5 max-w-xs text-center">
-        Sign in to import your repositories and capture pull requests.
+    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-white/5 bg-white/[0.02] px-4 py-10">
+      <p className="text-sm text-neutral-500 mb-6 max-w-xs text-center">
+        Select a Git provider to import a Git Repository
       </p>
-      <Button asChild className="bg-white text-black hover:bg-neutral-200">
-        <Link href="/handler/sign-in?after_auth_return_to=/preview">
-          Sign In
-        </Link>
-      </Button>
+      <div className="flex flex-col gap-3 w-full max-w-xs">
+        <Button
+          asChild
+          className="w-full h-10 bg-[#24292f] text-white hover:bg-[#32383f] inline-flex items-center justify-center gap-2"
+        >
+          <Link href="/handler/sign-in?after_auth_return_to=/preview">
+            <svg className="h-[18px] w-[18px] shrink-0" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+            </svg>
+            Continue with GitHub
+          </Link>
+        </Button>
+        <Button
+          asChild
+          className="w-full h-10 bg-[#fc6d26] text-white hover:bg-[#e85d1a] inline-flex items-center justify-center gap-2"
+        >
+          <Link href="/handler/sign-in?after_auth_return_to=/preview">
+            <svg className="h-4 w-4 shrink-0" viewBox="90 90 200 175" fill="currentColor">
+              <path d="M282.83,170.73l-.27-.69-26.14-68.22a6.81,6.81,0,0,0-2.69-3.24,7,7,0,0,0-8,.43,7,7,0,0,0-2.32,3.52l-17.65,54H154.29l-17.65-54A6.86,6.86,0,0,0,134.32,99a7,7,0,0,0-8-.43,6.87,6.87,0,0,0-2.69,3.24L97.44,170l-.26.69a48.54,48.54,0,0,0,16.1,56.1l.09.07.24.17,39.82,29.82,19.7,14.91,12,9.06a8.07,8.07,0,0,0,9.76,0l12-9.06,19.7-14.91,40.06-30,.1-.08A48.56,48.56,0,0,0,282.83,170.73Z"/>
+            </svg>
+            Continue with GitLab
+          </Link>
+        </Button>
+        <Button
+          asChild
+          className="w-full h-10 bg-[#0052cc] text-white hover:bg-[#0747a6] inline-flex items-center justify-center gap-2"
+        >
+          <Link href="/handler/sign-in?after_auth_return_to=/preview">
+            <svg className="h-4 w-4 shrink-0" viewBox="-2 -2 65 59">
+              <defs>
+                <linearGradient id="bitbucket-grad" x1="104.953%" x2="46.569%" y1="21.921%" y2="75.234%">
+                  <stop offset="7%" stopColor="currentColor" stopOpacity="0.4" />
+                  <stop offset="100%" stopColor="currentColor" />
+                </linearGradient>
+              </defs>
+              <path d="M59.696 18.86h-18.77l-3.15 18.39h-13L9.426 55.47a2.71 2.71 0 001.75.66h40.74a2 2 0 002-1.68l5.78-35.59z" fill="url(#bitbucket-grad)" fillRule="nonzero" transform="translate(-.026 .82)" />
+              <path d="M2 .82a2 2 0 00-2 2.32l8.49 51.54a2.7 2.7 0 00.91 1.61 2.71 2.71 0 001.75.66l15.76-18.88H24.7l-3.47-18.39h38.44l2.7-16.53a2 2 0 00-2-2.32L2 .82z" fill="currentColor" fillRule="nonzero" />
+            </svg>
+            Continue with Bitbucket
+          </Link>
+        </Button>
+      </div>
     </div>
   ) : !hasGithubAppInstallation ? (
     <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-white/5 bg-white/[0.02]">
@@ -564,7 +598,7 @@ export function PreviewDashboard({
   );
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 py-10">
+    <div className="mx-auto w-full max-w-5xl px-6 py-10 font-sans">
       {/* Header */}
       <div className="mb-10">
         <Link
@@ -610,11 +644,6 @@ export function PreviewDashboard({
             )}
           </Button>
         </div>
-        {!isAuthenticated && (
-          <p className="text-xs text-neutral-500 mt-2">
-            You&apos;ll be asked to sign in to continue.
-          </p>
-        )}
         {errorMessage && (
           <p className="text-xs text-red-400 mt-2">{errorMessage}</p>
         )}
@@ -656,12 +685,12 @@ export function PreviewDashboard({
         </div>
 
         {/* Left: Repo selection box */}
-        <div className="flex flex-col">
+        <div className="flex flex-col -mt-4">
           {repoSelectionBox}
         </div>
 
         {/* Right: Feature cards */}
-        <div className="space-y-3">
+        <div className="space-y-3 -mt-4">
           <div className="flex items-start gap-4 rounded-lg border border-white/5 bg-white/5 p-4">
             <div className="shrink-0 rounded p-2 bg-sky-500/10 text-sky-400">
               <Camera className="h-5 w-5" />
@@ -700,13 +729,13 @@ export function PreviewDashboard({
         </div>
 
         {/* Left: Configured repositories */}
-        <div>
+        <div className="mt-8">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-base font-medium text-white">Configured repositories</h2>
             {configError && <span className="text-sm text-red-400">{configError}</span>}
           </div>
           {configs.length === 0 ? (
-            <p className="text-sm text-neutral-500">
+            <p className="text-sm text-neutral-500 -mt-4">
               No preview configs yet.{" "}
               {isAuthenticated && hasGithubAppInstallation
                 ? "Choose a repository above to create one."
@@ -714,7 +743,7 @@ export function PreviewDashboard({
             </p>
           ) : (
             <TooltipProvider delayDuration={100}>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 -mt-4">
                 {configs.map((config) => (
                   <div
                     key={config.id}
@@ -785,7 +814,7 @@ export function PreviewDashboard({
         </div>
 
         {/* Right: From creators section */}
-        <div>
+        <div className="mt-8">
           <div className="flex items-center gap-2 mb-6">
             <h2 className="text-base font-medium text-white">From the creators of</h2>
             <div className="inline-flex items-center gap-1.5 text-white">
@@ -795,7 +824,7 @@ export function PreviewDashboard({
               </Link>
             </div>
           </div>
-          <p className="text-sm text-neutral-500 mb-2">
+          <p className="text-sm text-neutral-500 mb-2 -mt-4">
             Want UI screenshots for your code reviews? Check out cmux - an open-source Claude Code/Codex manager with visual diffs!
           </p>
           <div className="flex items-center gap-3">
