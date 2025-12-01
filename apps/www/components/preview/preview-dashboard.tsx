@@ -87,7 +87,7 @@ function FeatureCard({
   description,
 }: FeatureCardProps) {
   return (
-    <div className="flex items-start rounded-lg border border-white/5 bg-white/5 p-4">
+    <div className="flex items-start rounded-lg border border-white/5 bg-white/5 backdrop-blur-sm p-4">
       <div>
         <h4 className="text-sm font-medium text-white pb-1">{title}</h4>
         <p className="text-[13px] text-neutral-300/90 leading-tight">
@@ -534,7 +534,7 @@ export function PreviewDashboard({
 
   // Repo selection box - only this part, not configured repos
   const repoSelectionBox = !isAuthenticated ? (
-    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-white/5 bg-white/[0.02] px-4 py-10">
+    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-white/5 bg-white/[0.02] backdrop-blur-sm px-4 py-10">
       <p className="text-sm text-neutral-300/85 pb-6 max-w-xs text-center">
         Select a Git provider to import a Git Repository
       </p>
@@ -609,7 +609,7 @@ export function PreviewDashboard({
       </div>
     </div>
   ) : !hasGithubAppInstallation ? (
-    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-white/5 bg-white/[0.02]">
+    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-white/5 bg-white/[0.02] backdrop-blur-sm">
       <Github className="h-6 w-6 text-neutral-500 pb-3" />
       <h3 className="text-base font-medium text-white pb-1.5">
         Connect to GitHub
