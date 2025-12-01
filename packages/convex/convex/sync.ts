@@ -38,9 +38,8 @@ const TABLE_INDEXES: Record<SyncableTable, string> = {
 async function findExisting(
   db: GenericDatabaseWriter<DataModel>,
   tableName: SyncableTable,
-  record: Record<string, unknown>,
+  record: Record<string, unknown>
 ) {
-
   // Build the query based on the unique key fields
   switch (tableName) {
     case "repos": {
@@ -49,7 +48,7 @@ async function findExisting(
         .withIndex("by_team_fullName", (q) =>
           q
             .eq("teamId", record.teamId as string)
-            .eq("fullName", record.fullName as string),
+            .eq("fullName", record.fullName as string)
         )
         .first();
     }
@@ -72,7 +71,7 @@ async function findExisting(
           q
             .eq("teamId", record.teamId as string)
             .eq("userId", record.userId as string)
-            .eq("permissionId", record.permissionId as string),
+            .eq("permissionId", record.permissionId as string)
         )
         .first();
     }
@@ -82,7 +81,7 @@ async function findExisting(
         .withIndex("by_team_user", (q) =>
           q
             .eq("teamId", record.teamId as string)
-            .eq("userId", record.userId as string),
+            .eq("userId", record.userId as string)
         )
         .first();
     }
@@ -100,7 +99,7 @@ async function findExisting(
         .withIndex("by_team_snapshot", (q) =>
           q
             .eq("teamId", record.teamId as string)
-            .eq("morphSnapshotId", record.morphSnapshotId as string),
+            .eq("morphSnapshotId", record.morphSnapshotId as string)
         )
         .first();
     }
@@ -111,7 +110,7 @@ async function findExisting(
           q
             .eq("teamId", record.teamId as string)
             .eq("repoFullName", record.repoFullName as string)
-            .eq("number", record.number as number),
+            .eq("number", record.number as number)
         )
         .first();
     }
@@ -119,7 +118,7 @@ async function findExisting(
       return await db
         .query("providerConnections")
         .withIndex("by_installationId", (q) =>
-          q.eq("installationId", record.installationId as number),
+          q.eq("installationId", record.installationId as number)
         )
         .first();
     }
@@ -129,7 +128,7 @@ async function findExisting(
         .withIndex("by_team_repo", (q) =>
           q
             .eq("teamId", record.teamId as string)
-            .eq("repoFullName", record.repoFullName as string),
+            .eq("repoFullName", record.repoFullName as string)
         )
         .first();
     }
@@ -210,7 +209,7 @@ export const upsertBatch = internalMutation({
         updated++;
       } else {
         // Insert new record
-        await ctx.db.insert(table, cleanRecord as never);
+        await ctx.db.insert(table, cleanRecord);
         inserted++;
       }
     }

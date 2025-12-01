@@ -35,14 +35,8 @@ async function uploadScreenshotFile(params: {
   convexUrl?: string;
   description?: string;
 }): Promise<NonNullable<ScreenshotUploadPayload["images"]>[number]> {
-  const {
-    screenshotPath,
-    fileName,
-    commitSha,
-    token,
-    convexUrl,
-    description,
-  } = params;
+  const { screenshotPath, fileName, commitSha, token, convexUrl, description } =
+    params;
   const resolvedFileName = fileName ?? path.basename(screenshotPath);
   const contentType = resolveContentType(screenshotPath);
 
@@ -114,7 +108,6 @@ export async function runTaskScreenshots(
       error = "Claude collector returned no screenshots";
       log("ERROR", error, { taskRunId });
     } else {
-      hasUiChanges = result.hasUiChanges;
       const uploadPromises = capturedScreens.map((screenshot) =>
         uploadScreenshotFile({
           screenshotPath: screenshot.path,
