@@ -231,6 +231,15 @@ export const uploadAndComment = action({
       throw new Error("Authentication required");
     }
 
+    // Verify the authenticated user is a member of the team that owns this preview run
+    const { isMember } = await ctx.runQuery(internal.teams.checkTeamMembership, {
+      teamId: previewRun.teamId,
+      userId: identity.subject,
+    });
+    if (!isMember) {
+      throw new Error("Forbidden: Not a member of this team");
+    }
+
     const typedImages: Array<{
       storageId: Id<"_storage">;
       mimeType: string;
