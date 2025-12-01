@@ -290,11 +290,11 @@ export const uploadAndComment = action({
 
         if (!commentResult?.ok) {
           throw new Error(
-            commentResult?.error ?? "Failed to post GitHub comment"
+            commentResult.error ?? "Failed to post GitHub comment"
           );
         }
 
-        if (commentResult?.commentUrl) {
+        if (commentResult.commentUrl) {
           githubCommentUrl = commentResult.commentUrl;
         }
       } catch (error) {
