@@ -288,8 +288,14 @@ export const uploadAndComment = action({
           }
         );
 
-        if (commentResult && "commentUrl" in commentResult) {
-          githubCommentUrl = commentResult.commentUrl as string;
+        if (!commentResult?.ok) {
+          throw new Error(
+            commentResult?.error ?? "Failed to post GitHub comment"
+          );
+        }
+
+        if (commentResult?.commentUrl) {
+          githubCommentUrl = commentResult.commentUrl;
         }
       } catch (error) {
         console.error(
