@@ -314,6 +314,7 @@ export const addPrReaction = internalAction({
  * Options:
  * - includePreviousRuns: Include collapsible history of previous screenshot sets (default: false)
  * - workspaceUrl: Optional URL to include a "Open Workspace" link at the top
+ * - devServerUrl: Optional URL for "Dev Server Preview" link
  * - previewConfigId: Required when includePreviousRuns is true, used to fetch history
  */
 export const postPreviewComment = internalAction({
@@ -326,6 +327,7 @@ export const postPreviewComment = internalAction({
     // Options for different behaviors
     includePreviousRuns: v.optional(v.boolean()),
     workspaceUrl: v.optional(v.string()),
+    devServerUrl: v.optional(v.string()),
     previewConfigId: v.optional(v.id("previewConfigs")),
   },
   handler: async (ctx, args): Promise<{ ok: true; commentId?: number; commentUrl?: string } | { ok: false; error: string }> => {
@@ -337,6 +339,7 @@ export const postPreviewComment = internalAction({
       previewRunId,
       includePreviousRuns = false,
       workspaceUrl,
+      devServerUrl,
       previewConfigId,
     } = args;
 
@@ -375,11 +378,19 @@ export const postPreviewComment = internalAction({
       // Build comment sections
       const commentSections: string[] = ["## Preview Screenshots"];
 
-      // Add workspace link if provided (under the heading)
+      // Build links row (under the heading)
+      const linkParts: string[] = [];
       if (workspaceUrl) {
-        commentSections.push(
-          `[Open Workspace](${workspaceUrl}) (expires in 30m) • [Open in GitHub](https://0github.com/${repoFullName}/pull/${prNumber})`,
-        );
+        linkParts.push(`[Open Workspace](${workspaceUrl}?src=preview.new)`);
+      }
+      if (devServerUrl) {
+        linkParts.push(`[Open Dev Browser](${devServerUrl}?src=preview.new)`);
+      }
+      linkParts.push(`[Open Diff Heatmap](https://0github.com/${repoFullName}/pull/${prNumber}?src=preview.new)`);
+
+      if (linkParts.length > 0) {
+        const expiryNote = workspaceUrl ? " (expires in 30m)" : "";
+        commentSections.push(linkParts.join(" • ") + expiryNote);
       }
 
       // Render the main screenshot section

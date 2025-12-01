@@ -366,6 +366,7 @@ export const completePreviewJob = httpAction(async (ctx, req) => {
       });
       const teamSlug = team?.slug ?? taskRun.teamId;
       const workspaceUrl = `https://cmux.sh/${teamSlug}/task/${taskRun.taskId}`;
+      const devServerUrl = `https://cmux.sh/${teamSlug}/task/${taskRun.taskId}/browser`;
 
       const commentResult = await ctx.runAction(
         internal.github_pr_comments.postPreviewComment,
@@ -376,6 +377,7 @@ export const completePreviewJob = httpAction(async (ctx, req) => {
           screenshotSetId: taskRun.latestScreenshotSetId,
           previewRunId: previewRun._id,
           workspaceUrl,
+          devServerUrl,
         }
       );
 
