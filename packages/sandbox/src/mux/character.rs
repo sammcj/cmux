@@ -11,6 +11,10 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use unicode_width::UnicodeWidthChar;
 
+/// Type alias for a 256-color palette where each entry is an optional RGB tuple.
+/// None means use the default palette color, Some((r, g, b)) is a custom color.
+pub type ColorPalette = [Option<(u8, u8, u8)>; 256];
+
 /// Shared character styles using atomic reference counting.
 /// This avoids duplicating style data across millions of cells.
 /// Uses Arc for thread safety in async contexts.
@@ -524,9 +528,35 @@ impl Row {
         default_fg: Option<Color>,
         default_bg: Option<Color>,
     ) -> ratatui::text::Line<'static> {
+        self.to_ratatui_line_with_palette(default_fg, default_bg, None)
+    }
+
+    /// Convert row contents to a ratatui Line, applying a custom color palette.
+    /// The palette is an array of 256 optional RGB colors. When a Color::Indexed is encountered,
+    /// if the palette entry is Some, the indexed color is converted to RGB.
+    pub fn to_ratatui_line_with_palette(
+        &self,
+        default_fg: Option<Color>,
+        default_bg: Option<Color>,
+        palette: Option<&ColorPalette>,
+    ) -> ratatui::text::Line<'static> {
         let mut spans: Vec<ratatui::text::Span<'static>> = Vec::new();
         let mut current_style = Style::default();
         let mut current_text = String::new();
+
+        // Helper to apply palette to indexed colors
+        let apply_palette = |color: Option<Color>| -> Option<Color> {
+            match (color, palette) {
+                (Some(Color::Indexed(idx)), Some(pal)) => {
+                    if let Some((r, g, b)) = pal[idx as usize] {
+                        Some(Color::Rgb(r, g, b))
+                    } else {
+                        color
+                    }
+                }
+                _ => color,
+            }
+        };
 
         for character in &self.columns {
             if character.wide_spacer {
@@ -534,6 +564,10 @@ impl Row {
             }
 
             let mut char_style = character.styles.to_ratatui_style();
+
+            // Apply palette to indexed colors
+            char_style.fg = apply_palette(char_style.fg);
+            char_style.bg = apply_palette(char_style.bg);
 
             // Apply default colors if no explicit color is set
             if char_style.fg.is_none() {

@@ -888,6 +888,18 @@ impl VirtualTerminal {
         self.internal_grid.current_styles.to_ratatui_style()
     }
 
+    /// Get the RGB color for a palette index, considering custom OSC 4 colors.
+    /// Returns the custom color if set, otherwise the default palette color.
+    pub fn get_palette_color(&self, index: u8) -> (u8, u8, u8) {
+        self.color_palette[index as usize].unwrap_or_else(|| default_palette_color(index))
+    }
+
+    /// Get a reference to the full color palette for rendering.
+    /// Returns an array of Option<(u8, u8, u8)> where Some = custom color, None = use default.
+    pub fn color_palette(&self) -> &crate::mux::character::ColorPalette {
+        &self.color_palette
+    }
+
     /// Get scrollback length
     pub fn scrollback_len(&self) -> usize {
         self.internal_grid.scrollback_len()
@@ -1865,9 +1877,11 @@ impl Perform for VirtualTerminal {
                         if let Ok(color_str) = std::str::from_utf8(param) {
                             if color_str == "?" {
                                 // Query this dynamic color
+                                // Default colors match typical dark terminal theme (like ghostty)
+                                // Background: 53, 55, 49 - dark gray that apps detect for theming
                                 let (r, g, b) = match color_index {
                                     10 => self.default_fg_color.unwrap_or((255, 255, 255)),
-                                    11 => self.default_bg_color.unwrap_or((0, 0, 0)),
+                                    11 => self.default_bg_color.unwrap_or((53, 55, 49)),
                                     12 => self.cursor_color.unwrap_or((255, 255, 255)),
                                     _ => continue,
                                 };
@@ -1898,8 +1912,9 @@ impl Perform for VirtualTerminal {
                         if let Ok(color_str) = std::str::from_utf8(param) {
                             if color_str == "?" {
                                 // Query this dynamic color
+                                // Default background: 53, 55, 49 - matches ghostty dark theme
                                 let (r, g, b) = match color_index {
-                                    11 => self.default_bg_color.unwrap_or((0, 0, 0)),
+                                    11 => self.default_bg_color.unwrap_or((53, 55, 49)),
                                     12 => self.cursor_color.unwrap_or((255, 255, 255)),
                                     _ => continue,
                                 };
@@ -3214,6 +3229,9 @@ impl TerminalBuffer {
             .default_bg_color
             .map(|(r, g, b)| Color::Rgb(r, g, b));
 
+        // Get the color palette for indexed color conversion (OSC 4)
+        let palette = self.terminal.color_palette();
+
         for row in visible_rows {
             if !has_content {
                 for cell in row.iter() {
@@ -3223,7 +3241,7 @@ impl TerminalBuffer {
                     }
                 }
             }
-            lines.push(row.to_ratatui_line_with_defaults(default_fg, default_bg));
+            lines.push(row.to_ratatui_line_with_palette(default_fg, default_bg, Some(palette)));
         }
 
         let cursor = self.cursor_position();
@@ -4184,14 +4202,16 @@ mod tests {
         // Default background is None (use terminal's native color)
         assert_eq!(term.default_bg_color, None);
 
-        // Query background color (OSC 11 ; ? ST) - returns assumed black if not set
+        // Query background color (OSC 11 ; ? ST) - returns dark gray (53, 55, 49) if not set
+        // This matches typical dark terminal themes like ghostty, allowing apps to detect dark mode
         term.process(b"\x1b]11;?\x1b\\");
 
         let responses = term.drain_responses();
         assert_eq!(responses.len(), 1);
+        // Default is (53, 55, 49) -> 53*257=0x3535, 55*257=0x3737, 49*257=0x3131
         assert_eq!(
             String::from_utf8_lossy(&responses[0]),
-            "\x1b]11;rgb:0000/0000/0000\x1b\\"
+            "\x1b]11;rgb:3535/3737/3131\x1b\\"
         );
     }
 
@@ -4330,6 +4350,61 @@ mod tests {
         // Reset cursor color with bell terminator
         term.process(b"\x1b]112\x07");
         assert_eq!(term.cursor_color, None);
+    }
+
+    #[test]
+    fn osc4_set_palette_color() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        // Initially, palette color 235 should be None (use default)
+        assert_eq!(term.color_palette()[235], None);
+
+        // Set palette color 235 to custom color
+        // OSC 4 ; index ; colorspec ST
+        term.process(b"\x1b]4;235;rgb:35/37/31\x1b\\");
+        assert_eq!(term.color_palette()[235], Some((53, 55, 49)));
+
+        // get_palette_color should return the custom color
+        assert_eq!(term.get_palette_color(235), (53, 55, 49));
+    }
+
+    #[test]
+    fn osc4_palette_color_applied_in_render() {
+        use crate::mux::terminal::TerminalBuffer;
+
+        let mut buffer = TerminalBuffer::with_size(24, 80);
+
+        // Set custom palette color 235 to (53, 55, 49)
+        buffer.process(b"\x1b]4;235;rgb:35/37/31\x1b\\");
+
+        // Use palette color 235 as background
+        buffer.process(b"\x1b[48;5;235mHello\x1b[0m");
+
+        // Get render view
+        let view = buffer.render_view(24);
+
+        // The first span should have background color converted from indexed to RGB
+        let first_line = &view.lines[0];
+        assert!(!first_line.spans.is_empty());
+        let bg = first_line.spans[0].style.bg;
+        assert_eq!(
+            bg,
+            Some(Color::Rgb(53, 55, 49)),
+            "Indexed color should be converted to RGB using custom palette"
+        );
+    }
+
+    #[test]
+    fn osc104_reset_palette_color() {
+        let mut term = VirtualTerminal::new(24, 80);
+
+        // Set palette color
+        term.process(b"\x1b]4;235;#112233\x1b\\");
+        assert_eq!(term.color_palette()[235], Some((0x11, 0x22, 0x33)));
+
+        // Reset specific palette color
+        term.process(b"\x1b]104;235\x1b\\");
+        assert_eq!(term.color_palette()[235], None);
     }
 
     #[test]
