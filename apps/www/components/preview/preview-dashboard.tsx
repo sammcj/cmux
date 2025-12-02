@@ -11,7 +11,6 @@ import {
   Pencil,
   Search,
   Server,
-  Shield,
   Star,
   Trash2,
 } from "lucide-react";
@@ -408,6 +407,45 @@ export function PreviewDashboard({
     previousTeamRef.current = selectedTeamSlugOrIdState;
   }, [activeConnections, selectedInstallationId, selectedTeamSlugOrIdState]);
 
+  // Popup ref and listener for GitHub App installation
+  const installPopupRef = useRef<Window | null>(null);
+
+  // Listen for GitHub App installation completion
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === "github_app_installed") {
+        setIsInstallingApp(false);
+        // Reload to get the new installation
+        window.location.reload();
+      }
+    };
+
+    const handleFocus = () => {
+      // Check if popup was closed when we regain focus
+      if (installPopupRef.current && isInstallingApp) {
+        setTimeout(() => {
+          try {
+            if (installPopupRef.current?.closed) {
+              setIsInstallingApp(false);
+              installPopupRef.current = null;
+            }
+          } catch {
+            // Ignore cross-origin errors
+          }
+        }, 500);
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [isInstallingApp]);
+
   const handleInstallGithubApp = async () => {
     if (!selectedTeamSlugOrIdState) {
       setErrorMessage("Select a team first");
@@ -439,7 +477,38 @@ export function PreviewDashboard({
         throw new Error(await response.text());
       }
       const payload = (await response.json()) as { installUrl: string };
-      window.location.href = payload.installUrl;
+
+      // Open popup for GitHub App installation
+      // Prefer 1400x970 but constrain to screen size with some padding
+      const preferredWidth = 1400;
+      const preferredHeight = 970;
+      const screenWidth = window.screen.availWidth;
+      const screenHeight = window.screen.availHeight;
+      const width = Math.min(preferredWidth, screenWidth - 40);
+      const height = Math.min(preferredHeight, screenHeight - 40);
+      const left = Math.floor((screenWidth - width) / 2);
+      const top = Math.floor((screenHeight - height) / 2);
+
+      const features = [
+        `width=${width}`,
+        `height=${height}`,
+        `left=${left}`,
+        `top=${top}`,
+        "resizable=yes",
+        "scrollbars=yes",
+      ].join(",");
+
+      const popup = window.open(payload.installUrl, "github-app-install", features);
+
+      if (!popup) {
+        // Popup was blocked - fall back to redirect
+        console.warn("[PreviewDashboard] Popup blocked, falling back to redirect");
+        window.location.href = payload.installUrl;
+        return;
+      }
+
+      installPopupRef.current = popup;
+      popup.focus();
     } catch (error) {
       const message =
         error instanceof Error
@@ -639,13 +708,9 @@ export function PreviewDashboard({
   ) : !hasGithubAppInstallation ? (
     <div className="relative flex flex-1 flex-col items-center justify-center rounded-lg border border-white/5 bg-white/[0.02] backdrop-blur-sm overflow-hidden">
       <GrainOverlay opacity={0.02} />
-      <Github className="h-6 w-6 text-neutral-500 pb-3" />
-      <h3 className="text-base font-medium text-white pb-1.5">
-        Connect to GitHub
+      <h3 className="text-base font-medium text-white pb-5">
+        No connected repositories
       </h3>
-      <p className="text-sm text-neutral-500 pb-5 max-w-xs text-center">
-        Install the preview.new GitHub App to connect your repositories.
-      </p>
       <Button
         onClick={handleInstallGithubApp}
         disabled={isInstallingApp}
@@ -654,9 +719,15 @@ export function PreviewDashboard({
         {isInstallingApp ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
-          <Shield className="h-4 w-4" />
+          <svg
+            className="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
+            <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
+          </svg>
         )}
-        Install GitHub App
+        Add repositories
       </Button>
       {errorMessage && (
         <p className="pt-4 text-sm text-red-400">{errorMessage}</p>

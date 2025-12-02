@@ -12,6 +12,26 @@ function GitHubInstallCompleteContent() {
 
   useEffect(() => {
     console.log("[GitHubInstallComplete] Checking return URL from session storage");
+
+    // If opened in a popup, signal the opener and close
+    const hasOpener = window.opener && !window.opener.closed;
+    if (hasOpener) {
+      console.log("[GitHubInstallComplete] Signaling opener window");
+      try {
+        window.opener.postMessage(
+          { type: "github_app_installed" },
+          window.location.origin
+        );
+      } catch (error) {
+        console.warn("[GitHubInstallComplete] Failed to signal opener", error);
+      }
+      // Close the popup after a short delay
+      setTimeout(() => {
+        window.close();
+      }, 500);
+      return;
+    }
+
     let storedUrl: string | null = null;
     try {
       storedUrl = sessionStorage.getItem("pr_review_return_url");
