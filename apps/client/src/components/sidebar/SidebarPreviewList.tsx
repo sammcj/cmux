@@ -1,7 +1,7 @@
 import { TaskTree } from "@/components/TaskTree";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
-import { useQuery as useConvexQuery } from "convex/react";
+import { useQuery as useConvexQuery, useQueries } from "convex/react";
 import { useMemo } from "react";
 
 type Props = {
@@ -22,16 +22,49 @@ export function SidebarPreviewList({
 
   const list = useMemo(() => previewRuns ?? [], [previewRuns]);
 
-  // Get unique task IDs from preview runs
+  // Get unique task IDs from preview runs, preserving order (most recent preview run first)
   const taskIds = useMemo(() => {
-    const ids = new Set<Id<"tasks">>();
+    const seen = new Set<Id<"tasks">>();
+    const ids: Id<"tasks">[] = [];
     for (const run of list) {
-      if (run.taskId) {
-        ids.add(run.taskId);
+      if (run.taskId && !seen.has(run.taskId)) {
+        seen.add(run.taskId);
+        ids.push(run.taskId);
       }
     }
-    return Array.from(ids);
+    return ids;
   }, [list]);
+
+  // Batch fetch all tasks in parallel using useQueries
+  const taskQueries = useMemo(() => {
+    return taskIds.reduce(
+      (acc, taskId) => ({
+        ...acc,
+        [taskId]: {
+          query: api.tasks.getById,
+          args: { teamSlugOrId, id: taskId },
+        },
+      }),
+      {} as Record<
+        Id<"tasks">,
+        {
+          query: typeof api.tasks.getById;
+          args: { teamSlugOrId: string; id: Id<"tasks"> };
+        }
+      >
+    );
+  }, [taskIds, teamSlugOrId]);
+
+  const taskResults = useQueries(
+    taskQueries as Parameters<typeof useQueries>[0]
+  );
+
+  // Build ordered list of tasks (preserving preview run order)
+  const tasks = useMemo(() => {
+    return taskIds
+      .map((id) => taskResults?.[id])
+      .filter((task): task is NonNullable<typeof task> => task != null);
+  }, [taskIds, taskResults]);
 
   if (previewRuns === undefined) {
     return (
@@ -53,44 +86,30 @@ export function SidebarPreviewList({
     );
   }
 
-  return (
-    <div className="space-y-px">
-      {taskIds.map((taskId) => (
-        <PreviewTaskTree
-          key={taskId}
-          taskId={taskId}
-          teamSlugOrId={teamSlugOrId}
-        />
-      ))}
-    </div>
-  );
-}
-
-type PreviewTaskTreeProps = {
-  taskId: Id<"tasks">;
-  teamSlugOrId: string;
-};
-
-function PreviewTaskTree({ taskId, teamSlugOrId }: PreviewTaskTreeProps) {
-  const task = useConvexQuery(api.tasks.getById, {
-    teamSlugOrId,
-    id: taskId,
-  });
-
-  if (!task) {
+  if (tasks.length === 0 && taskIds.length > 0) {
+    // Still loading tasks
     return (
-      <div className="px-2 py-1.5">
-        <div className="h-3 rounded bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
+      <div className="space-y-px" aria-label="Loading previews">
+        {Array.from({ length: Math.min(3, taskIds.length) }).map((_, index) => (
+          <div key={index} className="px-2 py-1.5">
+            <div className="h-3 rounded bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
+          </div>
+        ))}
       </div>
     );
   }
 
   return (
-    <TaskTree
-      task={task}
-      defaultExpanded={false}
-      teamSlugOrId={teamSlugOrId}
-    />
+    <div className="space-y-px">
+      {tasks.map((task) => (
+        <TaskTree
+          key={task._id}
+          task={task}
+          defaultExpanded={false}
+          teamSlugOrId={teamSlugOrId}
+        />
+      ))}
+    </div>
   );
 }
 
