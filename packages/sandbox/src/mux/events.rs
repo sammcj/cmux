@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::models::{NotificationLevel, SandboxSummary};
 use crate::mux::colors::TerminalColors;
 use crate::mux::layout::PaneId;
+use crate::mux::onboard::OnboardEvent;
 
 /// Events that can occur in the multiplexer.
 #[derive(Debug, Clone)]
@@ -46,4 +47,6 @@ pub enum MuxEvent {
     TerminalExited { pane_id: PaneId, sandbox_id: String },
     /// Outer terminal theme changed (received SIGUSR1)
     ThemeChanged { colors: TerminalColors },
+    /// Onboarding event (image check, download progress, etc.)
+    Onboard(OnboardEvent),
 }

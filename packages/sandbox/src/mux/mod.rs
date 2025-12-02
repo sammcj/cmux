@@ -4,6 +4,7 @@ pub mod commands;
 pub mod events;
 pub mod grid;
 pub mod layout;
+pub mod onboard;
 pub mod palette;
 pub mod runner;
 pub mod sidebar;

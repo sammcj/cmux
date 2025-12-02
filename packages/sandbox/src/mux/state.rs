@@ -8,6 +8,7 @@ use crate::models::{NotificationLevel, SandboxNetwork, SandboxStatus, SandboxSum
 use crate::mux::commands::MuxCommand;
 use crate::mux::events::MuxEvent;
 use crate::mux::layout::{Direction, NavDirection, Pane, PaneId, SandboxId, WorkspaceManager};
+use crate::mux::onboard::OnboardState;
 use crate::mux::palette::CommandPalette;
 use crate::mux::sidebar::Sidebar;
 use crate::mux::terminal::{SharedTerminalManager, TerminalRenderView};
@@ -20,6 +21,7 @@ pub enum FocusArea {
     MainArea,
     CommandPalette,
     Notifications,
+    Onboard,
 }
 
 #[derive(Debug, Clone)]
@@ -203,6 +205,9 @@ pub struct MuxApp<'a> {
     /// Cursor color for the active terminal pane (set during render)
     /// When Some, we render our own colored cursor instead of using native cursor
     pub cursor_color: Option<(u8, u8, u8)>,
+
+    /// Onboarding state for Docker image setup
+    pub onboard: Option<OnboardState>,
 }
 
 impl<'a> MuxApp<'a> {
@@ -233,6 +238,7 @@ impl<'a> MuxApp<'a> {
             last_terminal_views: std::collections::HashMap::new(),
             cursor_blink: true,
             cursor_color: None,
+            onboard: None,
         }
     }
 
@@ -816,6 +822,9 @@ impl<'a> MuxApp<'a> {
             }
             MuxEvent::ThemeChanged { .. } => {
                 // Theme change is handled in the runner
+            }
+            MuxEvent::Onboard(_) => {
+                // Onboard events are handled in the runner
             }
         }
     }

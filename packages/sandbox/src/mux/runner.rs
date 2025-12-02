@@ -20,6 +20,9 @@ use crate::mux::colors::{query_outer_terminal_colors, spawn_theme_change_listene
 use crate::mux::commands::MuxCommand;
 use crate::mux::events::MuxEvent;
 use crate::mux::layout::{ClosedTabInfo, PaneContent, PaneExitOutcome, SandboxId, TabId};
+use crate::mux::onboard::{
+    pull_image_with_progress, run_onboard_check, OnboardEvent, OnboardPhase, OnboardState,
+};
 use crate::mux::state::{FocusArea, MuxApp};
 use crate::mux::terminal::{
     connect_to_sandbox, create_terminal_manager, invalidate_all_render_caches,
@@ -121,6 +124,27 @@ async fn run_main_loop<B: ratatui::backend::Backend + std::io::Write>(
             let _ = theme_event_tx.send(MuxEvent::ThemeChanged {
                 colors: theme_event.colors,
             });
+        }
+    });
+
+    // Spawn onboard check to ensure Docker image is available
+    let onboard_tx = event_tx.clone();
+    let onboard_event_tx = onboard_tx.clone();
+    tokio::spawn(async move {
+        // Convert OnboardEvent to MuxEvent::Onboard
+        let (inner_tx, mut inner_rx) = mpsc::unbounded_channel();
+        let image_name = crate::DEFAULT_IMAGE.to_string();
+
+        // Start the check in a separate task
+        let check_image = image_name.clone();
+        let check_tx = inner_tx.clone();
+        tokio::spawn(async move {
+            run_onboard_check(check_image, check_tx).await;
+        });
+
+        // Forward events
+        while let Some(event) = inner_rx.recv().await {
+            let _ = onboard_event_tx.send(MuxEvent::Onboard(event));
         }
     });
 
@@ -264,6 +288,10 @@ async fn run_app<B: ratatui::backend::Backend + std::io::Write>(
                         tokio::spawn(async move {
                             let _ = send_signal_to_children(manager_clone, libc::SIGWINCH).await;
                         });
+                    }
+                    MuxEvent::Onboard(onboard_event) => {
+                        let event_tx_for_handler = app.event_tx.clone();
+                        handle_onboard_event(&mut app, onboard_event.clone(), &event_tx_for_handler);
                     }
                     _ => {}
                 }
@@ -544,6 +572,95 @@ fn handle_input(
                 return false;
             }
 
+            // Handle onboard overlay
+            if app.focus == FocusArea::Onboard {
+                if let Some(ref mut onboard) = app.onboard {
+                    match onboard.phase {
+                        OnboardPhase::PromptDownload => {
+                            match key.code {
+                                KeyCode::Tab | KeyCode::Left | KeyCode::Right => {
+                                    onboard.toggle_button();
+                                }
+                                KeyCode::Enter => {
+                                    if onboard.is_download_selected() {
+                                        // Start download
+                                        onboard.phase = OnboardPhase::Downloading;
+                                        onboard.download_status =
+                                            "Starting download...".to_string();
+                                        let image_name = onboard.image_name.clone();
+                                        let mux_event_tx = app.event_tx.clone();
+                                        tokio::spawn(async move {
+                                            spawn_pull_with_mux_events(image_name, mux_event_tx)
+                                                .await;
+                                        });
+                                    } else {
+                                        // Cancel - close overlay
+                                        app.onboard = None;
+                                        app.focus = FocusArea::MainArea;
+                                    }
+                                }
+                                KeyCode::Esc => {
+                                    // Cancel - close overlay
+                                    app.onboard = None;
+                                    app.focus = FocusArea::MainArea;
+                                }
+                                _ => {}
+                            }
+                        }
+                        OnboardPhase::DownloadComplete | OnboardPhase::ImageExists => {
+                            // Any key dismisses the overlay
+                            match key.code {
+                                KeyCode::Enter | KeyCode::Esc | KeyCode::Char(' ') => {
+                                    app.onboard = None;
+                                    app.focus = FocusArea::MainArea;
+                                }
+                                _ => {}
+                            }
+                        }
+                        OnboardPhase::Error => {
+                            match key.code {
+                                KeyCode::Tab | KeyCode::Left | KeyCode::Right => {
+                                    onboard.toggle_button();
+                                }
+                                KeyCode::Enter => {
+                                    if onboard.is_download_selected() {
+                                        // Retry - restart onboard check
+                                        let image_name = onboard.image_name.clone();
+                                        let mux_event_tx = app.event_tx.clone();
+                                        onboard.phase = OnboardPhase::CheckingImage;
+                                        onboard.error = None;
+                                        tokio::spawn(async move {
+                                            spawn_onboard_check_with_mux_events(
+                                                image_name,
+                                                mux_event_tx,
+                                            )
+                                            .await;
+                                        });
+                                    } else {
+                                        // Cancel - close overlay
+                                        app.onboard = None;
+                                        app.focus = FocusArea::MainArea;
+                                    }
+                                }
+                                KeyCode::Esc => {
+                                    app.onboard = None;
+                                    app.focus = FocusArea::MainArea;
+                                }
+                                _ => {}
+                            }
+                        }
+                        OnboardPhase::CheckingImage | OnboardPhase::Downloading => {
+                            // Can't interact during these phases, but Esc can cancel
+                            if key.code == KeyCode::Esc {
+                                app.onboard = None;
+                                app.focus = FocusArea::MainArea;
+                            }
+                        }
+                    }
+                }
+                return false;
+            }
+
             // Handle command palette mode
             if app.focus == FocusArea::CommandPalette {
                 match key.code {
@@ -699,6 +816,9 @@ fn handle_input(
                 }
                 FocusArea::Notifications => {
                     // Notifications overlay is handled before focus-specific input.
+                }
+                FocusArea::Onboard => {
+                    // Onboard overlay is handled before focus-specific input.
                 }
             }
         }
@@ -1267,6 +1387,97 @@ async fn upload_workspace(
     }
 
     Ok(())
+}
+
+/// Spawn an onboard check that forwards OnboardEvents as MuxEvents.
+async fn spawn_onboard_check_with_mux_events(
+    image_name: String,
+    mux_event_tx: mpsc::UnboundedSender<MuxEvent>,
+) {
+    let (inner_tx, mut inner_rx) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        run_onboard_check(image_name, inner_tx).await;
+    });
+    while let Some(event) = inner_rx.recv().await {
+        let _ = mux_event_tx.send(MuxEvent::Onboard(event));
+    }
+}
+
+/// Spawn a docker pull that forwards OnboardEvents as MuxEvents.
+async fn spawn_pull_with_mux_events(
+    image_name: String,
+    mux_event_tx: mpsc::UnboundedSender<MuxEvent>,
+) {
+    let (inner_tx, mut inner_rx) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        pull_image_with_progress(image_name, inner_tx).await;
+    });
+    while let Some(event) = inner_rx.recv().await {
+        let _ = mux_event_tx.send(MuxEvent::Onboard(event));
+    }
+}
+
+/// Handle onboarding events.
+fn handle_onboard_event(
+    app: &mut MuxApp<'_>,
+    event: OnboardEvent,
+    event_tx: &mpsc::UnboundedSender<MuxEvent>,
+) {
+    match event {
+        OnboardEvent::CheckingImage { image_name } => {
+            app.onboard = Some(OnboardState::new(image_name));
+            app.focus = FocusArea::Onboard;
+        }
+        OnboardEvent::ImageExists => {
+            if let Some(ref mut onboard) = app.onboard {
+                onboard.phase = OnboardPhase::ImageExists;
+                onboard.is_visible = false;
+            }
+            // Auto-dismiss the overlay since image exists
+            app.onboard = None;
+            app.focus = FocusArea::MainArea;
+        }
+        OnboardEvent::ImageNotFound { size } => {
+            if let Some(ref mut onboard) = app.onboard {
+                onboard.phase = OnboardPhase::PromptDownload;
+                onboard.image_size = size;
+                onboard.download_status = "Image not found locally".to_string();
+            }
+        }
+        OnboardEvent::DownloadProgress {
+            progress,
+            status,
+            layers_downloaded,
+            layers_total,
+        } => {
+            if let Some(ref mut onboard) = app.onboard {
+                onboard.phase = OnboardPhase::Downloading;
+                onboard.download_progress = progress;
+                onboard.download_status = status;
+                onboard.layers_downloaded = layers_downloaded;
+                onboard.layers_total = layers_total;
+            }
+        }
+        OnboardEvent::DownloadComplete => {
+            if let Some(ref mut onboard) = app.onboard {
+                onboard.phase = OnboardPhase::DownloadComplete;
+                onboard.download_progress = 1.0;
+                onboard.download_status = "Download complete!".to_string();
+            }
+        }
+        OnboardEvent::DownloadCancelled => {
+            app.onboard = None;
+            app.focus = FocusArea::MainArea;
+        }
+        OnboardEvent::Error { message } => {
+            if let Some(ref mut onboard) = app.onboard {
+                onboard.phase = OnboardPhase::Error;
+                onboard.error = Some(message.clone());
+                onboard.selected_button = 0; // Default to Retry
+            }
+            let _ = event_tx.send(MuxEvent::Error(format!("Onboarding error: {}", message)));
+        }
+    }
 }
 
 /// Encode a mouse event as terminal escape sequence.

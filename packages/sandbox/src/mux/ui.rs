@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::mux::commands::MuxCommand;
 use crate::mux::layout::LayoutNode;
+use crate::mux::onboard::OnboardPhase;
 use crate::mux::palette::PaletteItem;
 use crate::mux::sidebar::Sidebar;
 use crate::mux::state::{FocusArea, MuxApp};
@@ -68,6 +69,13 @@ pub fn ui(f: &mut Frame, app: &mut MuxApp) {
 
     if app.renaming_tab {
         render_rename_dialog(f, app);
+    }
+
+    // Onboard overlay (highest priority - blocks other interactions during setup)
+    if let Some(onboard) = &app.onboard {
+        if onboard.is_visible {
+            render_onboard_overlay(f, app);
+        }
     }
 }
 
@@ -487,6 +495,7 @@ fn render_status_bar(f: &mut Frame, app: &mut MuxApp, area: Rect) {
         FocusArea::MainArea => "NORMAL",
         FocusArea::CommandPalette => "COMMAND",
         FocusArea::Notifications => "NOTIFS",
+        FocusArea::Onboard => "SETUP",
     };
     spans.push(Span::styled(
         format!(" {} ", mode),
@@ -1066,4 +1075,221 @@ fn render_rename_dialog(f: &mut Frame, app: &MuxApp) {
         Style::default().fg(Color::DarkGray),
     ));
     f.render_widget(help, help_area);
+}
+
+/// Render the onboarding overlay for Docker image setup.
+fn render_onboard_overlay(f: &mut Frame, app: &MuxApp) {
+    let Some(onboard) = &app.onboard else {
+        return;
+    };
+
+    let area = f.area();
+    let dialog_width = 60u16.min(area.width.saturating_sub(4));
+    let dialog_height = match onboard.phase {
+        OnboardPhase::CheckingImage => 5,
+        OnboardPhase::PromptDownload => 12,
+        OnboardPhase::Downloading => 8,
+        OnboardPhase::DownloadComplete | OnboardPhase::ImageExists => 5,
+        OnboardPhase::Error => 8,
+    };
+
+    let x = (area.width.saturating_sub(dialog_width)) / 2;
+    let y = (area.height.saturating_sub(dialog_height)) / 2;
+
+    let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
+    f.render_widget(Clear, dialog_area);
+
+    let title = match onboard.phase {
+        OnboardPhase::CheckingImage => " Setup ",
+        OnboardPhase::PromptDownload => " Docker Image Required ",
+        OnboardPhase::Downloading => " Downloading ",
+        OnboardPhase::DownloadComplete => " Setup Complete ",
+        OnboardPhase::ImageExists => " Setup Complete ",
+        OnboardPhase::Error => " Error ",
+    };
+
+    let border_color = match onboard.phase {
+        OnboardPhase::Error => Color::Red,
+        OnboardPhase::DownloadComplete | OnboardPhase::ImageExists => Color::Green,
+        _ => Color::Cyan,
+    };
+
+    let block = Block::default()
+        .title(title)
+        .title_style(
+            Style::default()
+                .fg(border_color)
+                .add_modifier(Modifier::BOLD),
+        )
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+
+    let inner_area = block.inner(dialog_area);
+    f.render_widget(block, dialog_area);
+
+    match onboard.phase {
+        OnboardPhase::CheckingImage => {
+            let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            let idx = (SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+                / 100) as usize
+                % spinner.len();
+
+            let text = Paragraph::new(Line::from(vec![
+                Span::styled(spinner[idx], Style::default().fg(Color::Cyan)),
+                Span::raw(" Checking Docker image..."),
+            ]))
+            .alignment(Alignment::Center);
+            f.render_widget(text, inner_area);
+        }
+        OnboardPhase::PromptDownload => {
+            let mut lines: Vec<Line<'_>> = Vec::new();
+
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(
+                "The sandbox Docker image is not installed.",
+                Style::default().fg(Color::Yellow),
+            ));
+            lines.push(Line::raw(""));
+            lines.push(Line::from(vec![
+                Span::raw("Image: "),
+                Span::styled(&onboard.image_name, Style::default().fg(Color::Cyan)),
+            ]));
+            lines.push(Line::from(vec![
+                Span::raw("Size:  "),
+                Span::styled(onboard.format_size(), Style::default().fg(Color::Cyan)),
+            ]));
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(
+                "Would you like to download it now?",
+                Style::default(),
+            ));
+            lines.push(Line::raw(""));
+
+            // Render buttons
+            let download_style = if onboard.is_download_selected() {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Cyan)
+            };
+
+            let cancel_style = if !onboard.is_download_selected() {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+
+            lines.push(Line::from(vec![
+                Span::raw("       "),
+                Span::styled(" Download ", download_style),
+                Span::raw("   "),
+                Span::styled(" Cancel ", cancel_style),
+            ]));
+
+            let text = Paragraph::new(lines).alignment(Alignment::Center);
+            f.render_widget(text, inner_area);
+
+            // Help text
+            let help_area = Rect::new(
+                inner_area.x,
+                inner_area.y + inner_area.height.saturating_sub(1),
+                inner_area.width,
+                1,
+            );
+            let help = Paragraph::new(Line::styled(
+                "Tab/←→: switch │ Enter: confirm │ Esc: cancel",
+                Style::default().fg(Color::DarkGray),
+            ))
+            .alignment(Alignment::Center);
+            f.render_widget(help, help_area);
+        }
+        OnboardPhase::Downloading => {
+            let mut lines: Vec<Line<'_>> = Vec::new();
+
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(
+                &onboard.download_status,
+                Style::default().fg(Color::White),
+            ));
+            lines.push(Line::raw(""));
+
+            // Progress bar
+            let progress_width = (inner_area.width as usize).saturating_sub(4);
+            let filled = (onboard.download_progress * progress_width as f32) as usize;
+            let empty = progress_width.saturating_sub(filled);
+
+            let progress_bar = format!(
+                "[{}{}] {:.0}%",
+                "█".repeat(filled),
+                "░".repeat(empty),
+                onboard.download_progress * 100.0
+            );
+
+            lines.push(Line::styled(progress_bar, Style::default().fg(Color::Cyan)));
+            lines.push(Line::raw(""));
+
+            // Layer progress
+            if onboard.layers_total > 0 {
+                lines.push(Line::styled(
+                    format!(
+                        "Layers: {}/{}",
+                        onboard.layers_downloaded, onboard.layers_total
+                    ),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+
+            let text = Paragraph::new(lines).alignment(Alignment::Center);
+            f.render_widget(text, inner_area);
+        }
+        OnboardPhase::DownloadComplete | OnboardPhase::ImageExists => {
+            let message = if onboard.phase == OnboardPhase::DownloadComplete {
+                "Download complete! Starting cmux..."
+            } else {
+                "Docker image ready! Starting cmux..."
+            };
+
+            let text = Paragraph::new(Line::styled(message, Style::default().fg(Color::Green)))
+                .alignment(Alignment::Center);
+            f.render_widget(text, inner_area);
+        }
+        OnboardPhase::Error => {
+            let mut lines: Vec<Line<'_>> = Vec::new();
+
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(
+                "Failed to set up Docker image:",
+                Style::default().fg(Color::Red),
+            ));
+            lines.push(Line::raw(""));
+
+            if let Some(error) = &onboard.error {
+                // Wrap error message if too long
+                let max_width = inner_area.width.saturating_sub(2) as usize;
+                for chunk in error.chars().collect::<Vec<_>>().chunks(max_width) {
+                    lines.push(Line::styled(
+                        chunk.iter().collect::<String>(),
+                        Style::default().fg(Color::White),
+                    ));
+                }
+            }
+
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(
+                "Press Esc to exit or Enter to retry",
+                Style::default().fg(Color::DarkGray),
+            ));
+
+            let text = Paragraph::new(lines).alignment(Alignment::Center);
+            f.render_widget(text, inner_area);
+        }
+    }
 }
