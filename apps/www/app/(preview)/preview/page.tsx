@@ -89,7 +89,13 @@ export default async function PreviewLandingPage({ searchParams }: PageProps) {
     return value ?? null;
   })();
 
-  const popupComplete = resolvedSearch?.popup_complete === "true";
+  const popupComplete = (() => {
+    const value = resolvedSearch?.popup_complete;
+    if (Array.isArray(value)) {
+      return value[0] === "true";
+    }
+    return value === "true";
+  })();
 
   const selectedTeam =
     teams.find((team) => getTeamSlugOrId(team) === searchTeam) ?? teams[0];
