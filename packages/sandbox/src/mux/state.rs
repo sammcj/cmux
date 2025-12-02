@@ -658,6 +658,32 @@ impl<'a> MuxApp<'a> {
             | MuxCommand::ScrollToBottom => {
                 // TODO: Forward to active pane
             }
+
+            // Terminal utilities - send commands to the active terminal
+            MuxCommand::EnableDeltaPager => {
+                if let Some(tab) = self.active_tab() {
+                    if let Some(pane_id) = tab.active_pane {
+                        let cmd = b"git config --global core.pager delta && git config --global interactive.diffFilter 'delta --color-only' && git config --global delta.navigate true && git config --global delta.line-numbers true\n";
+                        let _ = self.event_tx.send(MuxEvent::SendTerminalInput {
+                            pane_id,
+                            input: cmd.to_vec(),
+                        });
+                        self.set_status("Delta pager enabled");
+                    }
+                }
+            }
+            MuxCommand::DisableDeltaPager => {
+                if let Some(tab) = self.active_tab() {
+                    if let Some(pane_id) = tab.active_pane {
+                        let cmd = b"git config --global --unset core.pager && git config --global --unset interactive.diffFilter && git config --global --unset delta.navigate && git config --global --unset delta.line-numbers\n";
+                        let _ = self.event_tx.send(MuxEvent::SendTerminalInput {
+                            pane_id,
+                            input: cmd.to_vec(),
+                        });
+                        self.set_status("Delta pager disabled");
+                    }
+                }
+            }
         }
     }
 
@@ -825,6 +851,9 @@ impl<'a> MuxApp<'a> {
             }
             MuxEvent::Onboard(_) => {
                 // Onboard events are handled in the runner
+            }
+            MuxEvent::SendTerminalInput { .. } => {
+                // Terminal input is handled in the runner
             }
         }
     }

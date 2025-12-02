@@ -293,6 +293,13 @@ async fn run_app<B: ratatui::backend::Backend + std::io::Write>(
                         let event_tx_for_handler = app.event_tx.clone();
                         handle_onboard_event(&mut app, onboard_event.clone(), &event_tx_for_handler);
                     }
+                    MuxEvent::SendTerminalInput { pane_id, input } => {
+                        if let Ok(manager) = terminal_manager.try_lock() {
+                            if !manager.send_input(*pane_id, input.clone()) {
+                                tracing::warn!("Failed to send terminal input to pane {:?}", pane_id);
+                            }
+                        }
+                    }
                     _ => {}
                 }
                 app.handle_event(event);

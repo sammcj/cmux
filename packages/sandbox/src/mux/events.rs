@@ -49,4 +49,6 @@ pub enum MuxEvent {
     ThemeChanged { colors: TerminalColors },
     /// Onboarding event (image check, download progress, etc.)
     Onboard(OnboardEvent),
+    /// Send input to a terminal pane
+    SendTerminalInput { pane_id: PaneId, input: Vec<u8> },
 }
