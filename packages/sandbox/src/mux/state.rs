@@ -817,12 +817,39 @@ impl<'a> MuxApp<'a> {
                 // Build new list: server sandboxes first (server order), then local placeholders
                 let server_ids: HashSet<_> = sandboxes.iter().map(|s| s.id).collect();
 
+                // Build a map from correlation_id -> server sandbox UUID for selection transfer
+                let server_by_correlation: std::collections::HashMap<_, _> = sandboxes
+                    .iter()
+                    .filter_map(|s| s.correlation_id.as_ref().map(|cid| (cid.clone(), s.id)))
+                    .collect();
+
+                // If currently selected sandbox is a placeholder being replaced by server,
+                // transfer selection to the server sandbox
+                if let Some(selected_id) = self.sidebar.selected_id {
+                    if let Some(selected_placeholder) = self
+                        .sidebar
+                        .sandboxes
+                        .iter()
+                        .find(|s| s.id == selected_id && s.status == SandboxStatus::Creating)
+                    {
+                        if let Some(cid) = &selected_placeholder.correlation_id {
+                            if let Some(&server_sandbox_id) = server_by_correlation.get(cid) {
+                                // Transfer selection to the server sandbox that replaced the placeholder
+                                self.sidebar.selected_id = Some(server_sandbox_id);
+                                debug_log(&format!(
+                                    "SandboxesRefreshed: transferred selection from placeholder {} to server {}",
+                                    selected_id.to_string().chars().take(8).collect::<String>(),
+                                    server_sandbox_id.to_string().chars().take(8).collect::<String>()
+                                ));
+                            }
+                        }
+                    }
+                }
+
                 // Collect correlation_ids from server sandboxes - if server has a sandbox
                 // with a matching correlation_id, that placeholder has been "resolved"
-                let server_correlation_ids: HashSet<_> = sandboxes
-                    .iter()
-                    .filter_map(|s| s.correlation_id.as_ref().cloned())
-                    .collect();
+                let server_correlation_ids: HashSet<_> =
+                    server_by_correlation.keys().cloned().collect();
 
                 // Keep local placeholders (Creating status) only if:
                 // 1. Their ID isn't in server list (always true for client-generated IDs)
