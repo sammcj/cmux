@@ -411,14 +411,7 @@ export function PreviewConfigureClient({
     initialMaintenanceScript ?? initialFrameworkConfig.maintenanceScript;
   const initialDevScriptValue =
     initialDevScript ?? initialFrameworkConfig.devScript;
-  const initialMaintenanceNone =
-    initialMaintenanceScriptValue.trim().length === 0;
-  const initialDevNone = initialDevScriptValue.trim().length === 0;
   const initialEnvComplete = initialHasEnvValues;
-  const initialMaintenanceComplete =
-    initialMaintenanceNone || initialMaintenanceScriptValue.trim().length > 0;
-  const initialDevComplete =
-    initialDevNone || initialDevScriptValue.trim().length > 0;
 
   const [instance, setInstance] = useState<SandboxInstance | null>(null);
   const [isProvisioning, setIsProvisioning] = useState(false);
@@ -459,29 +452,9 @@ export function PreviewConfigureClient({
   const [hasUserEditedScripts, setHasUserEditedScripts] = useState(false);
   const [hasCompletedSetup, setHasCompletedSetup] = useState(false);
   const [isWaitingForWorkspace, setIsWaitingForWorkspace] = useState(false);
-  // Note: isEnvOpen and isBuildOpen are kept for potential future use
-  const [_isEnvOpen, _setIsEnvOpen] = useState(false);
-  const [_isBuildOpen, _setIsBuildOpen] = useState(false);
   const [envNone, setEnvNone] = useState(false);
-  const [maintenanceNone, setMaintenanceNone] = useState(
-    () => initialMaintenanceNone
-  );
-  const [devNone, setDevNone] = useState(() => initialDevNone);
-  const [_browserConfirmed, _setBrowserConfirmed] = useState(false);
   const [commandsCopied, setCommandsCopied] = useState(false);
-  const [_isEnvSectionOpen, setIsEnvSectionOpen] = useState(
-    () => !initialEnvComplete
-  );
-  const [_isMaintenanceSectionOpen, _setIsMaintenanceSectionOpen] = useState(
-    () => !initialMaintenanceComplete
-  );
-  const [_isDevSectionOpen, _setIsDevSectionOpen] = useState(
-    () => !initialDevComplete
-  );
-  const [_isRunSectionOpen, _setIsRunSectionOpen] = useState(true);
-  const [_isBrowserSetupSectionOpen, _setIsBrowserSetupSectionOpen] =
-    useState(true);
-
+  const [, setIsEnvSectionOpen] = useState(() => !initialEnvComplete);
   const [areEnvValuesHidden, setAreEnvValuesHidden] = useState(true);
   const [activeEnvValueIndex, setActiveEnvValueIndex] = useState<number | null>(
     null
@@ -582,11 +555,7 @@ export function PreviewConfigureClient({
       envVars.some((r) => r.name.trim().length > 0 || r.value.trim().length > 0),
     [envVars, hasTouchedEnvVars, initialEnvPrefilled]
   );
-  const maintenanceScriptValue = maintenanceScript.trim();
-  const devScriptValue = devScript.trim();
   const envDone = envNone || hasEnvValues;
-  const _maintenanceDone = maintenanceNone || maintenanceScriptValue.length > 0;
-  const _devDone = devNone || devScriptValue.length > 0;
 
   // Collapse env section when entering configure step if it's already satisfied
   useEffect(() => {
@@ -616,15 +585,6 @@ export function PreviewConfigureClient({
     isWorkspaceReady,
     startAtConfigureEnvironment,
   ]);
-
-  const _handleEnterConfigureEnvironment = useCallback(() => {
-    if (isWorkspaceReady) {
-      setHasCompletedSetup(true);
-      setIsWaitingForWorkspace(false);
-      return;
-    }
-    setIsWaitingForWorkspace(true);
-  }, [isWorkspaceReady]);
 
   const browserPlaceholder = useMemo(
     () =>
@@ -785,56 +745,19 @@ export function PreviewConfigureClient({
         const presetConfig = getFrameworkPresetConfig(preset, initialPackageManager);
         setMaintenanceScript(presetConfig.maintenanceScript);
         setDevScript(presetConfig.devScript);
-        // Update none states based on whether the preset has scripts
-        setMaintenanceNone(presetConfig.maintenanceScript.trim().length === 0);
-        setDevNone(presetConfig.devScript.trim().length === 0);
       }
     },
     [hasUserEditedScripts, initialPackageManager]
   );
 
   const handleMaintenanceScriptChange = useCallback((value: string) => {
-    setMaintenanceNone(false);
     setMaintenanceScript(value);
     setHasUserEditedScripts(true);
   }, []);
 
   const handleDevScriptChange = useCallback((value: string) => {
-    setDevNone(false);
     setDevScript(value);
     setHasUserEditedScripts(true);
-  }, []);
-
-  const _handleToggleEnvNone = useCallback(
-    (value: boolean) => {
-      setHasTouchedEnvVars(true);
-      setEnvNone(value);
-      setActiveEnvValueIndex(null);
-      if (value) {
-        setAreEnvValuesHidden(true);
-        setEnvVars([{ name: "", value: "", isSecret: true }]);
-        setIsEnvSectionOpen(false);
-      } else {
-        setIsEnvSectionOpen(true);
-      }
-    },
-    []
-  );
-
-  const _handleToggleMaintenanceNone = useCallback((value: boolean) => {
-    setMaintenanceNone(value);
-    setHasUserEditedScripts(true);
-    if (value) {
-      setMaintenanceScript("");
-    }
-  }, []);
-
-  const _handleToggleDevNone = useCallback((value: boolean) => {
-    setDevNone(value);
-    setHasUserEditedScripts(true);
-    if (value) {
-      setDevScript("");
-    }
   }, []);
 
   const handleCopyCommands = useCallback(async () => {
