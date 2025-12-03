@@ -43,8 +43,8 @@ pub fn merge_base_bfs(repo: &Repository, a: ObjectId, b: ObjectId) -> Option<Obj
                 if let Ok(commit) = obj.try_into_commit() {
                     for p in commit.parent_ids() {
                         let pid = p.detach();
-                        if !this_d.contains_key(&pid) {
-                            this_d.insert(pid, d + 1);
+                        if let std::collections::hash_map::Entry::Vacant(e) = this_d.entry(pid) {
+                            e.insert(d + 1);
                             this_q.push_back(pid);
                             if let Some(od) = other_d.get(&pid) {
                                 let cost = (d + 1) + *od;

@@ -38,7 +38,7 @@ fn oid_from_rev_parse(repo: &Repository, rev: &str) -> anyhow::Result<ObjectId> 
 }
 
 fn is_binary(data: &[u8]) -> bool {
-    data.iter().any(|&b| b == 0) || std::str::from_utf8(data).is_err()
+    data.contains(&0) || std::str::from_utf8(data).is_err()
 }
 
 fn collect_tree_blobs(
@@ -142,7 +142,7 @@ fn find_merge_parent_on_base(
         let first_parent = parents_iter.next().map(|p| p.detach());
         let rest: Vec<ObjectId> = parents_iter.map(|p| p.detach()).collect();
         if let Some(p1) = first_parent {
-            if rest.iter().any(|p| *p == head_tip) {
+            if rest.contains(&head_tip) {
                 return Some((base_tip, p1));
             }
             if ancestor_candidate.is_none() && rest.iter().any(|p| is_ancestor(repo, *p, head_tip))

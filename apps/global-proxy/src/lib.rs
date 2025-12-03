@@ -419,14 +419,11 @@ async fn forward_request(
             response.status(),
             StatusCode::METHOD_NOT_ALLOWED | StatusCode::NOT_IMPLEMENTED
         )
+        && let Some(context) = head_fallback_context
+        && let Some(fallback) =
+            handle_head_method_not_allowed(state, context, behavior.clone()).await
     {
-        if let Some(context) = head_fallback_context {
-            if let Some(fallback) =
-                handle_head_method_not_allowed(state, context, behavior.clone()).await
-            {
-                return fallback;
-            }
-        }
+        return fallback;
     }
 
     transform_response(response, behavior).await
@@ -456,10 +453,7 @@ async fn handle_head_method_not_allowed(
     get_request.headers_mut().remove(header::CONTENT_LENGTH);
 
     match state.client.request(get_request).await {
-        Ok(resp) => match transform_head_response_from_get(resp, behavior).await {
-            Ok(head_response) => Some(head_response),
-            Err(_) => None,
-        },
+        Ok(resp) => (transform_head_response_from_get(resp, behavior).await).ok(),
         Err(_) => None,
     }
 }
@@ -511,15 +505,15 @@ fn build_head_response(
     if force_cors_headers && !behavior.strip_cors_headers {
         add_cors_headers(&mut new_headers);
     }
-    if let Some(frame_ancestors) = behavior.frame_ancestors {
-        if let Ok(value) = HeaderValue::from_str(frame_ancestors) {
-            new_headers.insert("content-security-policy", value);
-        }
+    if let Some(frame_ancestors) = behavior.frame_ancestors
+        && let Ok(value) = HeaderValue::from_str(frame_ancestors)
+    {
+        new_headers.insert("content-security-policy", value);
     }
-    if let Some(len) = body_len {
-        if let Ok(value) = HeaderValue::from_str(&len.to_string()) {
-            new_headers.insert(header::CONTENT_LENGTH, value);
-        }
+    if let Some(len) = body_len
+        && let Ok(value) = HeaderValue::from_str(&len.to_string())
+    {
+        new_headers.insert(header::CONTENT_LENGTH, value);
     }
     let headers_mut = builder.headers_mut().unwrap();
     for (name, value) in new_headers.iter() {
