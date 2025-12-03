@@ -24,79 +24,97 @@ export const PrivacyPolicyScreen = ({
         <H1>Privacy Policy</H1>
         <Paragraph>{company} PRIVACY POLICY</Paragraph>
         <Paragraph>
-          {company} (the “Company”) is committed to maintaining robust privacy
-          protections for its users. Our Privacy Policy (“Privacy Policy”) is
+          {company} (the "Company") is committed to maintaining robust privacy
+          protections for its users. Our Privacy Policy ("Privacy Policy") is
           designed to help you understand how we collect, use and safeguard the
           information you provide to us and to assist you in making informed
           decisions when using our Service.
         </Paragraph>
         <Paragraph>
-          For purposes of this Agreement, “Site” refers to the Company’s
-          website, which can be accessed at {appUrl} or through our mobile
-          application.
+          For purposes of this Agreement, "Site" refers to the Company's
+          website, which can be accessed at {appUrl}.
         </Paragraph>
         <Paragraph>
-          “Service” refers to the Company’s services accessed via the Site, in
-          which users can create and share stories and other content. The terms
-          “we,” “us,” and “our” refer to the Company. “You” refers to you, as a
-          user of our Site or our Service. By accessing our Site or our Service,
-          you accept our Privacy Policy and Terms of Use (found here:{""}
-          {appUrl}/terms-of-service), and you consent to our collection,
-          storage, use and disclosure of your Personal Information as described
-          in this Privacy Policy.
+          "Service" refers to the Company's services accessed via the Site, in
+          which users can run AI-powered coding agents (such as Claude Code,
+          Codex CLI, Gemini CLI, and others) in parallel across multiple tasks,
+          with isolated development environments provided via containerized
+          sandboxes. The terms "we," "us," and "our" refer to the Company.
+          "You" refers to you, as a user of our Site or our Service. By
+          accessing our Site or our Service, you accept our Privacy Policy and
+          Terms of Use (found here: {appUrl}/terms-of-service), and you consent
+          to our collection, storage, use and disclosure of your Personal
+          Information as described in this Privacy Policy.
         </Paragraph>
         <Paragraph>I. INFORMATION WE COLLECT</Paragraph>
         <Paragraph>
-          We collect “Non-Personal Information” and “Personal Information.”
+          We collect "Non-Personal Information" and "Personal Information."
           Non-Personal Information includes information that cannot be used to
           personally identify you, such as anonymous usage data, general
           demographic information we may collect, referring/exit pages and URLs,
           platform types, preferences you submit and preferences that are
           generated based on the data you submit and number of clicks. Personal
-          Information includes your email, name, story details, and more, which
-          you submit to us through the registration process at the Site.
+          Information includes your email address, name, and account
+          information, which you submit to us through the registration process
+          at the Site.
         </Paragraph>
         <Paragraph>1. Information collected via Technology</Paragraph>
         <Paragraph>
           To activate the Service you do not need to submit any Personal
-          Information other than your email address. To use the Service
-          thereafter, you do not need to submit further Personal Information.
-          However, in an effort to improve the quality of the Service, we track
-          information provided to us by your browser or by our software
-          application when you view or use the Service, such as the website you
-          came from (known as the “referring URL”), the type of browser you use,
-          the device from which you connected to the Service, the time and date
-          of access, and other information that does not personally identify
-          you. We track this information using cookies, or small text files
-          which include an anonymous unique identifier. Cookies are sent to a
-          user’s browser from our servers and are stored on the user’s computer
-          hard drive. Sending a cookie to a user’s browser enables us to collect
-          Non-Personal information about that user and keep a record of the
-          user’s preferences when utilizing our services, both on an individual
-          and aggregate basis. For example, the Company may use cookies to
-          collect the following information:
+          Information other than your email address. However, in an effort to
+          improve the quality of the Service, we track information provided to
+          us by your browser or by our software application when you view or use
+          the Service, such as the website you came from (known as the
+          "referring URL"), the type of browser you use, the device from which
+          you connected to the Service, the time and date of access, and other
+          information that does not personally identify you. We track this
+          information using cookies and similar technologies. The Company may
+          collect the following information via technology:
         </Paragraph>
-        <Paragraph>- Story details</Paragraph>
-        <Paragraph>- Story conversations</Paragraph>
-        <Paragraph>- Likes</Paragraph>
-        <Paragraph>- Comments</Paragraph>
+        <Paragraph>- IP address and approximate location (city, country)</Paragraph>
+        <Paragraph>- Operating system and browser information</Paragraph>
+        <Paragraph>- Page views and click data</Paragraph>
+        <Paragraph>- Session recordings and interaction data (via PostHog)</Paragraph>
+        <Paragraph>- User ID and usage patterns</Paragraph>
         <Paragraph>
           The Company may use both persistent and session cookies; persistent
           cookies remain on your computer after you close your session and until
           you delete them, while session cookies expire when you close your
           browser.
         </Paragraph>
+        <Paragraph>2. Information you provide by registering for an account</Paragraph>
         <Paragraph>
-          2. Information you provide us by registering for an account In
-          addition to the information provided automatically by your browser
+          In addition to the information provided automatically by your browser
           when you visit the Site, to become a subscriber to the Service you
           will need to create a personal profile. You can create a profile by
-          registering with the Service and entering your email address, and
-          creating a user name and a password. By registering, you are
-          authorizing us to collect, store and use your email address in
-          accordance with this Privacy Policy.
+          registering with the Service using Google, GitHub, or Facebook OAuth,
+          or by entering your email address and creating a password. By
+          registering, you are authorizing us to collect, store and use your
+          email address and account information in accordance with this Privacy
+          Policy.
         </Paragraph>
-        <Paragraph>3. Children’s Privacy</Paragraph>
+        <Paragraph>3. Information related to your use of the Service</Paragraph>
+        <Paragraph>
+          When you use the Service, we may collect and process the following
+          types of data:
+        </Paragraph>
+        <Paragraph>
+          - Source code and files you provide to the AI coding agents
+        </Paragraph>
+        <Paragraph>
+          - Prompts, instructions, and conversations with AI agents
+        </Paragraph>
+        <Paragraph>
+          - Container and sandbox session data
+        </Paragraph>
+        <Paragraph>
+          - API keys and credentials you configure for third-party services
+          (stored securely and used only to facilitate your use of the Service)
+        </Paragraph>
+        <Paragraph>
+          - Git repository information and code changes
+        </Paragraph>
+        <Paragraph>4. Children's Privacy</Paragraph>
         <Paragraph>
           The Site and the Service are not directed to anyone under the age of
           13. The Site does not knowingly collect or solicit information from
@@ -105,10 +123,78 @@ export const PrivacyPolicyScreen = ({
           gathered personal information from anyone under the age of 13 without
           the consent of a parent or guardian, we will delete that information
           as soon as possible. If you believe we have collected such
-          information, please contact us at
-          {contactEmail}.
+          information, please contact us at {contactEmail}.
         </Paragraph>
-        <Paragraph>II. HOW WE USE AND SHARE INFORMATION</Paragraph>
+        <Paragraph>II. THIRD-PARTY SERVICES</Paragraph>
+        <Paragraph>
+          The Service integrates with and relies on various third-party services
+          to provide its functionality. By using the Service, you acknowledge
+          that your data may be processed by these third parties in accordance
+          with their respective privacy policies:
+        </Paragraph>
+        <Paragraph>AI Service Providers:</Paragraph>
+        <Paragraph>
+          - Anthropic (Claude) - for AI coding assistance
+        </Paragraph>
+        <Paragraph>
+          - OpenAI - for AI coding assistance
+        </Paragraph>
+        <Paragraph>
+          - Google (Gemini) - for AI coding assistance
+        </Paragraph>
+        <Paragraph>
+          - Other AI providers as made available through the Service
+        </Paragraph>
+        <Paragraph>
+          When you use AI coding agents through our Service, your prompts, code,
+          and related data may be sent to these providers. Please review each
+          provider's privacy policy for details on how they handle your data.
+        </Paragraph>
+        <Paragraph>Sandbox and Infrastructure Providers:</Paragraph>
+        <Paragraph>
+          - Morph (morph.so) - containerized development environments
+        </Paragraph>
+        <Paragraph>
+          - Freestyle (freestyle.sh) - containerized development environments
+        </Paragraph>
+        <Paragraph>
+          - Amazon Web Services (AWS) - cloud infrastructure
+        </Paragraph>
+        <Paragraph>
+          - Vercel - hosting and deployment
+        </Paragraph>
+        <Paragraph>
+          - Convex (convex.dev) - database and backend services
+        </Paragraph>
+        <Paragraph>
+          - Cloudflare - content delivery and security
+        </Paragraph>
+        <Paragraph>Analytics, Monitoring, and Session Recording:</Paragraph>
+        <Paragraph>
+          - PostHog - analytics, session replay, and heat mapping. PostHog may
+          collect: IP address, city, country, email address, operating system,
+          page views, clicks, usage data, and User ID.
+        </Paragraph>
+        <Paragraph>
+          - Sentry - error tracking and performance monitoring. Sentry may
+          collect: error logs, stack traces, device information, and usage data.
+        </Paragraph>
+        <Paragraph>Authentication Providers:</Paragraph>
+        <Paragraph>
+          - Google OAuth - for account authentication
+        </Paragraph>
+        <Paragraph>
+          - GitHub OAuth - for account authentication
+        </Paragraph>
+        <Paragraph>
+          - Facebook OAuth - for account authentication
+        </Paragraph>
+        <Paragraph>
+          Each of these services has its own privacy policy governing the
+          collection and use of your data. We encourage you to review the
+          privacy policies of these third-party services.
+        </Paragraph>
+        <Paragraph>III. HOW WE USE AND SHARE INFORMATION</Paragraph>
         <Paragraph>
           Personal Information: Except as otherwise stated in this Privacy
           Policy, we do not sell, trade, rent or otherwise share for marketing
@@ -152,7 +238,7 @@ export const PrivacyPolicyScreen = ({
           the Site periodically if you are concerned about how your information
           is used.
         </Paragraph>
-        <Paragraph>III. HOW WE PROTECT INFORMATION</Paragraph>
+        <Paragraph>IV. HOW WE PROTECT INFORMATION</Paragraph>
         <Paragraph>
           We implement security measures designed to protect your information
           from unauthorized access. Your account is protected by your account
@@ -168,7 +254,7 @@ export const PrivacyPolicyScreen = ({
           risks.
         </Paragraph>
         <Paragraph>
-          IV. YOUR RIGHTS REGARDING THE USE OF YOUR PERSONAL INFORMATION
+          V. YOUR RIGHTS REGARDING THE USE OF YOUR PERSONAL INFORMATION
         </Paragraph>
         <Paragraph>
           You have the right at any time to prevent us from contacting you for
@@ -182,7 +268,40 @@ export const PrivacyPolicyScreen = ({
           of the Site, we may continue to send you administrative emails
           including, for example, periodic updates to our Privacy Policy.
         </Paragraph>
-        <Paragraph>V. LINKS TO OTHER WEBSITES</Paragraph>
+        <Paragraph>
+          Depending on your location, you may have additional rights under
+          applicable data protection laws (such as GDPR or CCPA), including:
+        </Paragraph>
+        <Paragraph>
+          - Right to Access: You may request a copy of the personal data we hold
+          about you.
+        </Paragraph>
+        <Paragraph>
+          - Right to Rectification: You may request that we correct any
+          inaccurate or incomplete personal data.
+        </Paragraph>
+        <Paragraph>
+          - Right to Erasure: You may request that we delete your personal data,
+          subject to certain exceptions.
+        </Paragraph>
+        <Paragraph>
+          - Right to Data Portability: You may request a copy of your data in a
+          structured, commonly used, machine-readable format.
+        </Paragraph>
+        <Paragraph>
+          - Right to Restrict Processing: You may request that we limit the
+          processing of your personal data in certain circumstances.
+        </Paragraph>
+        <Paragraph>
+          - Right to Object: You may object to the processing of your personal
+          data for certain purposes.
+        </Paragraph>
+        <Paragraph>
+          To exercise any of these rights, please contact us at {contactEmail}.
+          We will respond to your request within the timeframe required by
+          applicable law.
+        </Paragraph>
+        <Paragraph>VI. LINKS TO OTHER WEBSITES</Paragraph>
         <Paragraph>
           As part of the Service, we may provide links to or compatibility with
           other websites or applications. However, we are not responsible for
@@ -197,7 +316,7 @@ export const PrivacyPolicyScreen = ({
           site or application. We encourage our users to read the privacy
           statements of other websites before proceeding to use them.
         </Paragraph>
-        <Paragraph>VI. CHANGES TO OUR PRIVACY POLICY</Paragraph>
+        <Paragraph>VII. CHANGES TO OUR PRIVACY POLICY</Paragraph>
         <Paragraph>
           The Company reserves the right to change this policy and our Terms of
           Service at any time. We will notify you of significant changes to our
@@ -208,40 +327,29 @@ export const PrivacyPolicyScreen = ({
           immediately. You should periodically check the Site and this privacy
           page for updates.
         </Paragraph>
-        <Paragraph>VII. CONTACT US</Paragraph>
+        <Paragraph>VIII. CONTACT US</Paragraph>
         <Paragraph>
           If you have any questions regarding this Privacy Policy or the
           practices of this Site, please contact us by sending an email to
           {contactEmail}. Last Updated: This Privacy Policy was last updated on{" "}
           {lastUpdated}.
         </Paragraph>
-        <Paragraph>VIII. USE OF GOOGLE WORKSPACE APIS</Paragraph>
+        <Paragraph>IX. DATA RETENTION</Paragraph>
         <Paragraph>
-          {company} explicitly affirms that any Google Workspace APIs used in
-          our services are not utilized to develop, improve, or train
-          generalized artificial intelligence (AI) and/or machine learning (ML)
-          models. Our use of these APIs is strictly limited to providing and
-          improving the specific functionalities of our service as described in
-          this Privacy Policy.
+          We retain your personal information for as long as your account is
+          active or as needed to provide you with the Service. We may also
+          retain and use your information as necessary to comply with legal
+          obligations, resolve disputes, and enforce our agreements.
         </Paragraph>
-        <Paragraph>IX. RETENTION AND DELETION OF GOOGLE USER DATA</Paragraph>
-
         <Paragraph>
-          {company} is committed to protecting the privacy and security of
-          Google user data. We adhere to a strict no-retention policy for Google
-          user data:
+          Container and sandbox session data is typically deleted shortly after
+          your session ends. Code and files processed by AI agents are not
+          retained by us beyond the immediate processing required, though
+          third-party AI providers may have their own retention policies.
         </Paragraph>
-
         <Paragraph>
-          1. No Data Retention: We do not retain any Google user data on our
-          servers or databases beyond the immediate processing required to
-          provide our Service.
-        </Paragraph>
-
-        <Paragraph>
-          2. Immediate Data Deletion: All Google user data is automatically and
-          immediately deleted after it has been used for its intended purpose in
-          providing our Service.
+          You may request deletion of your account and associated data at any
+          time by contacting us at {contactEmail}.
         </Paragraph>
       </div>
     </div>
@@ -337,7 +445,9 @@ export const TermsOfServiceScreen = ({
         <Paragraph>
           License. Subject to these Terms, Company grants you a
           non-transferable, non-exclusive, revocable, limited license to use and
-          access the Site solely for your own personal, noncommercial use.
+          access the Site for your personal or internal business purposes,
+          including commercial use in connection with your software development
+          activities.
         </Paragraph>
 
         <Paragraph>
@@ -431,9 +541,46 @@ export const TermsOfServiceScreen = ({
           Content.
         </Paragraph>
 
+        <Paragraph>AI Services and Generated Content</Paragraph>
+
         <Paragraph>
-          Acceptable Use Policy. The following terms constitute our “Acceptable
-          Use Policy”:
+          The Service provides access to AI-powered coding agents from various
+          third-party providers including Anthropic (Claude), OpenAI, Google
+          (Gemini), and others. By using these AI features, you acknowledge and
+          agree to the following:
+        </Paragraph>
+
+        <Paragraph>
+          Third-Party AI Terms. Your use of AI coding agents is subject to the
+          terms and conditions of the respective AI providers. You are
+          responsible for reviewing and complying with these third-party terms.
+        </Paragraph>
+
+        <Paragraph>
+          Ownership of AI Output. You retain ownership of any code or content
+          you create using AI assistance through the Service, subject to any
+          applicable third-party AI provider terms. Company does not claim
+          ownership of AI-generated output created at your direction.
+        </Paragraph>
+
+        <Paragraph>
+          AI Accuracy Disclaimer. AI-generated code and suggestions may contain
+          errors, security vulnerabilities, or inaccuracies. You are solely
+          responsible for reviewing, testing, and validating any AI-generated
+          code before use. Company makes no warranties regarding the accuracy,
+          reliability, security, or fitness for purpose of AI-generated content.
+        </Paragraph>
+
+        <Paragraph>
+          Data Sharing with AI Providers. When you use AI coding agents, your
+          prompts, code, and related data may be transmitted to third-party AI
+          providers. Please review our Privacy Policy and each provider's
+          privacy policy for details.
+        </Paragraph>
+
+        <Paragraph>
+          Acceptable Use Policy. The following terms constitute our "Acceptable
+          Use Policy":
         </Paragraph>
 
         <Paragraph>
@@ -555,10 +702,47 @@ export const TermsOfServiceScreen = ({
           AFFECTED HIS OR HER SETTLEMENT WITH THE DEBTOR OR RELEASED PARTY.”
         </Paragraph>
 
+        <Paragraph>Subscription and Billing</Paragraph>
+
+        <Paragraph>
+          Free and Paid Tiers. The Service offers both free and paid
+          subscription tiers. Free tier users have access to limited features
+          and usage quotas. Paid subscriptions provide additional features,
+          higher usage limits, and priority support as described on our pricing
+          page.
+        </Paragraph>
+
+        <Paragraph>
+          Billing. If you subscribe to a paid tier, you agree to pay all
+          applicable fees. Fees are billed in advance on a monthly or annual
+          basis depending on your selected plan. All fees are non-refundable
+          except as required by law or as explicitly stated in these Terms.
+        </Paragraph>
+
+        <Paragraph>
+          Automatic Renewal. Paid subscriptions automatically renew at the end
+          of each billing period unless you cancel before the renewal date. You
+          may cancel your subscription at any time through your account
+          settings.
+        </Paragraph>
+
+        <Paragraph>
+          Price Changes. Company reserves the right to modify pricing at any
+          time. Price changes will be communicated to you in advance and will
+          take effect at the start of your next billing period.
+        </Paragraph>
+
+        <Paragraph>
+          Usage Limits. Both free and paid tiers are subject to fair use limits
+          on compute resources, API calls, storage, and other service
+          capabilities. Exceeding these limits may result in throttling,
+          suspension, or requirement to upgrade to a higher tier.
+        </Paragraph>
+
         <Paragraph>Disclaimers </Paragraph>
 
         <Paragraph>
-          THE SITE IS PROVIDED ON AN “AS-IS” AND “AS AVAILABLE” BASIS, AND
+          THE SITE IS PROVIDED ON AN "AS-IS" AND "AS AVAILABLE" BASIS, AND
           COMPANY (AND OUR SUPPLIERS) EXPRESSLY DISCLAIM ANY AND ALL WARRANTIES
           AND CONDITIONS OF ANY KIND, WHETHER EXPRESS, IMPLIED, OR STATUTORY,
           INCLUDING ALL WARRANTIES OR CONDITIONS OF MERCHANTABILITY, FITNESS FOR
@@ -1197,6 +1381,448 @@ export const TermsOfServiceScreen = ({
           See: http://www.copyright.gov/onlinesp/ for the applicable forms and
           more information.
         </Paragraph>
+      </div>
+    </div>
+  );
+};
+
+export const EulaScreen = ({
+  appUrl,
+  lastUpdated,
+  company,
+  contactEmail,
+}: {
+  appUrl: string;
+  lastUpdated: string;
+  company: string;
+  contactEmail: string;
+}) => {
+  return (
+    <div className="h-screen overflow-auto">
+      <div className="px-4">
+        <H1>End-User License Agreement</H1>
+
+        <Paragraph>Our EULA was last updated on {lastUpdated}</Paragraph>
+
+        <Paragraph>
+          Please read this End-User License Agreement carefully before clicking
+          the "I Agree" button, downloading or using cmux.
+        </Paragraph>
+
+        <Paragraph>Interpretation and Definitions</Paragraph>
+
+        <Paragraph>Interpretation</Paragraph>
+
+        <Paragraph>
+          The words of which the initial letter is capitalized have meanings
+          defined under the following conditions. The following definitions
+          shall have the same meaning regardless of whether they appear in
+          singular or in plural.
+        </Paragraph>
+
+        <Paragraph>Definitions</Paragraph>
+
+        <Paragraph>
+          For the purposes of this End-User License Agreement:
+        </Paragraph>
+
+        <Paragraph>
+          "Agreement" means this End-User License Agreement that forms the
+          entire agreement between You and the Company regarding the use of the
+          Application.
+        </Paragraph>
+
+        <Paragraph>
+          "Application" means the software program and web service provided by
+          the Company, known as cmux, which enables users to run AI-powered
+          coding agents in parallel across multiple tasks with isolated
+          development environments.
+        </Paragraph>
+
+        <Paragraph>
+          "Company" (referred to as either "the Company", "We", "Us" or "Our" in
+          this Agreement) refers to {company}.
+        </Paragraph>
+
+        <Paragraph>
+          "Content" refers to content such as text, code, images, or other
+          information that can be posted, uploaded, linked to or otherwise made
+          available by You, regardless of the form of that content.
+        </Paragraph>
+
+        <Paragraph>"Country" refers to: United States</Paragraph>
+
+        <Paragraph>
+          "Device" means any device that can access the Application such as a
+          computer, a cellphone or a digital tablet.
+        </Paragraph>
+
+        <Paragraph>
+          "Third-Party Services" means any services or content (including data,
+          information, applications and other products services) provided by a
+          third-party that may be displayed, included or made available by the
+          Application, including AI service providers such as Anthropic, OpenAI,
+          Google, and sandbox providers.
+        </Paragraph>
+
+        <Paragraph>
+          "You" means the individual accessing or using the Application or the
+          company, or other legal entity on behalf of which such individual is
+          accessing or using the Application, as applicable.
+        </Paragraph>
+
+        <Paragraph>Acknowledgment</Paragraph>
+
+        <Paragraph>
+          By clicking the "I Agree" button, downloading or using the
+          Application, You are agreeing to be bound by the terms and conditions
+          of this Agreement. If You do not agree to the terms of this Agreement,
+          do not click on the "I Agree" button, do not download or do not use
+          the Application.
+        </Paragraph>
+
+        <Paragraph>
+          This Agreement is a legal document between You and the Company and it
+          governs your use of the Application made available to You by the
+          Company.
+        </Paragraph>
+
+        <Paragraph>
+          The Application is licensed, not sold, to You by the Company for use
+          strictly in accordance with the terms of this Agreement.
+        </Paragraph>
+
+        <Paragraph>License</Paragraph>
+
+        <Paragraph>Scope of License</Paragraph>
+
+        <Paragraph>
+          The Company grants You a revocable, non-exclusive, non-transferable,
+          limited license to download, install and use the Application strictly
+          in accordance with the terms of this Agreement.
+        </Paragraph>
+
+        <Paragraph>
+          The license that is granted to You by the Company is for your personal
+          or internal business purposes, including commercial use in connection
+          with your software development activities, strictly in accordance with
+          the terms of this Agreement.
+        </Paragraph>
+
+        <Paragraph>License Restrictions</Paragraph>
+
+        <Paragraph>
+          You agree not to, and You will not permit others to:
+        </Paragraph>
+
+        <Paragraph>
+          - License, sell, rent, lease, assign, distribute, transmit, host,
+          outsource, disclose or otherwise commercially exploit the Application
+          or make the Application available to any third party.
+        </Paragraph>
+
+        <Paragraph>
+          - Remove, alter or obscure any proprietary notice (including any
+          notice of copyright or trademark) of the Company or its affiliates,
+          partners, suppliers or the licensors of the Application.
+        </Paragraph>
+
+        <Paragraph>
+          - Use the Application to generate code intended for unlawful purposes.
+        </Paragraph>
+
+        <Paragraph>
+          - Attempt to circumvent any security measures or usage limits of the
+          Application or its integrated AI services.
+        </Paragraph>
+
+        <Paragraph>Intellectual Property</Paragraph>
+
+        <Paragraph>
+          The Application, including without limitation all copyrights, patents,
+          trademarks, trade secrets and other intellectual property rights are,
+          and shall remain, the sole and exclusive property of the Company.
+        </Paragraph>
+
+        <Paragraph>
+          You retain ownership of any code or content you create using the
+          Application, subject to any applicable third-party AI provider terms.
+        </Paragraph>
+
+        <Paragraph>
+          The Company shall not be obligated to indemnify or defend You with
+          respect to any third party claim arising out of or relating to the
+          Application.
+        </Paragraph>
+
+        <Paragraph>Modifications to the Application</Paragraph>
+
+        <Paragraph>
+          The Company reserves the right to modify, suspend or discontinue,
+          temporarily or permanently, the Application or any service to which it
+          connects, with or without notice and without liability to You.
+        </Paragraph>
+
+        <Paragraph>Updates to the Application</Paragraph>
+
+        <Paragraph>
+          The Company may from time to time provide enhancements or improvements
+          to the features/functionality of the Application, which may include
+          patches, bug fixes, updates, upgrades and other modifications.
+        </Paragraph>
+
+        <Paragraph>
+          Updates may modify or delete certain features and/or functionalities
+          of the Application. You agree that the Company has no obligation to
+          (i) provide any Updates, or (ii) continue to provide or enable any
+          particular features and/or functionalities of the Application to You.
+        </Paragraph>
+
+        <Paragraph>
+          You further agree that all updates or any other modifications will be
+          (i) deemed to constitute an integral part of the Application, and (ii)
+          subject to the terms and conditions of this Agreement.
+        </Paragraph>
+
+        <Paragraph>Maintenance and Support</Paragraph>
+
+        <Paragraph>
+          The Company does not provide any maintenance or support for the
+          download and use of the Application unless you are subscribed to a
+          paid tier that includes support.
+        </Paragraph>
+
+        <Paragraph>Third-Party Services</Paragraph>
+
+        <Paragraph>
+          The Application may display, include or make available third-party
+          content (including data, information, applications and other products
+          services) or provide links to third-party websites or services,
+          including AI coding agents from providers such as Anthropic, OpenAI,
+          and Google.
+        </Paragraph>
+
+        <Paragraph>
+          You acknowledge and agree that the Company shall not be responsible
+          for any Third-party Services, including their accuracy, completeness,
+          timeliness, validity, copyright compliance, legality, decency, quality
+          or any other aspect thereof. The Company does not assume and shall not
+          have any liability or responsibility to You or any other person or
+          entity for any Third-party Services.
+        </Paragraph>
+
+        <Paragraph>
+          You must comply with applicable Third parties' Terms of agreement when
+          using the Application. Third-party Services and links thereto are
+          provided solely as a convenience to You and You access and use them
+          entirely at your own risk and subject to such third parties' Terms and
+          conditions.
+        </Paragraph>
+
+        <Paragraph>Term and Termination</Paragraph>
+
+        <Paragraph>
+          This Agreement shall remain in effect until terminated by You or the
+          Company. The Company may, in its sole discretion, at any time and for
+          any or no reason, suspend or terminate this Agreement with or without
+          prior notice.
+        </Paragraph>
+
+        <Paragraph>
+          This Agreement will terminate immediately, without prior notice from
+          the Company, in the event that you fail to comply with any provision
+          of this Agreement. You may also terminate this Agreement by deleting
+          the Application and all copies thereof from your Device.
+        </Paragraph>
+
+        <Paragraph>
+          Upon termination of this Agreement, You shall cease all use of the
+          Application and delete all copies of the Application from your Device.
+        </Paragraph>
+
+        <Paragraph>
+          Termination of this Agreement will not limit any of the Company's
+          rights or remedies at law or in equity in case of breach by You
+          (during the term of this Agreement) of any of your obligations under
+          the present Agreement.
+        </Paragraph>
+
+        <Paragraph>Indemnification</Paragraph>
+
+        <Paragraph>
+          You agree to indemnify and hold the Company and its parents,
+          subsidiaries, affiliates, officers, employees, agents, partners and
+          licensors (if any) harmless from any claim or demand, including
+          reasonable attorneys' fees, due to or arising out of your: (a) use of
+          the Application; (b) violation of this Agreement or any law or
+          regulation; or (c) violation of any right of a third party.
+        </Paragraph>
+
+        <Paragraph>No Warranties</Paragraph>
+
+        <Paragraph>
+          The Application is provided to You "AS IS" and "AS AVAILABLE" and with
+          all faults and defects without warranty of any kind. To the maximum
+          extent permitted under applicable law, the Company, on its own behalf
+          and on behalf of its affiliates and its and their respective licensors
+          and service providers, expressly disclaims all warranties, whether
+          express, implied, statutory or otherwise, with respect to the
+          Application, including all implied warranties of merchantability,
+          fitness for a particular purpose, title and non-infringement.
+        </Paragraph>
+
+        <Paragraph>
+          Without limiting the foregoing, the Company provides no warranty or
+          undertaking, and makes no representation of any kind that the
+          Application will meet your requirements, achieve any intended results,
+          be compatible or work with any other software, applications, systems
+          or services, operate without interruption, meet any performance or
+          reliability standards or be error free or that any errors or defects
+          can or will be corrected.
+        </Paragraph>
+
+        <Paragraph>
+          AI-GENERATED CODE AND SUGGESTIONS MAY CONTAIN ERRORS, SECURITY
+          VULNERABILITIES, OR INACCURACIES. YOU ARE SOLELY RESPONSIBLE FOR
+          REVIEWING, TESTING, AND VALIDATING ANY AI-GENERATED CODE BEFORE USE.
+        </Paragraph>
+
+        <Paragraph>
+          Some jurisdictions do not allow the exclusion of certain types of
+          warranties or limitations on applicable statutory rights of a
+          consumer, so some or all of the above exclusions and limitations may
+          not apply to You. But in such a case the exclusions and limitations
+          set forth in this section shall be applied to the greatest extent
+          enforceable under applicable law.
+        </Paragraph>
+
+        <Paragraph>Limitation of Liability</Paragraph>
+
+        <Paragraph>
+          Notwithstanding any damages that You might incur, the entire liability
+          of the Company and any of its suppliers under any provision of this
+          Agreement and your exclusive remedy for all of the foregoing shall be
+          limited to the amount actually paid by You for the Application or
+          through the Application or 100 USD if You haven't purchased anything
+          through the Application.
+        </Paragraph>
+
+        <Paragraph>
+          To the maximum extent permitted by applicable law, in no event shall
+          the Company or its suppliers be liable for any special, incidental,
+          indirect, or consequential damages whatsoever (including, but not
+          limited to, damages for loss of profits, loss of data or other
+          information, for business interruption, for personal injury, loss of
+          privacy arising out of or in any way related to the use of or
+          inability to use the Application, third-party software and/or
+          third-party hardware used with the Application, or otherwise in
+          connection with any provision of this Agreement), even if the Company
+          or any supplier has been advised of the possibility of such damages
+          and even if the remedy fails of its essential purpose.
+        </Paragraph>
+
+        <Paragraph>
+          Some states/jurisdictions do not allow the exclusion or limitation of
+          incidental or consequential damages, so the above limitation or
+          exclusion may not apply to You.
+        </Paragraph>
+
+        <Paragraph>Severability and Waiver</Paragraph>
+
+        <Paragraph>Severability</Paragraph>
+
+        <Paragraph>
+          If any provision of this Agreement is held to be unenforceable or
+          invalid, such provision will be changed and interpreted to accomplish
+          the objectives of such provision to the greatest extent possible under
+          applicable law and the remaining provisions will continue in full
+          force and effect.
+        </Paragraph>
+
+        <Paragraph>Waiver</Paragraph>
+
+        <Paragraph>
+          Except as provided herein, the failure to exercise a right or to
+          require performance of an obligation under this Agreement shall not
+          effect a party's ability to exercise such right or require such
+          performance at any time thereafter nor shall the waiver of a breach
+          constitute a waiver of any subsequent breach.
+        </Paragraph>
+
+        <Paragraph>Product Claims</Paragraph>
+
+        <Paragraph>
+          The Company does not make any warranties concerning the Application.
+          To the extent You have any claim arising from or relating to your use
+          of the Application, the Company is responsible for addressing any such
+          claims, which may include, but not limited to: (i) any product
+          liability claims; (ii) any claim that the Application fails to conform
+          to any applicable legal or regulatory requirement; and (iii) any claim
+          arising under consumer protection, or similar legislation.
+        </Paragraph>
+
+        <Paragraph>United States Legal Compliance</Paragraph>
+
+        <Paragraph>
+          You represent and warrant that (i) You are not located in a country
+          that is subject to the United States government embargo, or that has
+          been designated by the United States government as a "terrorist
+          supporting" country, and (ii) You are not listed on any United States
+          government list of prohibited or restricted parties.
+        </Paragraph>
+
+        <Paragraph>Changes to this Agreement</Paragraph>
+
+        <Paragraph>
+          The Company reserves the right, at its sole discretion, to modify or
+          replace this Agreement at any time. If a revision is material we will
+          provide at least 30 days' notice prior to any new terms taking effect.
+          What constitutes a material change will be determined at the sole
+          discretion of the Company.
+        </Paragraph>
+
+        <Paragraph>
+          By continuing to access or use the Application after any revisions
+          become effective, You agree to be bound by the revised terms. If You
+          do not agree to the new terms, You are no longer authorized to use the
+          Application.
+        </Paragraph>
+
+        <Paragraph>Governing Law</Paragraph>
+
+        <Paragraph>
+          The laws of the Country, excluding its conflicts of law rules, shall
+          govern this Agreement and your use of the Application. Your use of the
+          Application may also be subject to other local, state, national, or
+          international laws.
+        </Paragraph>
+
+        <Paragraph>Entire Agreement</Paragraph>
+
+        <Paragraph>
+          The Agreement constitutes the entire agreement between You and the
+          Company regarding your use of the Application and supersedes all prior
+          and contemporaneous written or oral agreements between You and the
+          Company.
+        </Paragraph>
+
+        <Paragraph>
+          You may be subject to additional terms and conditions that apply when
+          You use or purchase other Company's services, which the Company will
+          provide to You at the time of such use or purchase.
+        </Paragraph>
+
+        <Paragraph>Contact Us</Paragraph>
+
+        <Paragraph>
+          If you have any questions about this Agreement, You can contact Us:
+        </Paragraph>
+
+        <Paragraph>
+          - By visiting this page on our website: {appUrl}/contact
+        </Paragraph>
+
+        <Paragraph>- By sending us an email: {contactEmail}</Paragraph>
       </div>
     </div>
   );

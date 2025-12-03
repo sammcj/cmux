@@ -1,8 +1,8 @@
-import { PrivacyPolicyScreen } from "./legal";
+import { EulaScreen } from "../privacy-policy/legal";
 
-export default function PrivacyPolicyPage() {
+export default function EulaPage() {
   return (
-    <PrivacyPolicyScreen
+    <EulaScreen
       appUrl="https://cmux.dev"
       company="Manaflow"
       contactEmail="austin@manaflow.com"

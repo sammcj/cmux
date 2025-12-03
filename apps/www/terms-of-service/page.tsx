@@ -3,7 +3,7 @@ import { TermsOfServiceScreen } from "../privacy-policy/legal";
 export default function TermsOfServicePage() {
   return (
     <TermsOfServiceScreen
-      appUrl="https://manaflow.com"
+      appUrl="https://cmux.dev"
       company="Manaflow"
       contactEmail="austin@manaflow.com"
     />
