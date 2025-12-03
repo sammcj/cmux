@@ -210,6 +210,10 @@ pub struct MuxApp<'a> {
 
     /// Sandboxes that have delta pager enabled
     pub delta_enabled_sandboxes: HashSet<SandboxId>,
+
+    /// The tab_id of the most recently initiated sandbox creation.
+    /// Only this sandbox will steal focus when it completes.
+    pub last_initiated_creation_tab_id: Option<String>,
 }
 
 impl<'a> MuxApp<'a> {
@@ -241,6 +245,7 @@ impl<'a> MuxApp<'a> {
             cursor_color: None,
             onboard: None,
             delta_enabled_sandboxes: HashSet::new(),
+            last_initiated_creation_tab_id: None,
         }
     }
 
@@ -792,6 +797,11 @@ impl<'a> MuxApp<'a> {
                 self.set_status(format!("Error: {}", error));
             }
             MuxEvent::SandboxCreated { sandbox, tab_id } => {
+                // Check if this is the most recently initiated creation (should steal focus)
+                let should_focus = tab_id
+                    .as_ref()
+                    .is_some_and(|id| self.last_initiated_creation_tab_id.as_ref() == Some(id));
+
                 // Use tab_id to find the correct placeholder (handles out-of-order completion)
                 if let Some(tab_id_str) = &tab_id {
                     if let Some(placeholder_id) =
@@ -807,7 +817,6 @@ impl<'a> MuxApp<'a> {
                     .sandboxes
                     .retain(|existing| existing.id != sandbox.id);
                 self.sidebar.sandboxes.push(sandbox.clone());
-                self.sidebar.select_by_id(&sandbox_id_str);
                 self.add_sandbox(&sandbox_id_str, &sandbox.name);
                 // Use tab_id from event instead of FIFO queue
                 if let Some(tab_id_str) = &tab_id {
@@ -819,9 +828,15 @@ impl<'a> MuxApp<'a> {
                         );
                     }
                 }
-                self.workspace_manager
-                    .select_sandbox(crate::mux::layout::SandboxId::from_uuid(sandbox.id));
-                self.pending_connect = Some(sandbox_id_str.clone());
+                // Only focus and connect if this is the most recently initiated creation
+                if should_focus {
+                    self.sidebar.select_by_id(&sandbox_id_str);
+                    self.workspace_manager
+                        .select_sandbox(crate::mux::layout::SandboxId::from_uuid(sandbox.id));
+                    self.pending_connect = Some(sandbox_id_str.clone());
+                    // Clear the tracker since this creation is now complete
+                    self.last_initiated_creation_tab_id = None;
+                }
                 self.set_status(format!("Created sandbox: {}", sandbox.name));
             }
             MuxEvent::SandboxTabMapped { sandbox_id, tab_id } => {
@@ -926,12 +941,15 @@ impl<'a> MuxApp<'a> {
         self.sidebar.select_by_id(&id_str);
         self.workspace_manager.add_sandbox(sandbox_id, name.clone());
         if let Some(tab_id) = tab_id {
+            let tab_id_str = tab_id.to_string();
             let _ = self
                 .workspace_manager
                 .set_active_tab_id_for_sandbox(sandbox_id, tab_id);
             // Store placeholder keyed by tab_id for out-of-order completion handling
             self.pending_placeholder_sandboxes
-                .insert(tab_id.to_string(), sandbox_id);
+                .insert(tab_id_str.clone(), sandbox_id);
+            // Track the most recently initiated creation - only this one will steal focus
+            self.last_initiated_creation_tab_id = Some(tab_id_str);
         }
         self.workspace_manager.select_sandbox(sandbox_id);
     }
@@ -1016,10 +1034,14 @@ mod tests {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let mut app = MuxApp::new("http://localhost".to_string(), tx, PathBuf::from("."));
         let sandbox = sample_sandbox("demo");
+        let tab_id = Uuid::new_v4().to_string();
+
+        // Simulate user-initiated creation by setting the tracker
+        app.last_initiated_creation_tab_id = Some(tab_id.clone());
 
         app.handle_event(MuxEvent::SandboxCreated {
             sandbox: sandbox.clone(),
-            tab_id: None,
+            tab_id: Some(tab_id),
         });
 
         assert_eq!(
@@ -1034,6 +1056,27 @@ mod tests {
         assert_eq!(
             app.sidebar.selected_sandbox().map(|s| s.id),
             Some(sandbox.id)
+        );
+    }
+
+    #[test]
+    fn sandbox_created_without_matching_tab_id_does_not_steal_focus() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = MuxApp::new("http://localhost".to_string(), tx, PathBuf::from("."));
+        let sandbox = sample_sandbox("demo");
+
+        // Create with a different tab_id than what was initiated
+        app.last_initiated_creation_tab_id = Some(Uuid::new_v4().to_string());
+
+        app.handle_event(MuxEvent::SandboxCreated {
+            sandbox: sandbox.clone(),
+            tab_id: Some(Uuid::new_v4().to_string()), // Different tab_id
+        });
+
+        // Should NOT set pending_connect since this wasn't the most recent creation
+        assert_eq!(
+            app.pending_connect, None,
+            "pending_connect should be None for non-matching tab_id"
         );
     }
 
