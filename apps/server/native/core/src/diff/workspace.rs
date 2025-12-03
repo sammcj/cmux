@@ -290,7 +290,7 @@ pub fn diff_workspace(opts: GitDiffWorkspaceOptions) -> Result<Vec<DiffEntry>> {
         }
         let old_blob = repo.find_object(*old_id)?.try_into_blob()?;
         let old_data = &old_blob.data;
-        let bin = is_binary(&old_data);
+        let bin = is_binary(old_data);
         let mut e = DiffEntry {
             filePath: rel.clone(),
             status: "deleted".into(),
@@ -300,8 +300,8 @@ pub fn diff_workspace(opts: GitDiffWorkspaceOptions) -> Result<Vec<DiffEntry>> {
             ..Default::default()
         };
         if include && !bin {
-            let old_str = String::from_utf8_lossy(&old_data).into_owned();
-            let old_sz = old_str.as_bytes().len();
+            let old_str = String::from_utf8_lossy(old_data).into_owned();
+            let old_sz = old_str.len();
             e.oldSize = Some(old_sz as i32);
             if old_sz <= max_bytes {
                 e.oldContent = Some(old_str);

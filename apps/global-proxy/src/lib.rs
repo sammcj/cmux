@@ -628,19 +628,19 @@ fn collect_forward_headers(
         http::HeaderMap::new()
     };
     headers.remove(header::HOST);
-    if let Some(port) = &behavior.port_header {
-        if let Ok(value) = HeaderValue::from_str(port) {
-            headers.insert("X-Cmux-Port-Internal", value);
-        }
+    if let Some(port) = &behavior.port_header
+        && let Ok(value) = HeaderValue::from_str(port)
+    {
+        headers.insert("X-Cmux-Port-Internal", value);
     }
     if let Some(workspace) = behavior.workspace_header.as_ref() {
         if let Ok(value) = HeaderValue::from_str(workspace) {
             headers.insert("X-Cmux-Workspace-Internal", value);
         }
-    } else if let Some(workspace) = derive_workspace_scope_from_headers(original) {
-        if let Ok(value) = HeaderValue::from_str(&workspace) {
-            headers.insert("X-Cmux-Workspace-Internal", value);
-        }
+    } else if let Some(workspace) = derive_workspace_scope_from_headers(original)
+        && let Ok(value) = HeaderValue::from_str(&workspace)
+    {
+        headers.insert("X-Cmux-Workspace-Internal", value);
     }
     headers.insert("X-Cmux-Proxied", HeaderValue::from_static("true"));
 
@@ -674,9 +674,7 @@ fn scope_from_cmux_subdomain(subdomain: &str) -> Option<String> {
     }
 
     let port_segment = segments.last()?;
-    if port_segment.parse::<u16>().ok().is_none() {
-        return None;
-    }
+    port_segment.parse::<u16>().ok()?;
 
     let scope_segments = &segments[1..segments.len() - 1];
     if scope_segments.is_empty()

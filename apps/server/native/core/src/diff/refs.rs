@@ -455,8 +455,8 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
             if include && !bin {
                 let old_str = String::from_utf8_lossy(old_data.as_ref().unwrap()).into_owned();
                 let new_str = String::from_utf8_lossy(new_data.as_ref().unwrap()).into_owned();
-                let old_sz = old_str.as_bytes().len();
-                let new_sz = new_str.as_bytes().len();
+                let old_sz = old_str.len();
+                let new_sz = new_str.len();
                 e.oldSize = Some(old_sz as i32);
                 e.newSize = Some(new_sz as i32);
                 if old_sz + new_sz <= max_bytes {
@@ -661,7 +661,7 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                                     &cwd,
                                     &["show", &format!("{}:{}", head_oid, path)],
                                 ) {
-                                    let new_sz = buf.as_bytes().len();
+                                    let new_sz = buf.len();
                                     e.newSize = Some(new_sz as i32);
                                     e.oldSize = Some(0);
                                     if new_sz <= max_bytes {
@@ -699,8 +699,8 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                                     &["show", &format!("{}:{}", head_oid, path)],
                                 )
                                 .unwrap_or_default();
-                                let old_sz = old_s.as_bytes().len();
-                                let new_sz = new_s.as_bytes().len();
+                                let old_sz = old_s.len();
+                                let new_sz = new_s.len();
                                 e.oldSize = Some(old_sz as i32);
                                 e.newSize = Some(new_sz as i32);
                                 if old_sz + new_sz <= max_bytes {
@@ -745,7 +745,7 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                                     &cwd,
                                     &["show", &format!("{}:{}", compare_base_oid, path)],
                                 ) {
-                                    let old_sz = buf.as_bytes().len();
+                                    let old_sz = buf.len();
                                     e.oldSize = Some(old_sz as i32);
                                     if old_sz <= max_bytes {
                                         e.oldContent = Some(buf.clone());
@@ -780,7 +780,7 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                                     &["show", &format!("{}:{}", head_oid, newp)],
                                 )
                                 .unwrap_or_default();
-                                let new_sz = new_s.as_bytes().len();
+                                let new_sz = new_s.len();
                                 e.newSize = Some(new_sz as i32);
                                 e.oldSize = Some(new_sz as i32);
                                 if new_sz <= max_bytes {

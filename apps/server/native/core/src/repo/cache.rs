@@ -259,7 +259,7 @@ pub fn fetch_origin_all_path(path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-fn enforce_cache_limit(root: &PathBuf) -> Result<()> {
+fn enforce_cache_limit(root: &Path) -> Result<()> {
     let mut idx = load_index(root);
     if idx.entries.len() <= MAX_CACHE_REPOS {
         return Ok(());
