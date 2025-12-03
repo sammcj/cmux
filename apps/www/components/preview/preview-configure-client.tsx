@@ -429,14 +429,17 @@ export function PreviewConfigureClient({
     [initialTeamSlugOrId, teams]
   );
 
-  // Layout phase for animation - check URL for initial state
-  const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>(() => {
-    if (typeof window !== "undefined") {
-      const url = new URL(window.location.href);
-      return url.searchParams.get("step") === "workspace" ? "workspace-config" : "initial-setup";
+  // Layout phase for animation - always start with initial-setup to avoid hydration mismatch
+  const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>("initial-setup");
+
+  // Sync layoutPhase with URL after hydration (runs once on mount)
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const stepParam = url.searchParams.get("step");
+    if (stepParam === "workspace") {
+      setLayoutPhase("workspace-config");
     }
-    return "initial-setup";
-  });
+  }, []);
   // Current config step (starts at run-scripts when entering workspace config)
   const [currentConfigStep, setCurrentConfigStep] = useState<ConfigStep>("run-scripts");
   // Track which steps have been completed (scripts and env-vars are pre-completed from initial setup)
@@ -1009,7 +1012,8 @@ export function PreviewConfigureClient({
   }, []);
 
   // Pre-create iframes during setup so they're ready when user clicks Next
-  useEffect(() => {
+  // Using useLayoutEffect so iframes are created before the mount effect runs
+  useLayoutEffect(() => {
     if (!instance || !persistentIframeManager) return;
 
     // Pre-create VS Code iframe during setup
