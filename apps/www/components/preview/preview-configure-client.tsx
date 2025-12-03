@@ -24,6 +24,7 @@ import Link from "next/link";
 import { formatEnvVarsContent } from "@cmux/shared/utils/format-env-vars-content";
 import clsx from "clsx";
 import {
+  FrameworkPresetSelect,
   FRAMEWORK_PRESETS,
   type FrameworkPreset,
 } from "./framework-preset-select";
@@ -42,18 +43,18 @@ type SandboxInstance = {
 
 type EnvVar = { name: string; value: string; isSecret: boolean };
 
-// Steps for the wizard flow - order matters
-const WIZARD_STEPS = [
-  "scripts",
-  "env-vars",
-  "run-scripts",
-  "browser-setup",
+// All configuration steps in order (shown in workspace config sidebar)
+const ALL_CONFIG_STEPS = [
+  "scripts",      // maintenance + dev scripts
+  "env-vars",     // environment variables
+  "run-scripts",  // run scripts in terminal
+  "browser-setup", // browser configuration
 ] as const;
 
-type WizardStep = (typeof WIZARD_STEPS)[number];
+type ConfigStep = (typeof ALL_CONFIG_STEPS)[number];
 
 // Phase tracking for the layout transition
-type LayoutPhase = "centered" | "transitioning" | "split";
+type LayoutPhase = "initial-setup" | "transitioning" | "workspace-config";
 
 type PreviewTeamOption = {
   id: string;
@@ -423,16 +424,24 @@ export function PreviewConfigureClient({
     [initialTeamSlugOrId, teams]
   );
 
-  // Wizard step state - starts with scripts
-  const [currentStep, setCurrentStep] = useState<WizardStep>("scripts");
-  // Layout phase for animation
-  const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>("centered");
-  // Track which steps have been completed
-  const [_completedSteps, setCompletedSteps] = useState<Set<WizardStep>>(new Set());
+  // Layout phase for animation - check URL for initial state
+  const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>(() => {
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      return url.searchParams.get("step") === "workspace" ? "workspace-config" : "initial-setup";
+    }
+    return "initial-setup";
+  });
+  // Current config step (starts at run-scripts when entering workspace config)
+  const [currentConfigStep, setCurrentConfigStep] = useState<ConfigStep>("run-scripts");
+  // Track which steps have been completed (scripts and env-vars are pre-completed from initial setup)
+  const [completedSteps, setCompletedSteps] = useState<Set<ConfigStep>>(
+    () => new Set(["scripts", "env-vars"] as ConfigStep[])
+  );
 
   const [envVars, setEnvVars] = useState<EnvVar[]>(initialEnvVars);
   const [hasTouchedEnvVars, setHasTouchedEnvVars] = useState(false);
-  const [_frameworkPreset, setFrameworkPreset] = useState<FrameworkPreset>(
+  const [frameworkPreset, setFrameworkPreset] = useState<FrameworkPreset>(
     initialFrameworkPreset
   );
   const [maintenanceScript, setMaintenanceScript] = useState(
@@ -456,10 +465,10 @@ export function PreviewConfigureClient({
   const [isEnvSectionOpen, setIsEnvSectionOpen] = useState(
     () => !initialEnvComplete
   );
-  const [isMaintenanceSectionOpen, setIsMaintenanceSectionOpen] = useState(
+  const [isMaintenanceSectionOpen, _setIsMaintenanceSectionOpen] = useState(
     () => !initialMaintenanceComplete
   );
-  const [isDevSectionOpen, setIsDevSectionOpen] = useState(
+  const [isDevSectionOpen, _setIsDevSectionOpen] = useState(
     () => !initialDevComplete
   );
   const [isRunSectionOpen, setIsRunSectionOpen] = useState(true);
@@ -495,6 +504,22 @@ export function PreviewConfigureClient({
         window.clearTimeout(copyResetTimeoutRef.current);
       }
     };
+  }, []);
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      const url = new URL(window.location.href);
+      const stepParam = url.searchParams.get("step");
+      if (stepParam === "workspace") {
+        setLayoutPhase("workspace-config");
+      } else {
+        setLayoutPhase("initial-setup");
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   const vscodePersistKey = instance?.instanceId
@@ -553,8 +578,8 @@ export function PreviewConfigureClient({
   const maintenanceScriptValue = maintenanceScript.trim();
   const devScriptValue = devScript.trim();
   const envDone = envNone || hasEnvValues;
-  const maintenanceDone = maintenanceNone || maintenanceScriptValue.length > 0;
-  const devDone = devNone || devScriptValue.length > 0;
+  const _maintenanceDone = maintenanceNone || maintenanceScriptValue.length > 0;
+  const _devDone = devNone || devScriptValue.length > 0;
 
   // Collapse env section when entering configure step if it's already satisfied
   useEffect(() => {
@@ -745,7 +770,7 @@ export function PreviewConfigureClient({
     setEnvVars((prev) => updater(prev));
   }, []);
 
-  const _handleFrameworkPresetChange = useCallback(
+  const handleFrameworkPresetChange = useCallback(
     (preset: FrameworkPreset) => {
       setFrameworkPreset(preset);
       // Only auto-fill if user hasn't manually edited the scripts
@@ -773,7 +798,7 @@ export function PreviewConfigureClient({
     setHasUserEditedScripts(true);
   }, []);
 
-  const handleToggleEnvNone = useCallback(
+  const _handleToggleEnvNone = useCallback(
     (value: boolean) => {
       setHasTouchedEnvVars(true);
       setEnvNone(value);
@@ -789,7 +814,7 @@ export function PreviewConfigureClient({
     []
   );
 
-  const handleToggleMaintenanceNone = useCallback((value: boolean) => {
+  const _handleToggleMaintenanceNone = useCallback((value: boolean) => {
     setMaintenanceNone(value);
     setHasUserEditedScripts(true);
     if (value) {
@@ -797,7 +822,7 @@ export function PreviewConfigureClient({
     }
   }, []);
 
-  const handleToggleDevNone = useCallback((value: boolean) => {
+  const _handleToggleDevNone = useCallback((value: boolean) => {
     setDevNone(value);
     setHasUserEditedScripts(true);
     if (value) {
@@ -919,49 +944,67 @@ export function PreviewConfigureClient({
     }
   };
 
-  const handleNextStep = useCallback(() => {
-    const currentIndex = WIZARD_STEPS.indexOf(currentStep);
+  // Handle transitioning from initial setup to workspace configuration
+  const handleStartWorkspaceConfig = useCallback(() => {
+    setLayoutPhase("transitioning");
+    // Add search param to track that we're in workspace config phase
+    const url = new URL(window.location.href);
+    url.searchParams.set("step", "workspace");
+    window.history.pushState({}, "", url.toString());
+    // After animation completes, set to workspace-config
+    setTimeout(() => {
+      setLayoutPhase("workspace-config");
+    }, 400); // Match CSS transition duration
+  }, []);
+
+  // Handle going back to initial setup from workspace config
+  const handleBackToInitialSetup = useCallback(() => {
+    // Remove the step param from URL
+    const url = new URL(window.location.href);
+    url.searchParams.delete("step");
+    window.history.pushState({}, "", url.toString());
+    // Transition back to initial setup
+    setLayoutPhase("initial-setup");
+    setCurrentConfigStep("run-scripts");
+  }, []);
+
+  // Handle next step within workspace configuration
+  const handleNextConfigStep = useCallback(() => {
+    const currentIndex = ALL_CONFIG_STEPS.indexOf(currentConfigStep);
 
     // Mark current step as completed
-    setCompletedSteps((prev) => new Set([...prev, currentStep]));
-
-    // Check if we need to transition from centered to split layout
-    // This happens after the "scripts" step (first step)
-    if (currentStep === "scripts" && layoutPhase === "centered") {
-      setLayoutPhase("transitioning");
-      // After animation completes, set to split
-      setTimeout(() => {
-        setLayoutPhase("split");
-      }, 400); // Match CSS transition duration
-    }
+    setCompletedSteps((prev) => new Set([...prev, currentConfigStep]));
 
     // Move to next step if not at end
-    if (currentIndex < WIZARD_STEPS.length - 1) {
-      setCurrentStep(WIZARD_STEPS[currentIndex + 1]);
+    if (currentIndex < ALL_CONFIG_STEPS.length - 1) {
+      setCurrentConfigStep(ALL_CONFIG_STEPS[currentIndex + 1]);
     }
-  }, [currentStep, layoutPhase]);
+  }, [currentConfigStep]);
 
-  const handlePrevStep = useCallback(() => {
-    const currentIndex = WIZARD_STEPS.indexOf(currentStep);
+  const handlePrevConfigStep = useCallback(() => {
+    const currentIndex = ALL_CONFIG_STEPS.indexOf(currentConfigStep);
     if (currentIndex > 0) {
-      setCurrentStep(WIZARD_STEPS[currentIndex - 1]);
+      setCurrentConfigStep(ALL_CONFIG_STEPS[currentIndex - 1]);
     }
-  }, [currentStep]);
+  }, [currentConfigStep]);
 
-  // Helper to check if a step is visible (current or completed)
-  const isStepVisible = useCallback((step: WizardStep) => {
-    const stepIndex = WIZARD_STEPS.indexOf(step);
-    const currentIndex = WIZARD_STEPS.indexOf(currentStep);
-    return stepIndex <= currentIndex;
-  }, [currentStep]);
+  // Helper to check if a step is visible (completed or current)
+  const isStepVisible = useCallback((step: ConfigStep) => {
+    return completedSteps.has(step) || step === currentConfigStep;
+  }, [completedSteps, currentConfigStep]);
 
   // Helper to check if a step is the current one
-  const isCurrentStep = useCallback((step: WizardStep) => {
-    return step === currentStep;
-  }, [currentStep]);
+  const isCurrentStep = useCallback((step: ConfigStep) => {
+    return step === currentConfigStep;
+  }, [currentConfigStep]);
+
+  // Helper to check if a step is completed (for collapsing)
+  const isStepCompleted = useCallback((step: ConfigStep) => {
+    return completedSteps.has(step);
+  }, [completedSteps]);
 
   // Check if we're on the last step
-  const isLastStep = currentStep === WIZARD_STEPS[WIZARD_STEPS.length - 1];
+  const isLastConfigStep = currentConfigStep === ALL_CONFIG_STEPS[ALL_CONFIG_STEPS.length - 1];
 
   // Pre-create iframes during setup so they're ready when user clicks Next
   useEffect(() => {
@@ -995,13 +1038,13 @@ export function PreviewConfigureClient({
   // Mount iframes to their targets when visible
   useLayoutEffect(() => {
     if (!instance || !persistentIframeManager) return;
-    // Only mount when in split layout
-    if (layoutPhase === "centered") return;
+    // Only mount when in workspace-config layout
+    if (layoutPhase === "initial-setup") return;
 
     const cleanupFunctions: Array<() => void> = [];
 
-    // Show VSCode for most steps (env-vars, run-scripts)
-    const showVscode = currentStep === "env-vars" || currentStep === "run-scripts";
+    // Show VSCode for steps before browser-setup
+    const showVscode = currentConfigStep !== "browser-setup";
     if (instance.vscodeUrl && showVscode) {
       const target = document.querySelector(
         `[data-iframe-target="${vscodePersistKey}"]`
@@ -1014,7 +1057,7 @@ export function PreviewConfigureClient({
     }
 
     // Show browser for browser-setup step
-    if (resolvedVncUrl && currentStep === "browser-setup") {
+    if (resolvedVncUrl && currentConfigStep === "browser-setup") {
       const target = document.querySelector(
         `[data-iframe-target="${browserPersistKey}"]`
       ) as HTMLElement | null;
@@ -1034,7 +1077,7 @@ export function PreviewConfigureClient({
     browserPersistKey,
     instance,
     persistentIframeManager,
-    currentStep,
+    currentConfigStep,
     layoutPhase,
     resolvedVncUrl,
     vscodePersistKey,
@@ -1046,19 +1089,19 @@ export function PreviewConfigureClient({
       return;
     }
 
-    // Only show iframes when in split layout
-    const inSplitLayout = layoutPhase === "split";
-    // Show VSCode for env-vars and run-scripts steps
-    const showVscode = currentStep === "env-vars" || currentStep === "run-scripts";
-    const workspaceVisible = inSplitLayout && showVscode && Boolean(instance?.vscodeUrl);
+    // Only show iframes when in workspace-config layout
+    const inWorkspaceConfig = layoutPhase === "workspace-config";
+    // Show VSCode for steps before browser-setup
+    const showVscode = currentConfigStep !== "browser-setup";
+    const workspaceVisible = inWorkspaceConfig && showVscode && Boolean(instance?.vscodeUrl);
     // Show browser for browser-setup step
-    const browserVisible = inSplitLayout && currentStep === "browser-setup" && Boolean(resolvedVncUrl);
+    const browserVisible = inWorkspaceConfig && currentConfigStep === "browser-setup" && Boolean(resolvedVncUrl);
 
     persistentIframeManager.setVisibility(vscodePersistKey, workspaceVisible);
     persistentIframeManager.setVisibility(browserPersistKey, browserVisible);
   }, [
     browserPersistKey,
-    currentStep,
+    currentConfigStep,
     layoutPhase,
     persistentIframeManager,
     resolvedVncUrl,
@@ -1089,7 +1132,7 @@ export function PreviewConfigureClient({
 
   const renderPreviewPanel = () => {
     // Show browser only for browser-setup step, VSCode for others
-    const showBrowser = currentStep === "browser-setup";
+    const showBrowser = currentConfigStep === "browser-setup";
     const placeholder = showBrowser ? browserPlaceholder : workspacePlaceholder;
     const iframeKey = showBrowser ? browserPersistKey : vscodePersistKey;
 
@@ -1118,11 +1161,238 @@ export function PreviewConfigureClient({
     );
   };
 
-  // Render the step-by-step configuration wizard content
-  const renderWizardContent = () => {
+  // Shared render function for scripts section
+  const renderScriptsSection = (options?: { compact?: boolean; defaultOpen?: boolean }) => {
+    const { compact = false, defaultOpen = true } = options ?? {};
+    const iconSize = compact ? "h-3.5 w-3.5" : "h-4 w-4";
+    const titleSize = compact ? "text-[13px]" : "text-base";
+    const contentPadding = compact ? "mt-3 pl-5" : "mt-4 pl-6";
+
     return (
-      <div className="space-y-5">
-        {/* Workspace root info - always shown */}
+      <details
+        className="group"
+        open={defaultOpen}
+      >
+        <summary className={clsx(
+          "flex items-center gap-2 cursor-pointer font-semibold text-neutral-900 dark:text-neutral-100 list-none",
+          titleSize
+        )}>
+          <ChevronDown className={clsx(iconSize, "text-neutral-400 transition-transform -rotate-90 group-open:rotate-0")} />
+          Maintenance and Dev Scripts
+        </summary>
+        <div className={clsx(contentPadding, "space-y-4")}>
+          <div>
+            <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">
+              Maintenance Script
+            </label>
+            <textarea
+              value={maintenanceScript ?? ""}
+              onChange={(e) => handleMaintenanceScriptChange(e.target.value)}
+              placeholder="npm install, bun install, pip install -r requirements.txt"
+              rows={2}
+              className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none"
+            />
+            <p className="text-xs text-neutral-400 mt-1">
+              Runs after git pull to install dependencies
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">
+              Dev Script
+            </label>
+            <textarea
+              value={devScript ?? ""}
+              onChange={(e) => handleDevScriptChange(e.target.value)}
+              placeholder="npm run dev, bun dev, python manage.py runserver"
+              rows={2}
+              className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none"
+            />
+            <p className="text-xs text-neutral-400 mt-1">
+              Starts the development server
+            </p>
+          </div>
+        </div>
+      </details>
+    );
+  };
+
+  // Shared render function for environment variables section
+  const renderEnvVarsSection = (options?: { compact?: boolean; defaultOpen?: boolean }) => {
+    const { compact = false, defaultOpen = true } = options ?? {};
+    const iconSize = compact ? "h-3.5 w-3.5" : "h-4 w-4";
+    const titleSize = compact ? "text-[13px]" : "text-base";
+    const contentPadding = compact ? "mt-3 pl-5" : "mt-4 pl-6";
+
+    return (
+      <details
+        className="group"
+        open={defaultOpen}
+        onToggle={(e) => setIsEnvSectionOpen(e.currentTarget.open)}
+      >
+        <summary className={clsx(
+          "flex items-center gap-2 cursor-pointer font-semibold text-neutral-900 dark:text-neutral-100 list-none",
+          titleSize
+        )}>
+          <ChevronDown className={clsx(iconSize, "text-neutral-400 transition-transform -rotate-90 group-open:rotate-0")} />
+          <span>Environment Variables</span>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                setActiveEnvValueIndex(null);
+                setAreEnvValuesHidden((prev) => !prev);
+              }}
+              className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition p-0.5"
+              aria-label={areEnvValuesHidden ? "Reveal values" : "Hide values"}
+            >
+              {areEnvValuesHidden ? <EyeOff className={iconSize} /> : <Eye className={iconSize} />}
+            </button>
+          </div>
+        </summary>
+        <div
+          className={clsx(contentPadding, "space-y-2")}
+          onPasteCapture={(e) => {
+            const text = e.clipboardData?.getData("text") ?? "";
+            if (text && (/\n/.test(text) || /(=|:)\s*\S/.test(text))) {
+              e.preventDefault();
+              const items = parseEnvBlock(text);
+              if (items.length > 0) {
+                setEnvNone(false);
+                updateEnvVars((prev) => {
+                  const map = new Map(
+                    prev
+                      .filter((r) => r.name.trim().length > 0 || r.value.trim().length > 0)
+                      .map((r) => [r.name, r] as const)
+                  );
+                  for (const it of items) {
+                    if (!it.name) continue;
+                    const existing = map.get(it.name);
+                    if (existing) map.set(it.name, { ...existing, value: it.value });
+                    else map.set(it.name, { name: it.name, value: it.value, isSecret: true });
+                  }
+                  const next = Array.from(map.values());
+                  next.push({ name: "", value: "", isSecret: true });
+                  setPendingFocusIndex(next.length - 1);
+                  return next;
+                });
+              }
+            }
+          }}
+        >
+          <div
+            className="grid gap-2 text-xs text-neutral-500 items-center pr-10 mb-1"
+            style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.5fr) 40px" }}
+          >
+            <span>Name</span>
+            <span>Value</span>
+            <span />
+          </div>
+          {envVars.map((row, idx) => {
+            const isEditingValue = activeEnvValueIndex === idx;
+            const shouldMaskValue = areEnvValuesHidden && row.value.trim().length > 0 && !isEditingValue;
+            return (
+              <div
+                key={idx}
+                className="grid gap-2 items-center pr-10 min-h-9"
+                style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.5fr) 40px" }}
+              >
+                <input
+                  type="text"
+                  value={row.name}
+                  disabled={envNone}
+                  ref={(el) => { keyInputRefs.current[idx] = el; }}
+                  onChange={(e) => {
+                    setEnvNone(false);
+                    updateEnvVars((prev) => {
+                      const next = [...prev];
+                      if (next[idx]) next[idx] = { ...next[idx], name: e.target.value };
+                      return next;
+                    });
+                  }}
+                  placeholder="EXAMPLE_NAME"
+                  className="w-full min-w-0 h-9 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+                <input
+                  type={shouldMaskValue ? "password" : "text"}
+                  value={shouldMaskValue ? MASKED_ENV_VALUE : row.value}
+                  disabled={envNone}
+                  onChange={shouldMaskValue ? undefined : (e) => {
+                    setEnvNone(false);
+                    updateEnvVars((prev) => {
+                      const next = [...prev];
+                      if (next[idx]) next[idx] = { ...next[idx], value: e.target.value };
+                      return next;
+                    });
+                  }}
+                  onFocus={() => setActiveEnvValueIndex(idx)}
+                  onBlur={() => setActiveEnvValueIndex((current) => current === idx ? null : current)}
+                  readOnly={shouldMaskValue}
+                  placeholder="I9JU23NF394R6HH"
+                  className="w-full min-w-0 h-9 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+                <button
+                  type="button"
+                  disabled={envNone || envVars.length <= 1}
+                  onClick={() => updateEnvVars((prev) => {
+                    const next = prev.filter((_, i) => i !== idx);
+                    return next.length > 0 ? next : [{ name: "", value: "", isSecret: true }];
+                  })}
+                  className={clsx(
+                    "h-9 w-9 rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-500 dark:text-neutral-400 grid place-items-center",
+                    envNone || envVars.length <= 1
+                      ? "opacity-60 cursor-not-allowed"
+                      : "hover:bg-neutral-50 dark:hover:bg-neutral-900"
+                  )}
+                  aria-label="Remove variable"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+              </div>
+            );
+          })}
+          <div className="mt-1">
+            <button
+              type="button"
+              onClick={() => updateEnvVars((prev) => [...prev, { name: "", value: "", isSecret: true }])}
+              disabled={envNone}
+              className="inline-flex items-center gap-2 h-9 rounded-md border border-neutral-200 dark:border-neutral-800 px-3 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-4 h-4" /> Add variable
+            </button>
+          </div>
+        </div>
+        <p className={clsx("text-xs text-neutral-400 mt-4", compact ? "pl-5" : "pl-6")}>
+          Tip: Paste a .env file to auto-fill
+        </p>
+      </details>
+    );
+  };
+
+  // Render the initial setup content (framework, scripts, env vars - all shown at once)
+  const renderInitialSetupContent = () => {
+    return (
+      <div className="space-y-6">
+        {/* Framework Preset */}
+        <FrameworkPresetSelect
+          value={frameworkPreset}
+          onValueChange={handleFrameworkPresetChange}
+        />
+
+        {/* Maintenance and Dev Scripts - Always expanded on initial setup */}
+        {renderScriptsSection({ defaultOpen: true })}
+
+        {/* Environment Variables - Always expanded on initial setup */}
+        {renderEnvVarsSection({ defaultOpen: true })}
+      </div>
+    );
+  };
+
+  // Render all config steps in sidebar (completed ones collapsed, current one expanded, future ones hidden)
+  const renderWorkspaceStepContent = () => {
+    return (
+      <div className="space-y-4">
+        {/* Workspace root info */}
         <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
           Your workspace root at{" "}
           <code className="px-1 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-[10px] text-neutral-700 dark:text-neutral-300">
@@ -1131,268 +1401,31 @@ export function PreviewConfigureClient({
           maps directly to your repo root.
         </p>
 
-        {/* Step 1: Scripts - always visible when current or completed */}
+        {/* Step 1: Scripts (completed from initial setup - collapsed) */}
         {isStepVisible("scripts") && (
-          <div className={clsx(
-            "transition-opacity duration-300",
-            isCurrentStep("scripts") ? "opacity-100" : "opacity-70"
-          )}>
-            {/* Maintenance Script */}
-            <details
-              className="group"
-              open={isMaintenanceSectionOpen}
-              onToggle={(e) => setIsMaintenanceSectionOpen(e.currentTarget.open)}
-            >
-              <summary className="flex items-center gap-2 cursor-pointer list-none">
-                <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
-                <StepBadge step={1} done={maintenanceDone} />
-                <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
-                  Maintenance script
-                </span>
-              </summary>
-              <div className="mt-3 ml-6 space-y-2">
-                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                  Runs after git pull to install dependencies.
-                </p>
-                <textarea
-                  value={maintenanceScript ?? ""}
-                  onChange={(e) => handleMaintenanceScriptChange(e.target.value)}
-                  placeholder="npm install, bun install, pip install -r requirements.txt"
-                  disabled={maintenanceNone}
-                  rows={2}
-                  className="w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-2.5 py-1.5 text-[12px] font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 disabled:opacity-60 disabled:cursor-not-allowed resize-none"
-                />
-                <div className="flex items-center justify-end">
-                  <label className="flex items-center gap-1.5 text-[10px] text-neutral-400 cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300">
-                    <input
-                      type="checkbox"
-                      checked={maintenanceNone}
-                      onChange={(e) => handleToggleMaintenanceNone(e.target.checked)}
-                      className="h-3.5 w-3.5 rounded border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
-                    />
-                    None
-                  </label>
-                </div>
-              </div>
-            </details>
-
-            {/* Dev Script */}
-            <details
-              className="group mt-4"
-              open={isDevSectionOpen}
-              onToggle={(e) => setIsDevSectionOpen(e.currentTarget.open)}
-            >
-              <summary className="flex items-center gap-2 cursor-pointer list-none">
-                <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
-                <StepBadge step={2} done={devDone} />
-                <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
-                  Dev script
-                </span>
-              </summary>
-              <div className="mt-3 ml-6 space-y-2">
-                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                  Starts the development server.
-                </p>
-                <textarea
-                  value={devScript ?? ""}
-                  onChange={(e) => handleDevScriptChange(e.target.value)}
-                  placeholder="npm run dev, bun dev, python manage.py runserver"
-                  disabled={devNone}
-                  rows={2}
-                  className="w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-2.5 py-1.5 text-[12px] font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 disabled:opacity-60 disabled:cursor-not-allowed resize-none"
-                />
-                <div className="flex items-center justify-end">
-                  <label className="flex items-center gap-1.5 text-[10px] text-neutral-400 cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300">
-                    <input
-                      type="checkbox"
-                      checked={devNone}
-                      onChange={(e) => handleToggleDevNone(e.target.checked)}
-                      className="h-3.5 w-3.5 rounded border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
-                    />
-                    None
-                  </label>
-                </div>
-              </div>
-            </details>
+          <div>
+            {renderScriptsSection({ compact: true, defaultOpen: !isStepCompleted("scripts") })}
           </div>
         )}
 
-        {/* Step 2: Environment Variables */}
+        {/* Step 2: Environment Variables (completed from initial setup - collapsed) */}
         {isStepVisible("env-vars") && (
-          <div className={clsx(
-            "transition-opacity duration-300",
-            isCurrentStep("env-vars") ? "opacity-100" : "opacity-70"
-          )}>
-            <details
-              className="group"
-              open={isEnvSectionOpen}
-              onToggle={(e) => setIsEnvSectionOpen(e.currentTarget.open)}
-            >
-              <summary className="flex items-center gap-2 cursor-pointer list-none">
-                <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
-                <StepBadge step={3} done={envDone} />
-                <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
-                  Environment variables
-                </span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setActiveEnvValueIndex(null);
-                    setAreEnvValuesHidden((prev) => !prev);
-                  }}
-                  className="ml-auto text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 p-0.5"
-                  aria-label={areEnvValuesHidden ? "Reveal values" : "Hide values"}
-                >
-                  {areEnvValuesHidden ? (
-                    <EyeOff className="h-3.5 w-3.5" />
-                  ) : (
-                    <Eye className="h-3.5 w-3.5" />
-                  )}
-                </button>
-              </summary>
-              <div
-                className="mt-3 ml-6 space-y-2"
-                onPasteCapture={(e) => {
-                  const text = e.clipboardData?.getData("text") ?? "";
-                  if (text && (/\n/.test(text) || /(=|:)\s*\S/.test(text))) {
-                    e.preventDefault();
-                    const items = parseEnvBlock(text);
-                    if (items.length > 0) {
-                      setEnvNone(false);
-                      updateEnvVars((prev) => {
-                        const map = new Map(
-                          prev
-                            .filter((r) => r.name.trim().length > 0 || r.value.trim().length > 0)
-                            .map((r) => [r.name, r] as const)
-                        );
-                        for (const it of items) {
-                          if (!it.name) continue;
-                          const existing = map.get(it.name);
-                          if (existing) map.set(it.name, { ...existing, value: it.value });
-                          else map.set(it.name, { name: it.name, value: it.value, isSecret: true });
-                        }
-                        const next = Array.from(map.values());
-                        next.push({ name: "", value: "", isSecret: true });
-                        setPendingFocusIndex(next.length - 1);
-                        return next;
-                      });
-                    }
-                  }
-                }}
-              >
-                <div
-                  className="grid gap-2 text-[10px] text-neutral-500 items-center min-h-7"
-                  style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.5fr) 28px" }}
-                >
-                  <span>Key</span>
-                  <span>Value</span>
-                  <span />
-                </div>
-                {envVars.map((row, idx) => {
-                  const isEditingValue = activeEnvValueIndex === idx;
-                  const shouldMaskValue = areEnvValuesHidden && row.value.trim().length > 0 && !isEditingValue;
-                  return (
-                    <div
-                      key={idx}
-                      className="grid gap-2 items-center min-h-7"
-                      style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.5fr) 28px" }}
-                    >
-                      <input
-                        type="text"
-                        value={row.name}
-                        disabled={envNone}
-                        ref={(el) => { keyInputRefs.current[idx] = el; }}
-                        onChange={(e) => {
-                          setEnvNone(false);
-                          updateEnvVars((prev) => {
-                            const next = [...prev];
-                            if (next[idx]) next[idx] = { ...next[idx], name: e.target.value };
-                            return next;
-                          });
-                        }}
-                        placeholder="EXAMPLE_NAME"
-                        className="w-full min-w-0 h-7 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-2.5 text-[12px] font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 disabled:opacity-60 disabled:cursor-not-allowed"
-                      />
-                      <input
-                        type="text"
-                        value={shouldMaskValue ? MASKED_ENV_VALUE : row.value}
-                        disabled={envNone}
-                        onChange={shouldMaskValue ? undefined : (e) => {
-                          setEnvNone(false);
-                          updateEnvVars((prev) => {
-                            const next = [...prev];
-                            if (next[idx]) next[idx] = { ...next[idx], value: e.target.value };
-                            return next;
-                          });
-                        }}
-                        onFocus={() => setActiveEnvValueIndex(idx)}
-                        onBlur={() => setActiveEnvValueIndex((current) => current === idx ? null : current)}
-                        readOnly={shouldMaskValue}
-                        placeholder="I9JU23NF394R6HH"
-                        className="w-full min-w-0 h-7 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-2.5 text-[12px] font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 disabled:opacity-60 disabled:cursor-not-allowed"
-                      />
-                      <button
-                        type="button"
-                        disabled={envNone || envVars.length <= 1}
-                        onClick={() => updateEnvVars((prev) => {
-                          const next = prev.filter((_, i) => i !== idx);
-                          return next.length > 0 ? next : [{ name: "", value: "", isSecret: true }];
-                        })}
-                        className={clsx(
-                          "h-7 w-7 rounded border border-neutral-200 dark:border-neutral-800 text-neutral-400 grid place-items-center",
-                          envNone || envVars.length <= 1
-                            ? "opacity-50 cursor-not-allowed"
-                            : "hover:border-neutral-300 dark:hover:border-neutral-700 hover:text-neutral-600 dark:hover:text-neutral-200"
-                        )}
-                        aria-label="Remove"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                    </div>
-                  );
-                })}
-                <div className="flex items-center justify-between pt-1">
-                  <button
-                    type="button"
-                    disabled={envNone}
-                    onClick={() => updateEnvVars((prev) => [...prev, { name: "", value: "", isSecret: true }])}
-                    className="inline-flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 disabled:opacity-50"
-                  >
-                    <Plus className="w-3 h-3" /> Add variable
-                  </button>
-                  <label className="flex items-center gap-1.5 text-[10px] text-neutral-400 cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300">
-                    <input
-                      type="checkbox"
-                      checked={envNone}
-                      onChange={(e) => handleToggleEnvNone(e.target.checked)}
-                      className="h-3.5 w-3.5 rounded border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
-                    />
-                    None
-                  </label>
-                </div>
-                <p className="text-[10px] text-neutral-400">
-                  Tip: Paste .env to auto-fill
-                </p>
-              </div>
-            </details>
+          <div>
+            {renderEnvVarsSection({ compact: true, defaultOpen: !isStepCompleted("env-vars") })}
           </div>
         )}
 
         {/* Step 3: Run Scripts */}
         {isStepVisible("run-scripts") && (
-          <div className={clsx(
-            "transition-opacity duration-300",
-            isCurrentStep("run-scripts") ? "opacity-100" : "opacity-70"
-          )}>
+          <div>
             <details
               className="group"
-              open={isRunSectionOpen}
+              open={isCurrentStep("run-scripts") || !isStepCompleted("run-scripts")}
               onToggle={(e) => setIsRunSectionOpen(e.currentTarget.open)}
             >
               <summary className="flex items-center gap-2 cursor-pointer list-none">
                 <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
-                <StepBadge step={4} done={runConfirmed} />
+                <StepBadge step={3} done={runConfirmed || isStepCompleted("run-scripts")} />
                 <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
                   Run scripts in VS Code terminal
                 </span>
@@ -1433,7 +1466,7 @@ export function PreviewConfigureClient({
                     {maintenanceScript.trim() || devScript.trim() ? (
                       [maintenanceScript.trim(), devScript.trim()].filter(Boolean).join(" && ")
                     ) : (
-                      <span className="text-neutral-400 italic">Enter scripts above to see commands</span>
+                      <span className="text-neutral-400 italic">No scripts configured</span>
                     )}
                   </pre>
                 </div>
@@ -1453,18 +1486,15 @@ export function PreviewConfigureClient({
 
         {/* Step 4: Browser Setup */}
         {isStepVisible("browser-setup") && (
-          <div className={clsx(
-            "transition-opacity duration-300",
-            isCurrentStep("browser-setup") ? "opacity-100" : "opacity-70"
-          )}>
+          <div>
             <details
               className="group"
-              open={isBrowserSetupSectionOpen}
+              open={isCurrentStep("browser-setup") || !isStepCompleted("browser-setup")}
               onToggle={(e) => setIsBrowserSetupSectionOpen(e.currentTarget.open)}
             >
               <summary className="flex items-center gap-2 cursor-pointer list-none">
                 <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
-                <StepBadge step={5} done={browserConfirmed} />
+                <StepBadge step={4} done={browserConfirmed || isStepCompleted("browser-setup")} />
                 <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
                   Configure browser
                 </span>
@@ -1511,24 +1541,77 @@ export function PreviewConfigureClient({
     );
   };
 
-  // Configuration panel that can be centered or in sidebar
-  const renderConfigPanel = () => (
-    <div className={clsx(
-      "flex flex-col overflow-hidden bg-white dark:bg-black transition-all duration-400 ease-in-out",
-      layoutPhase === "centered"
-        ? "w-full max-w-2xl mx-auto rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-800"
-        : "w-[420px] h-full border-r border-neutral-200 dark:border-neutral-800"
-    )}>
+  // Initial setup panel (full page, shows framework, scripts, env vars)
+  const renderInitialSetupPanel = () => (
+    <div className="min-h-dvh bg-white dark:bg-black font-sans">
+      <div className="max-w-2xl mx-auto px-6 py-10">
+        {/* Back to preview.new link */}
+        <div className="mb-3">
+          <Link
+            href="/preview"
+            className="inline-flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+          >
+            <ArrowLeft className="h-3 w-3" />
+            Go to preview.new
+          </Link>
+        </div>
+
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
+            Configure Project
+          </h1>
+          <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 pt-2">
+            <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
+            </svg>
+            <span className="font-sans">{repo}</span>
+          </div>
+        </div>
+
+        {/* Content */}
+        {renderInitialSetupContent()}
+
+        {/* Error Message */}
+        {errorMessage && (
+          <div className="rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 p-3 mt-6">
+            <p className="text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
+          </div>
+        )}
+
+        {/* Footer Button */}
+        <div className="flex items-center justify-end mt-8 pt-6 border-t border-neutral-200 dark:border-neutral-800">
+          <button
+            type="button"
+            onClick={handleStartWorkspaceConfig}
+            className={clsx(
+              "inline-flex items-center gap-2 rounded-md px-5 py-2.5 text-sm font-semibold transition",
+              "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-200 cursor-pointer",
+              !isWorkspaceReady && "opacity-80"
+            )}
+          >
+            Next
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Workspace config panel (sidebar, shows steps one at a time)
+  const renderWorkspaceConfigPanel = () => (
+    <div className="w-[420px] h-full flex flex-col overflow-hidden border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
       <div className="flex-shrink-0 px-5 pt-4 pb-2">
-        <Link
-          href="/preview"
+        <button
+          type="button"
+          onClick={handleBackToInitialSetup}
           className="inline-flex items-center gap-1 text-[11px] text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 mb-3"
         >
           <ArrowLeft className="h-3 w-3" />
-          Go to preview.new
-        </Link>
+          Back to project setup
+        </button>
         <h1 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 tracking-tight">
-          Configure environment
+          Configure workspace
         </h1>
         <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 pt-1">
           <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
@@ -1539,7 +1622,7 @@ export function PreviewConfigureClient({
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-5">
-        {renderWizardContent()}
+        {renderWorkspaceStepContent()}
       </div>
 
       <div className="flex-shrink-0 border-t border-neutral-200 dark:border-neutral-800 p-4 bg-white dark:bg-black">
@@ -1550,10 +1633,10 @@ export function PreviewConfigureClient({
         )}
 
         <div className="flex items-center justify-between gap-3">
-          {currentStep !== "scripts" ? (
+          {currentConfigStep !== "run-scripts" ? (
             <button
               type="button"
-              onClick={handlePrevStep}
+              onClick={handlePrevConfigStep}
               className="inline-flex items-center gap-2 rounded-md border border-neutral-200 dark:border-neutral-800 px-4 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -1563,10 +1646,10 @@ export function PreviewConfigureClient({
             <div />
           )}
 
-          {!isLastStep ? (
+          {!isLastConfigStep ? (
             <button
               type="button"
-              onClick={handleNextStep}
+              onClick={handleNextConfigStep}
               className="inline-flex items-center gap-2 rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 px-4 py-2 text-sm font-semibold hover:bg-neutral-800 dark:hover:bg-neutral-200 transition cursor-pointer"
             >
               Next
@@ -1594,23 +1677,19 @@ export function PreviewConfigureClient({
     </div>
   );
 
-  // Centered layout (initial scripts step)
-  if (layoutPhase === "centered") {
-    return (
-      <div className="min-h-dvh bg-neutral-50 dark:bg-neutral-950 font-sans flex items-center justify-center p-6">
-        {renderConfigPanel()}
-      </div>
-    );
+  // Initial setup layout (full page)
+  if (layoutPhase === "initial-setup") {
+    return renderInitialSetupPanel();
   }
 
-  // Split layout (after transitioning from centered)
+  // Workspace config layout (split with sidebar + preview)
   return (
     <div className={clsx(
       "flex h-screen overflow-hidden bg-neutral-50 dark:bg-neutral-950 font-sans text-[15px] leading-6",
       layoutPhase === "transitioning" && "animate-fade-in"
     )}>
       {/* Left: Configuration Form */}
-      {renderConfigPanel()}
+      {renderWorkspaceConfigPanel()}
 
       {/* Right: Preview Panel */}
       <div className="flex-1 flex flex-col bg-neutral-950 overflow-hidden">
