@@ -386,12 +386,12 @@ export const postPreviewComment = internalAction({
       // Build links row (under the heading)
       const linkParts: string[] = [];
       if (workspaceUrl) {
-        linkParts.push(`[Open Workspace (1 hr expiry)](${workspaceUrl}?src=preview.new)`);
+        linkParts.push(`[Open Workspace (1 hr expiry)](${workspaceUrl}?utm_source=github_cmux_bot)`);
       }
       if (devServerUrl) {
-        linkParts.push(`[Open Dev Browser (1 hr expiry)](${devServerUrl}?src=preview.new)`);
+        linkParts.push(`[Open Dev Browser (1 hr expiry)](${devServerUrl}?utm_source=github_cmux_bot)`);
       }
-      linkParts.push(`[Open Diff Heatmap](https://0github.com/${repoFullName}/pull/${prNumber}?src=preview.new)`);
+      linkParts.push(`[Open Diff Heatmap](https://0github.com/${repoFullName}/pull/${prNumber}?utm_source=github_cmux_bot)`);
 
       if (linkParts.length > 0) {
         commentSections.push(linkParts.join(" · "));
