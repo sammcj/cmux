@@ -459,7 +459,6 @@ export function PreviewConfigureClient({
     () => initialMaintenanceNone
   );
   const [devNone, setDevNone] = useState(() => initialDevNone);
-  const [runConfirmed, setRunConfirmed] = useState(false);
   const [browserConfirmed, setBrowserConfirmed] = useState(false);
   const [commandsCopied, setCommandsCopied] = useState(false);
   const [isEnvSectionOpen, setIsEnvSectionOpen] = useState(
@@ -852,9 +851,6 @@ export function PreviewConfigureClient({
     }
   }, [devScript, maintenanceScript]);
 
-  useEffect(() => {
-    setRunConfirmed(false);
-  }, [maintenanceScriptValue, devScriptValue, maintenanceNone, devNone]);
 
   const handleSaveConfiguration = async () => {
     if (!resolvedTeamSlugOrId) {
@@ -998,11 +994,14 @@ export function PreviewConfigureClient({
 
   // Navigate to a specific step (for going back to completed steps)
   const handleGoToStep = useCallback((step: ConfigStep) => {
+    // Remove from completed set when going back to a step
+    setCompletedSteps((prev) => {
+      const next = new Set(prev);
+      next.delete(step);
+      return next;
+    });
     setCurrentConfigStep(step);
   }, []);
-
-  // Check if we're on the last step
-  const isLastConfigStep = currentConfigStep === ALL_CONFIG_STEPS[ALL_CONFIG_STEPS.length - 1];
 
   // Pre-create iframes during setup so they're ready when user clicks Next
   useEffect(() => {
@@ -1477,15 +1476,9 @@ export function PreviewConfigureClient({
                     )}
                   </pre>
                 </div>
-                <label className="flex items-center gap-1.5 text-[11px] text-neutral-500 dark:text-neutral-400 cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-300">
-                  <input
-                    type="checkbox"
-                    checked={runConfirmed}
-                    onChange={(e) => setRunConfirmed(e.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
-                  />
-                  Proceed once dev script is running
-                </label>
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                  Proceed once dev script is running.
+                </p>
 
                 {/* Continue button inside step */}
                 {isCurrentStep("run-scripts") && (
@@ -1543,15 +1536,9 @@ export function PreviewConfigureClient({
                     <span>Navigate to your dev server URL (e.g., localhost:3000)</span>
                   </li>
                 </ul>
-                <label className="flex items-center gap-1.5 text-[11px] text-neutral-500 dark:text-neutral-400 cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-300 pt-1">
-                  <input
-                    type="checkbox"
-                    checked={browserConfirmed}
-                    onChange={(e) => setBrowserConfirmed(e.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
-                  />
-                  Browser is set up properly
-                </label>
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                  Proceed once browser is set up properly.
+                </p>
 
                 {/* Terminal warning */}
                 <div className="mt-4 rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-3 py-2.5">
@@ -1668,40 +1655,11 @@ export function PreviewConfigureClient({
 
       <div className="flex-1 overflow-y-auto px-5 pb-5">
         {renderWorkspaceStepContent()}
-      </div>
 
-      <div className="flex-shrink-0 border-t border-neutral-200 dark:border-neutral-800 p-4 bg-white dark:bg-black">
         {errorMessage && (
-          <div className="rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 p-3 mb-4">
+          <div className="rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 p-3 mt-4">
             <p className="text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
           </div>
-        )}
-
-        {!isLastConfigStep ? (
-          <button
-            type="button"
-            onClick={handleNextConfigStep}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 px-4 py-2 text-sm font-semibold hover:bg-neutral-800 dark:hover:bg-neutral-200 transition cursor-pointer"
-          >
-            Continue
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={handleSaveConfiguration}
-            disabled={isSaving}
-            className="w-full inline-flex items-center justify-center rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 px-4 py-2 text-sm font-semibold hover:bg-neutral-800 dark:hover:bg-neutral-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              "Save configuration"
-            )}
-          </button>
         )}
       </div>
     </div>
