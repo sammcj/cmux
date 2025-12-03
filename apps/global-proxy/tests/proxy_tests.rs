@@ -27,9 +27,11 @@ struct TestProxy {
 
 impl TestProxy {
     async fn spawn() -> Self {
-        let mut config = ProxyConfig::default();
-        config.bind_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
-        config.backend_host = "127.0.0.1".to_string();
+        let config = ProxyConfig {
+            bind_addr: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+            backend_host: "127.0.0.1".to_string(),
+            ..Default::default()
+        };
 
         let handle = spawn_proxy(config).await.expect("failed to start proxy");
 

@@ -898,48 +898,6 @@ fn decode_body_with_encoding(bytes: &[u8], encoding: Option<&str>) -> io::Result
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::decode_body_with_encoding;
-    use flate2::{Compression, write::GzEncoder};
-    use std::io::Write;
-
-    #[test]
-    fn decodes_identity_and_none_encodings() {
-        let payload = b"hello world";
-        assert_eq!(decode_body_with_encoding(payload, None).unwrap(), payload);
-        assert_eq!(
-            decode_body_with_encoding(payload, Some("identity")).unwrap(),
-            payload
-        );
-        assert_eq!(
-            decode_body_with_encoding(payload, Some("")).unwrap(),
-            payload
-        );
-    }
-
-    #[test]
-    fn decodes_gzip_payloads() {
-        let payload = b"compressed content";
-        let compressed = gzip(payload);
-        let decoded = decode_body_with_encoding(&compressed, Some("gzip")).unwrap();
-        assert_eq!(decoded, payload);
-    }
-
-    #[test]
-    fn errors_on_unsupported_encoding() {
-        let payload = b"noop";
-        let err = decode_body_with_encoding(payload, Some("unknown-enc")).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-    }
-
-    fn gzip(payload: &[u8]) -> Vec<u8> {
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(payload).unwrap();
-        encoder.finish().unwrap()
-    }
-}
-
 fn sanitize_headers(headers: &HeaderMap, strip_payload_headers: bool) -> HeaderMap {
     let ignored_payload_headers = [
         "content-length",
@@ -1355,4 +1313,46 @@ fn service_worker_response() -> Response<Body> {
         .header(header::CACHE_CONTROL, "no-cache")
         .body(Body::from(SERVICE_WORKER_JS))
         .unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_body_with_encoding;
+    use flate2::{Compression, write::GzEncoder};
+    use std::io::Write;
+
+    #[test]
+    fn decodes_identity_and_none_encodings() {
+        let payload = b"hello world";
+        assert_eq!(decode_body_with_encoding(payload, None).unwrap(), payload);
+        assert_eq!(
+            decode_body_with_encoding(payload, Some("identity")).unwrap(),
+            payload
+        );
+        assert_eq!(
+            decode_body_with_encoding(payload, Some("")).unwrap(),
+            payload
+        );
+    }
+
+    #[test]
+    fn decodes_gzip_payloads() {
+        let payload = b"compressed content";
+        let compressed = gzip(payload);
+        let decoded = decode_body_with_encoding(&compressed, Some("gzip")).unwrap();
+        assert_eq!(decoded, payload);
+    }
+
+    #[test]
+    fn errors_on_unsupported_encoding() {
+        let payload = b"noop";
+        let err = decode_body_with_encoding(payload, Some("unknown-enc")).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    fn gzip(payload: &[u8]) -> Vec<u8> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(payload).unwrap();
+        encoder.finish().unwrap()
+    }
 }

@@ -105,7 +105,7 @@ pub struct DiffComputationDebug {
 
 #[cfg(test)]
 thread_local! {
-  static LAST_DIFF_DEBUG: RefCell<Option<DiffComputationDebug>> = RefCell::new(None);
+  static LAST_DIFF_DEBUG: RefCell<Option<DiffComputationDebug>> = const { RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -114,16 +114,16 @@ pub fn last_diff_debug() -> Option<DiffComputationDebug> {
 }
 
 fn is_ancestor(repo: &Repository, anc: ObjectId, desc: ObjectId) -> bool {
-    match crate::merge_base::merge_base(
-        "",
-        repo,
-        desc,
-        anc,
-        crate::merge_base::MergeBaseStrategy::Bfs,
-    ) {
-        Some(x) if x == anc => true,
-        _ => false,
-    }
+    matches!(
+        crate::merge_base::merge_base(
+            "",
+            repo,
+            desc,
+            anc,
+            crate::merge_base::MergeBaseStrategy::Bfs,
+        ),
+        Some(x) if x == anc
+    )
 }
 
 fn find_merge_parent_on_base(

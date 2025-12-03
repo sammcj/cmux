@@ -10,7 +10,7 @@ use std::{
 };
 
 fn is_binary(data: &[u8]) -> bool {
-    data.iter().any(|&b| b == 0) || std::str::from_utf8(data).is_err()
+    data.contains(&0) || std::str::from_utf8(data).is_err()
 }
 
 fn default_remote_head(repo: &Repository) -> Option<ObjectId> {
@@ -114,15 +114,12 @@ fn should_ignore(root: &Path, rel: &str) -> bool {
             if rule.is_empty() || rule.starts_with('#') {
                 continue;
             }
-            if rule.ends_with('/') {
-                let d = &rule[..rule.len() - 1];
+            if let Some(d) = rule.strip_suffix('/') {
                 if rel == d || rel.starts_with(&format!("{}/", d)) {
                     return true;
                 }
-            } else {
-                if rel == rule || rel.starts_with(&format!("{}/", rule)) {
-                    return true;
-                }
+            } else if rel == rule || rel.starts_with(&format!("{}/", rule)) {
+                return true;
             }
         }
     }
@@ -191,7 +188,7 @@ pub fn diff_workspace(opts: GitDiffWorkspaceOptions) -> Result<Vec<DiffEntry>> {
         }
     }
 
-    let workdir = repo.work_dir().unwrap_or_else(|| cwd.as_path());
+    let workdir = repo.work_dir().unwrap_or(cwd.as_path());
     let files = scan_workdir(workdir);
 
     let mut out: Vec<DiffEntry> = Vec::new();
@@ -212,7 +209,7 @@ pub fn diff_workspace(opts: GitDiffWorkspaceOptions) -> Result<Vec<DiffEntry>> {
                 };
                 if include && !bin {
                     let new_str = String::from_utf8_lossy(&new_data).into_owned();
-                    let new_sz = new_str.as_bytes().len();
+                    let new_sz = new_str.len();
                     e.newSize = Some(new_sz as i32);
                     e.oldSize = Some(0);
                     if new_sz <= max_bytes {
@@ -234,7 +231,7 @@ pub fn diff_workspace(opts: GitDiffWorkspaceOptions) -> Result<Vec<DiffEntry>> {
                 if new_data == *old_data {
                     continue;
                 }
-                let bin = is_binary(&old_data) || is_binary(&new_data);
+                let bin = is_binary(old_data) || is_binary(&new_data);
                 let mut e = DiffEntry {
                     filePath: rel.clone(),
                     status: "modified".into(),
@@ -244,10 +241,10 @@ pub fn diff_workspace(opts: GitDiffWorkspaceOptions) -> Result<Vec<DiffEntry>> {
                     ..Default::default()
                 };
                 if include && !bin {
-                    let old_str = String::from_utf8_lossy(&old_data).into_owned();
+                    let old_str = String::from_utf8_lossy(old_data).into_owned();
                     let new_str = String::from_utf8_lossy(&new_data).into_owned();
-                    let old_sz = old_str.as_bytes().len();
-                    let new_sz = new_str.as_bytes().len();
+                    let old_sz = old_str.len();
+                    let new_sz = new_str.len();
                     if old_sz + new_sz <= max_bytes {
                         let diff = TextDiff::from_lines(&old_str, &new_str);
                         let mut adds = 0i32;
