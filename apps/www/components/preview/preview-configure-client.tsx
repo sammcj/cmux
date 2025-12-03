@@ -1391,15 +1391,6 @@ export function PreviewConfigureClient({
   const renderWorkspaceStepContent = () => {
     return (
       <div className="space-y-4">
-        {/* Workspace root info */}
-        <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
-          Your workspace root at{" "}
-          <code className="px-1 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-[10px] text-neutral-700 dark:text-neutral-300">
-            /root/workspace
-          </code>{" "}
-          maps directly to your repo root.
-        </p>
-
         {/* Step 1: Scripts (completed from initial setup - collapsed) */}
         {isStepVisible("scripts") && (
           <div>
@@ -1431,7 +1422,7 @@ export function PreviewConfigureClient({
                 }}
               >
                 <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
-                <StepBadge step={3} done={isStepCompleted("run-scripts")} />
+                <StepBadge step={3} done={isStepCompleted("run-scripts") && !isCurrentStep("run-scripts")} />
                 <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
                   Run scripts in VS Code terminal
                 </span>
@@ -1512,7 +1503,7 @@ export function PreviewConfigureClient({
                 }}
               >
                 <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
-                <StepBadge step={4} done={isStepCompleted("browser-setup")} />
+                <StepBadge step={4} done={isStepCompleted("browser-setup") && !isCurrentStep("browser-setup")} />
                 <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
                   Configure browser
                 </span>
@@ -1642,6 +1633,13 @@ export function PreviewConfigureClient({
           </svg>
           <span className="font-sans text-xs">{repo}</span>
         </div>
+        <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed pt-3">
+          Your workspace root at{" "}
+          <code className="px-1 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-[10px] text-neutral-700 dark:text-neutral-300">
+            /root/workspace
+          </code>{" "}
+          maps directly to your repo root.
+        </p>
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-5">
