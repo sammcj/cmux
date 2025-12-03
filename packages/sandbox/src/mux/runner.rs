@@ -744,6 +744,21 @@ fn handle_input(
                 if cmd == MuxCommand::Quit {
                     return true;
                 }
+                // Handle DeleteSandbox specially - needs to remove from sidebar immediately
+                // and spawn async deletion task (same as Backspace in sidebar)
+                if cmd == MuxCommand::DeleteSandbox {
+                    if let Some((sandbox_id, sandbox_name)) = remove_selected_sandbox(app) {
+                        let base_url = app.base_url.clone();
+                        let event_tx = app.event_tx.clone();
+
+                        app.set_status(format!("Deleting sandbox: {}", sandbox_name));
+
+                        tokio::spawn(async move {
+                            delete_sidebar_sandbox(base_url, sandbox_id, event_tx).await;
+                        });
+                    }
+                    return false;
+                }
                 app.execute_command(cmd);
                 return false;
             }
