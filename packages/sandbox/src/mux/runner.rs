@@ -420,6 +420,23 @@ fn try_consume_pending_connection(
         return;
     }
 
+    // CRITICAL: Only consume pending_connect if it matches the currently selected sandbox.
+    // During rapid creation, pending_connect can be set for a sandbox that's no longer selected.
+    // Connecting to the wrong sandbox causes terminal jitter and reconnection storms.
+    let selected_id = app.sidebar.selected_id.map(|id| id.to_string());
+    if selected_id.as_ref() != Some(&sandbox_id) {
+        debug_log(&format!(
+            "try_consume_pending_connection: SKIPPING - pending {} does not match selected {:?}",
+            &sandbox_id[..8.min(sandbox_id.len())],
+            selected_id
+                .as_ref()
+                .map(|s| s.chars().take(8).collect::<String>())
+        ));
+        // Clear pending_connect since this sandbox is no longer selected
+        app.pending_connect = None;
+        return;
+    }
+
     // NO select_sandbox or select_by_id here - selection is already correct
 
     let Some(pane_id) = app.active_pane_id() else {
