@@ -635,8 +635,37 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
           }
 
           // Cmd+Backspace → delete to beginning of line
+          // Use Shift+Home (select to start) + Backspace (delete) instead of Ctrl+U
+          // because Ctrl+U opens View Source in browsers
           if (code === "Backspace") {
-            handleShortcut("Cmd+Backspace → Ctrl+U", () => sendKeyCombo(0x0075, "KeyU"));
+            handleShortcut("Cmd+Backspace → Shift+Home, Backspace", () => {
+              const rfb = rfbRef.current;
+              if (!rfb) return;
+
+              const XK_Shift_L = 0xffe1;
+              const XK_Home = 0xff50;
+              const XK_BackSpace = 0xff08;
+              const XK_Meta_L = 0xffe7;
+              const XK_Meta_R = 0xffe8;
+              const XK_Super_L = 0xffeb;
+              const XK_Super_R = 0xffec;
+
+              // Release Meta/Super keys first
+              rfb.sendKey(XK_Meta_L, "MetaLeft", false);
+              rfb.sendKey(XK_Meta_R, "MetaRight", false);
+              rfb.sendKey(XK_Super_L, "OSLeft", false);
+              rfb.sendKey(XK_Super_R, "OSRight", false);
+
+              // Shift+Home to select from cursor to beginning of line
+              rfb.sendKey(XK_Shift_L, "ShiftLeft", true);
+              rfb.sendKey(XK_Home, "Home", true);
+              rfb.sendKey(XK_Home, "Home", false);
+              rfb.sendKey(XK_Shift_L, "ShiftLeft", false);
+
+              // Backspace to delete the selection
+              rfb.sendKey(XK_BackSpace, "Backspace", true);
+              rfb.sendKey(XK_BackSpace, "Backspace", false);
+            });
             return;
           }
 
