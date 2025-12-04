@@ -539,8 +539,11 @@ ${useSetE ? `echo "=== ${windowName} Script Completed at $(date) ==="` : ""}
 `;
 
   const runtimeDir = "/var/tmp/cmux-scripts";
+  const runId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const scriptFilePath = `${runtimeDir}/${windowName}.sh`;
   const launcherScriptPath = `${runtimeDir}/${windowName}-launcher.sh`;
+  const logFilePath = `${runtimeDir}/${windowName}_${runId}.log`;
+  const exitCodePath = `${runtimeDir}/${windowName}_${runId}.exit-code`;
 
   // Create a launcher script that runs INSIDE the VM to handle tmux operations
   // This matches how the environment orchestrator works - it runs tmux commands
@@ -551,8 +554,9 @@ set -eu
 # Create the tmux window
 tmux new-window -t cmux: -n '${windowName}' -d
 
-# Send keys to run the script
-tmux send-keys -t cmux:'${windowName}' "zsh '${scriptFilePath}'" C-m
+# Send keys to run the script (matching orchestrator pattern exactly)
+# Pattern: zsh 'script.sh' 2>&1 | tee 'log'; echo \${pipestatus[1]} > 'exit-code'
+tmux send-keys -t cmux:'${windowName}' "zsh '${scriptFilePath}' 2>&1 | tee '${logFilePath}'; echo \\\${pipestatus[1]} > '${exitCodePath}'" C-m
 
 echo "[launcher] Started ${windowName} window"
 `;
