@@ -669,7 +669,16 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
             BracketRight: [0x005d, "BracketRight"],
             Minus: [0x002d, "Minus"],         // Zoom out (Ctrl+-)
             Equal: [0x003d, "Equal"],         // Zoom in (Ctrl+=)
-            Digit0: [0x0030, "Digit0"],       // Reset zoom (Ctrl+0)
+            Digit0: [0x0030, "Digit0"],       // Reset zoom / Tab 10 (Ctrl+0)
+            Digit1: [0x0031, "Digit1"],       // Tab 1 (Ctrl+1)
+            Digit2: [0x0032, "Digit2"],       // Tab 2 (Ctrl+2)
+            Digit3: [0x0033, "Digit3"],       // Tab 3 (Ctrl+3)
+            Digit4: [0x0034, "Digit4"],       // Tab 4 (Ctrl+4)
+            Digit5: [0x0035, "Digit5"],       // Tab 5 (Ctrl+5)
+            Digit6: [0x0036, "Digit6"],       // Tab 6 (Ctrl+6)
+            Digit7: [0x0037, "Digit7"],       // Tab 7 (Ctrl+7)
+            Digit8: [0x0038, "Digit8"],       // Tab 8 (Ctrl+8)
+            Digit9: [0x0039, "Digit9"],       // Tab 9 / Last tab (Ctrl+9)
           };
           if (cmdMap[code]) {
             const [keysym, keyCode] = cmdMap[code];
