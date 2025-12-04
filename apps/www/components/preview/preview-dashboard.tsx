@@ -9,12 +9,14 @@ import {
   Github,
   Link2,
   Loader2,
+  Monitor,
   Pencil,
   Search,
   Server,
   Star,
   Trash2,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import clsx from "clsx";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
@@ -139,6 +141,127 @@ function Section({
         {headerContent}
       </div>
       <div className="flex flex-col flex-1 min-h-0">{children}</div>
+    </div>
+  );
+}
+
+type MockScreenshot = {
+  id: string;
+  caption: string;
+  imageUrl: string;
+};
+
+const MOCK_SCREENSHOTS: MockScreenshot[] = [
+  {
+    id: "1",
+    caption: "GitLab waitlist modal showing the empty form with email input and 'Join waitlist' button",
+    imageUrl: "https://adorable-wombat-701.convex.cloud/api/storage/51c8e9db-d7d6-4a6d-a05b-b4bf7c0f1191",
+  },
+  {
+    id: "2",
+    caption: "GitLab waitlist modal with email field filled in (user@example.com)",
+    imageUrl: "https://adorable-wombat-701.convex.cloud/api/storage/5551886d-b45b-488b-b2a6-c2ec2a9b8647",
+  },
+  {
+    id: "3",
+    caption: "GitLab waitlist modal showing success state with green checkmark and confirmation message",
+    imageUrl: "https://adorable-wombat-701.convex.cloud/api/storage/569dc00d-b67d-4d3a-9f16-c651f189465a",
+  },
+  {
+    id: "4",
+    caption: "Preview dashboard showing new GitLab and Bitbucket provider buttons alongside GitHub button",
+    imageUrl: "https://adorable-wombat-701.convex.cloud/api/storage/eecc8496-6a13-4658-8caa-66d77e3ba131",
+  },
+  {
+    id: "5",
+    caption: "Close-up view of the three provider buttons: Continue with GitHub, GitLab, and Bitbucket",
+    imageUrl: "https://adorable-wombat-701.convex.cloud/api/storage/56e6b86b-81ac-4c2a-8f64-591e55dc3e13",
+  },
+];
+
+function MockPreviewScreenshots() {
+  const commitHash = "5fc6367";
+  const timestamp = "2025-12-04 04:03:32 UTC";
+
+  return (
+    <div className="pt-10">
+      <Section title="Example: Preview Screenshots">
+        <div className="rounded-lg border border-white/10 bg-white/[0.02] backdrop-blur-sm overflow-hidden">
+          {/* Header with links */}
+          <div className="px-4 py-3 border-b border-white/10">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <span className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 cursor-pointer">
+                <Monitor className="h-4 w-4" />
+                Open Workspace
+              </span>
+              <span className="text-neutral-600">·</span>
+              <span className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 cursor-pointer">
+                <ExternalLink className="h-4 w-4" />
+                Open Dev Browser
+              </span>
+              <span className="text-neutral-600">·</span>
+              <span className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 cursor-pointer">
+                <Github className="h-4 w-4" />
+                Open Diff Heatmap
+              </span>
+            </div>
+          </div>
+
+          {/* Commit info */}
+          <div className="px-4 py-2 border-b border-white/10 bg-white/[0.01]">
+            <p className="text-sm text-neutral-400">
+              Captured {MOCK_SCREENSHOTS.length} screenshots for commit{" "}
+              <code className="px-1.5 py-0.5 rounded bg-white/5 text-neutral-300 font-mono text-xs">
+                {commitHash}
+              </code>{" "}
+              ({timestamp})
+            </p>
+          </div>
+
+          {/* Screenshots grid */}
+          <div className="p-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {MOCK_SCREENSHOTS.map((screenshot) => (
+                <div
+                  key={screenshot.id}
+                  className="group rounded-lg border border-white/5 bg-white/[0.02] overflow-hidden hover:border-white/10 transition-colors"
+                >
+                  {/* Image container with aspect ratio */}
+                  <div className="relative aspect-video bg-neutral-900 overflow-hidden">
+                    <Image
+                      src={screenshot.imageUrl}
+                      alt={screenshot.caption}
+                      fill
+                      unoptimized
+                      className="object-cover object-top group-hover:scale-[1.02] transition-transform duration-200"
+                    />
+                  </div>
+                  {/* Caption */}
+                  <div className="px-3 py-2">
+                    <p className="text-xs text-neutral-400 leading-relaxed line-clamp-2">
+                      {screenshot.caption}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="px-4 py-2 border-t border-white/10 bg-white/[0.01]">
+            <p className="text-xs text-neutral-500 italic">
+              Generated by{" "}
+              <Link
+                href="https://cmux.sh"
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
+                cmux
+              </Link>{" "}
+              preview system
+            </p>
+          </div>
+        </div>
+      </Section>
     </div>
   );
 }
@@ -1168,6 +1291,9 @@ function PreviewDashboardInner({
           </Section>
         </div>
       </div>
+
+      {/* Mock preview screenshots example */}
+      <MockPreviewScreenshots />
 
       {configPendingDelete && (
         <div
