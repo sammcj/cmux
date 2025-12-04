@@ -1,10 +1,9 @@
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
-import { withRelatedProject } from "@vercel/related-projects";
 
 console.log(
-  "import.meta.env.VITE_VERCEL_RELATED_PROJECTS",
-  import.meta.env.VITE_VERCEL_RELATED_PROJECTS
+  "NEXT_PUBLIC_VERCEL_RELATED_PREVIEW_WWW_ORIGIN",
+  NEXT_PUBLIC_VERCEL_RELATED_PREVIEW_WWW_ORIGIN
 );
 
 export const env = createEnv({
@@ -22,13 +21,11 @@ export const env = createEnv({
     NEXT_PUBLIC_WWW_ORIGIN: z
       .string()
       .min(1)
-      .default(() => {
-        const wwwOrigin = withRelatedProject({
-          projectName: "cmux-www",
-          defaultHost: process.env.NEXT_PUBLIC_WWW_ORIGIN || "https://cmux.dev",
-        });
-        return wwwOrigin;
-      }),
+      .default(
+        () =>
+          process.env.NEXT_PUBLIC_VERCEL_RELATED_PREVIEW_WWW_ORIGIN ||
+          "https://cmux.dev"
+      ),
     NEXT_PUBLIC_SERVER_ORIGIN: z.string().optional(),
     NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
     NEXT_PUBLIC_POSTHOG_HOST: z.string().optional(),
