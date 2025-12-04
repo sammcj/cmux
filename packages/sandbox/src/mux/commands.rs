@@ -83,6 +83,7 @@ pub enum MuxCommand {
 
     // External tools
     OpenVsCodeSSH,
+    OpenBrowser,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,6 +166,7 @@ impl MuxCommand {
             MuxCommand::CopyScrollback,
             // External tools
             MuxCommand::OpenVsCodeSSH,
+            MuxCommand::OpenBrowser,
         ]
     }
 
@@ -231,6 +233,7 @@ impl MuxCommand {
             MuxCommand::DisableDeltaPager => "Disable Delta Pager",
             MuxCommand::CopyScrollback => "Copy Scrollback",
             MuxCommand::OpenVsCodeSSH => "Open VS Code (SSH)",
+            MuxCommand::OpenBrowser => "Open Browser",
         }
     }
 
@@ -266,6 +269,7 @@ impl MuxCommand {
             MuxCommand::DisableDeltaPager => &["git diff", "plain diff", "default pager"],
             MuxCommand::CopyScrollback => &["copy", "clipboard", "terminal output", "history"],
             MuxCommand::OpenVsCodeSSH => &["vscode", "code", "remote", "editor", "ide"],
+            MuxCommand::OpenBrowser => &["chrome", "firefox", "safari", "web", "http", "preview"],
             _ => &[],
         }
     }
@@ -333,6 +337,7 @@ impl MuxCommand {
             MuxCommand::DisableDeltaPager => "Use default pager for git diffs",
             MuxCommand::CopyScrollback => "Copy entire terminal scrollback to clipboard",
             MuxCommand::OpenVsCodeSSH => "Open VS Code connected to sandbox via SSH",
+            MuxCommand::OpenBrowser => "Open browser with sandbox network proxy",
         }
     }
 
@@ -406,7 +411,7 @@ impl MuxCommand {
             | MuxCommand::DisableDeltaPager
             | MuxCommand::CopyScrollback => "Terminal",
 
-            MuxCommand::OpenVsCodeSSH => "External",
+            MuxCommand::OpenVsCodeSSH | MuxCommand::OpenBrowser => "External",
         }
     }
 
@@ -538,6 +543,7 @@ impl MuxCommand {
 
             // External tools
             MuxCommand::OpenVsCodeSSH => Some((KeyModifiers::ALT, KeyCode::Char('v'))),
+            MuxCommand::OpenBrowser => Some((KeyModifiers::ALT, KeyCode::Char('b'))),
         }
     }
 

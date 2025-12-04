@@ -953,6 +953,33 @@ impl<'a> MuxApp<'a> {
                     self.set_status("No sandbox selected");
                 }
             }
+            MuxCommand::OpenBrowser => {
+                if let Some(sandbox_id) = self.selected_sandbox_id() {
+                    // Get the binary name (cmux or dmux)
+                    let binary_name = std::env::current_exe()
+                        .ok()
+                        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+                        .unwrap_or_else(|| "dmux".to_string());
+
+                    // Spawn the browser command in background
+                    match std::process::Command::new(&binary_name)
+                        .args(["browser", &sandbox_id.to_string()])
+                        .spawn()
+                    {
+                        Ok(_) => {
+                            self.set_status(format!(
+                                "Opening browser proxy for sandbox {}",
+                                sandbox_id
+                            ));
+                        }
+                        Err(e) => {
+                            self.set_status(format!("Failed to open browser: {}", e));
+                        }
+                    }
+                } else {
+                    self.set_status("No sandbox selected");
+                }
+            }
         }
     }
 
