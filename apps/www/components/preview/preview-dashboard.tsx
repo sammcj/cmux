@@ -179,86 +179,357 @@ const MOCK_SCREENSHOTS: MockScreenshot[] = [
   },
 ];
 
-function MockPreviewScreenshots() {
-  const commitHash = "5fc6367";
-  const timestamp = "2025-12-04 04:03:32 UTC";
+type BrowserTab = {
+  id: string;
+  title: string;
+  icon: "github" | "code" | "terminal";
+  isActive?: boolean;
+};
+
+const BROWSER_TABS: BrowserTab[] = [
+  { id: "pr", title: "Add GitLab & Bitbucket #1156", icon: "github", isActive: true },
+  { id: "diff", title: "Files changed (12)", icon: "code" },
+  { id: "checks", title: "Checks", icon: "terminal" },
+];
+
+function BrowserTabIcon({ icon }: { icon: BrowserTab["icon"] }) {
+  if (icon === "github") {
+    return (
+      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
+      </svg>
+    );
+  }
+  if (icon === "code") {
+    return (
+      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="16 18 22 12 16 6" />
+        <polyline points="8 6 2 12 8 18" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="4 17 10 11 4 5" />
+      <line x1="12" y1="19" x2="20" y2="19" />
+    </svg>
+  );
+}
+
+function MockGitHubPRBrowser() {
+  const [activeTab, setActiveTab] = useState("pr");
+  const [expandedImage, setExpandedImage] = useState<string | null>(null);
 
   return (
     <div className="pt-10">
-      <Section title="Example: Preview Screenshots">
-        <div className="rounded-lg border border-white/10 bg-white/[0.02] backdrop-blur-sm overflow-hidden">
-          {/* Header with links */}
-          <div className="px-4 py-3 border-b border-white/10">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-              <span className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 cursor-pointer">
-                <Monitor className="h-4 w-4" />
-                Open Workspace
-              </span>
-              <span className="text-neutral-600">·</span>
-              <span className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 cursor-pointer">
-                <ExternalLink className="h-4 w-4" />
-                Open Dev Browser
-              </span>
-              <span className="text-neutral-600">·</span>
-              <span className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 cursor-pointer">
-                <Github className="h-4 w-4" />
-                Open Diff Heatmap
-              </span>
+      <Section title="See it in action">
+        {/* Browser window frame */}
+        <div className="rounded-xl border border-white/10 bg-[#0d1117] overflow-hidden shadow-2xl shadow-black/50">
+          {/* Browser chrome - title bar */}
+          <div className="flex items-center gap-2 px-4 py-3 bg-[#161b22] border-b border-white/5">
+            {/* Traffic lights */}
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full bg-[#ff5f57]" />
+              <div className="w-3 h-3 rounded-full bg-[#febc2e]" />
+              <div className="w-3 h-3 rounded-full bg-[#28c840]" />
+            </div>
+
+            {/* Browser tabs */}
+            <div className="flex-1 flex items-center gap-1 ml-4 overflow-x-auto">
+              {BROWSER_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={clsx(
+                    "flex items-center gap-2 px-3 py-1.5 rounded-t-lg text-xs font-medium transition-colors whitespace-nowrap",
+                    activeTab === tab.id
+                      ? "bg-[#0d1117] text-white"
+                      : "text-neutral-400 hover:text-neutral-200 hover:bg-white/5"
+                  )}
+                >
+                  <BrowserTabIcon icon={tab.icon} />
+                  <span className="max-w-[140px] truncate">{tab.title}</span>
+                  <svg className="h-3 w-3 opacity-50 hover:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              ))}
+              <button className="p-1.5 text-neutral-500 hover:text-neutral-300">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
             </div>
           </div>
 
-          {/* Commit info */}
-          <div className="px-4 py-2 border-b border-white/10 bg-white/[0.01]">
-            <p className="text-sm text-neutral-400">
-              Captured {MOCK_SCREENSHOTS.length} screenshots for commit{" "}
-              <code className="px-1.5 py-0.5 rounded bg-white/5 text-neutral-300 font-mono text-xs">
-                {commitHash}
-              </code>{" "}
-              ({timestamp})
-            </p>
+          {/* URL bar */}
+          <div className="flex items-center gap-3 px-4 py-2 bg-[#161b22] border-b border-white/5">
+            <div className="flex items-center gap-1">
+              <button className="p-1 text-neutral-500 hover:text-neutral-300">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </button>
+              <button className="p-1 text-neutral-500 hover:text-neutral-300">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+              <button className="p-1 text-neutral-500 hover:text-neutral-300">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M23 4v6h-6" />
+                  <path d="M1 20v-6h6" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#0d1117] border border-white/10">
+              <svg className="h-3.5 w-3.5 text-neutral-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <span className="text-xs text-neutral-300 font-mono">github.com/acme-corp/webapp/pull/1156</span>
+            </div>
           </div>
 
-          {/* Screenshots grid */}
-          <div className="p-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {MOCK_SCREENSHOTS.map((screenshot) => (
-                <div
-                  key={screenshot.id}
-                  className="group rounded-lg border border-white/5 bg-white/[0.02] overflow-hidden hover:border-white/10 transition-colors"
-                >
-                  {/* Image container with aspect ratio */}
-                  <div className="relative aspect-video bg-neutral-900 overflow-hidden">
-                    <Image
-                      src={screenshot.imageUrl}
-                      alt={screenshot.caption}
-                      fill
-                      unoptimized
-                      className="object-cover object-top group-hover:scale-[1.02] transition-transform duration-200"
-                    />
-                  </div>
-                  {/* Caption */}
-                  <div className="px-3 py-2">
-                    <p className="text-xs text-neutral-400 leading-relaxed line-clamp-2">
-                      {screenshot.caption}
-                    </p>
+          {/* GitHub PR content */}
+          <div className="bg-[#0d1117] max-h-[600px] overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.2) transparent" }}>
+            {activeTab === "pr" && (
+              <div className="p-6">
+                {/* PR header */}
+                <div className="pb-4 border-b border-white/10">
+                  <div className="flex items-start gap-3">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      Open
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-xl font-semibold text-white">
+                        feat: Add GitLab and Bitbucket provider support
+                      </h3>
+                      <p className="text-sm text-neutral-400 pt-1">
+                        <span className="text-neutral-300">austin</span> wants to merge 12 commits into <code className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 text-xs">main</code> from <code className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 text-xs">feat/multi-provider</code>
+                      </p>
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
 
-          {/* Footer */}
-          <div className="px-4 py-2 border-t border-white/10 bg-white/[0.01]">
-            <p className="text-xs text-neutral-500 italic">
-              Generated by{" "}
-              <Link
-                href="https://cmux.sh"
-                className="text-neutral-400 hover:text-white transition-colors"
-              >
-                cmux
-              </Link>{" "}
-              preview system
-            </p>
+                {/* PR tabs */}
+                <div className="flex items-center gap-6 py-3 border-b border-white/10 text-sm">
+                  <button className="flex items-center gap-2 text-white font-medium border-b-2 border-orange-500 pb-3 -mb-3">
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                    Conversation
+                    <span className="px-1.5 py-0.5 rounded-full bg-white/10 text-xs">8</span>
+                  </button>
+                  <button className="flex items-center gap-2 text-neutral-400 hover:text-white pb-3 -mb-3">
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <polyline points="12 6 12 12 16 14" />
+                    </svg>
+                    Commits
+                    <span className="px-1.5 py-0.5 rounded-full bg-white/10 text-xs">12</span>
+                  </button>
+                  <button className="flex items-center gap-2 text-neutral-400 hover:text-white pb-3 -mb-3">
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    Files changed
+                    <span className="px-1.5 py-0.5 rounded-full bg-white/10 text-xs">24</span>
+                  </button>
+                </div>
+
+                {/* Comments section */}
+                <div className="pt-6 space-y-6">
+                  {/* cmux-agent bot comment */}
+                  <div className="rounded-lg border border-white/10 overflow-hidden">
+                    {/* Comment header */}
+                    <div className="flex items-center gap-3 px-4 py-3 bg-[#161b22] border-b border-white/10">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold">
+                        C
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-white text-sm">cmux-agent</span>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                            bot
+                          </span>
+                          <span className="text-xs text-neutral-500">commented 2 minutes ago</span>
+                        </div>
+                      </div>
+                      <button className="p-1 text-neutral-500 hover:text-neutral-300">
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="1" />
+                          <circle cx="19" cy="12" r="1" />
+                          <circle cx="5" cy="12" r="1" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    {/* Comment body - Preview Screenshots */}
+                    <div className="p-4 bg-[#0d1117]">
+                      <h4 className="text-base font-semibold text-white pb-3">Preview Screenshots</h4>
+
+                      {/* Action links */}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm pb-4">
+                        <span className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 cursor-pointer hover:underline">
+                          <Monitor className="h-3.5 w-3.5" />
+                          Open Workspace (1 hr expiry)
+                        </span>
+                        <span className="text-neutral-600">·</span>
+                        <span className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 cursor-pointer hover:underline">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Open Dev Browser (1 hr expiry)
+                        </span>
+                        <span className="text-neutral-600">·</span>
+                        <span className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 cursor-pointer hover:underline">
+                          <Github className="h-3.5 w-3.5" />
+                          Open Diff Heatmap
+                        </span>
+                      </div>
+
+                      {/* Commit info */}
+                      <p className="text-sm text-neutral-400 pb-4">
+                        Captured {MOCK_SCREENSHOTS.length} screenshots for commit{" "}
+                        <code className="px-1.5 py-0.5 rounded bg-white/5 text-neutral-300 font-mono text-xs">
+                          5fc6367
+                        </code>{" "}
+                        (2025-12-04 04:03:32 UTC).
+                      </p>
+
+                      {/* Screenshots with captions */}
+                      <div className="space-y-4">
+                        {MOCK_SCREENSHOTS.map((screenshot) => (
+                          <div key={screenshot.id} className="space-y-2">
+                            <p className="text-sm text-neutral-300">
+                              <strong>{screenshot.caption}</strong>
+                            </p>
+                            <button
+                              onClick={() => setExpandedImage(expandedImage === screenshot.id ? null : screenshot.id)}
+                              className="relative block w-full max-w-2xl rounded-lg border border-white/10 overflow-hidden hover:border-white/20 transition-colors cursor-zoom-in"
+                            >
+                              <div className={clsx(
+                                "relative bg-neutral-900 overflow-hidden transition-all duration-300",
+                                expandedImage === screenshot.id ? "max-h-[500px]" : "max-h-[200px]"
+                              )}>
+                                <Image
+                                  src={screenshot.imageUrl}
+                                  alt={screenshot.caption}
+                                  width={800}
+                                  height={450}
+                                  unoptimized
+                                  className="w-full h-auto object-cover object-top"
+                                />
+                              </div>
+                              {expandedImage !== screenshot.id && (
+                                <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-neutral-900 to-transparent flex items-end justify-center pb-2">
+                                  <span className="text-xs text-neutral-400">Click to expand</span>
+                                </div>
+                              )}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Footer */}
+                      <div className="pt-6 mt-4 border-t border-white/5">
+                        <p className="text-xs text-neutral-500 italic">
+                          Generated by{" "}
+                          <span className="text-neutral-400">cmux</span>{" "}
+                          preview system
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Comment reactions */}
+                    <div className="flex items-center gap-2 px-4 py-2 bg-[#161b22] border-t border-white/10">
+                      <button className="flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition-colors">
+                        <span>+1</span>
+                        <span className="text-neutral-400">3</span>
+                      </button>
+                      <button className="flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 border border-white/10 text-xs hover:bg-white/10 transition-colors">
+                        <span>rocket</span>
+                        <span className="text-neutral-400">2</span>
+                      </button>
+                      <button className="p-1 text-neutral-500 hover:text-neutral-300">
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10" />
+                          <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                          <line x1="9" y1="9" x2="9.01" y2="9" />
+                          <line x1="15" y1="9" x2="15.01" y2="9" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Another comment placeholder */}
+                  <div className="rounded-lg border border-white/10 overflow-hidden opacity-50">
+                    <div className="flex items-center gap-3 px-4 py-3 bg-[#161b22]">
+                      <div className="w-8 h-8 rounded-full bg-neutral-700" />
+                      <div className="flex-1">
+                        <div className="h-3 w-24 rounded bg-neutral-700" />
+                      </div>
+                    </div>
+                    <div className="p-4">
+                      <div className="space-y-2">
+                        <div className="h-3 w-full rounded bg-neutral-800" />
+                        <div className="h-3 w-3/4 rounded bg-neutral-800" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "diff" && (
+              <div className="p-6">
+                <div className="flex items-center justify-between pb-4">
+                  <p className="text-sm text-neutral-400">
+                    Showing <strong className="text-white">24 changed files</strong> with <span className="text-emerald-400">+847</span> additions and <span className="text-red-400">-123</span> deletions.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {["apps/www/components/preview/preview-dashboard.tsx", "apps/www/hooks/use-oauth-popup.ts", "packages/convex/convex/schema.ts"].map((file, i) => (
+                    <div key={file} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#161b22] border border-white/5">
+                      <svg className="h-4 w-4 text-neutral-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                      </svg>
+                      <span className="flex-1 text-sm text-neutral-300 font-mono truncate">{file}</span>
+                      <span className="text-xs text-emerald-400">+{50 + i * 30}</span>
+                      <span className="text-xs text-red-400">-{10 + i * 5}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-3 px-3 py-2 text-neutral-500 text-sm">
+                    <span>... and 21 more files</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "checks" && (
+              <div className="p-6">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                    <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-white">All checks have passed</p>
+                      <p className="text-xs text-neutral-400">4 successful checks</p>
+                    </div>
+                  </div>
+                  {["TypeScript", "ESLint", "Build", "cmux Preview"].map((check) => (
+                    <div key={check} className="flex items-center gap-3 px-4 py-2 rounded-lg bg-[#161b22] border border-white/5">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                      <span className="text-sm text-neutral-300">{check}</span>
+                      <span className="text-xs text-neutral-500 ml-auto">Successful in 45s</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </Section>
@@ -1292,8 +1563,8 @@ function PreviewDashboardInner({
         </div>
       </div>
 
-      {/* Mock preview screenshots example */}
-      <MockPreviewScreenshots />
+      {/* Mock GitHub PR browser demo */}
+      <MockGitHubPRBrowser />
 
       {configPendingDelete && (
         <div
