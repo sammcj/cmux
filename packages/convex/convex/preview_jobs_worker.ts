@@ -542,33 +542,64 @@ ${useSetE ? `echo "=== ${windowName} Script Completed at $(date) ==="` : ""}
   const runtimeDir = "/var/tmp/cmux-scripts";
   const scriptFilePath = `${runtimeDir}/${windowName}.sh`;
 
-  const command = [
-    "zsh",
-    "-lc",
-    [
-      `mkdir -p '${runtimeDir}'`,
-      `{ tmux has-session -t cmux 2>/dev/null || tmux new-session -d -s cmux -c ${singleQuote(repoDir)}; }`,
-      `tmux new-window -t cmux -n ${singleQuote(windowName)} -c ${singleQuote(repoDir)}`,
-      `echo '${scriptBase64}' | base64 -d > ${singleQuote(scriptFilePath)}`,
-      `chmod +x ${singleQuote(scriptFilePath)}`,
-      `tmux send-keys -t cmux:${singleQuote(windowName)} "zsh ${singleQuote(scriptFilePath)}" C-m`,
-    ].join(" && "),
-  ];
-
-  const response = await execInstanceInstanceIdExecPost({
+  // Step 1: Create directory (using direct exec, no shell)
+  const mkdirResponse = await execInstanceInstanceIdExecPost({
     client: morphClient,
     path: { instance_id: instanceId },
-    body: { command },
+    body: { command: ["mkdir", "-p", runtimeDir] },
   });
 
-  if (response.error || response.data?.exit_code !== 0) {
+  if (mkdirResponse.error || mkdirResponse.data?.exit_code !== 0) {
+    console.warn("[preview-jobs] Failed to create script directory", {
+      previewRunId,
+      windowName,
+      exitCode: mkdirResponse.data?.exit_code,
+      stderr: sliceOutput(mkdirResponse.data?.stderr),
+      error: mkdirResponse.error,
+    });
+    return;
+  }
+
+  // Step 2: Write the script file using base64 decode
+  const writeScriptResponse = await execInstanceInstanceIdExecPost({
+    client: morphClient,
+    path: { instance_id: instanceId },
+    body: {
+      command: ["bash", "-c", `echo '${scriptBase64}' | base64 -d > ${singleQuote(scriptFilePath)} && chmod +x ${singleQuote(scriptFilePath)}`],
+    },
+  });
+
+  if (writeScriptResponse.error || writeScriptResponse.data?.exit_code !== 0) {
+    console.warn("[preview-jobs] Failed to write script file", {
+      previewRunId,
+      windowName,
+      exitCode: writeScriptResponse.data?.exit_code,
+      stderr: sliceOutput(writeScriptResponse.data?.stderr),
+      error: writeScriptResponse.error,
+    });
+    return;
+  }
+
+  // Step 3: Create tmux window and run script
+  const tmuxCommand = [
+    `tmux new-window -t cmux -n ${singleQuote(windowName)} -c ${singleQuote(repoDir)}`,
+    `tmux send-keys -t cmux:${singleQuote(windowName)} "zsh ${singleQuote(scriptFilePath)}" C-m`,
+  ].join(" && ");
+
+  const tmuxResponse = await execInstanceInstanceIdExecPost({
+    client: morphClient,
+    path: { instance_id: instanceId },
+    body: { command: ["zsh", "-c", tmuxCommand] },
+  });
+
+  if (tmuxResponse.error || tmuxResponse.data?.exit_code !== 0) {
     console.warn("[preview-jobs] Failed to start tmux window", {
       previewRunId,
       windowName,
-      exitCode: response.data?.exit_code,
-      stdout: sliceOutput(response.data?.stdout),
-      stderr: sliceOutput(response.data?.stderr),
-      error: response.error,
+      exitCode: tmuxResponse.data?.exit_code,
+      stdout: sliceOutput(tmuxResponse.data?.stdout),
+      stderr: sliceOutput(tmuxResponse.data?.stderr),
+      error: tmuxResponse.error,
     });
   } else {
     console.log("[preview-jobs] Started tmux window", {
