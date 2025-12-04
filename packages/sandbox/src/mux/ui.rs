@@ -609,8 +609,15 @@ fn render_command_palette(f: &mut Frame, app: &mut MuxApp) {
     let palette_area = Rect::new(x, y, palette_width, palette_height);
     f.render_widget(Clear, palette_area);
 
+    // Customize title based on whether we're in a submenu
+    let title = if let Some(parent) = app.command_palette.submenu_parent() {
+        format!(" {} ", parent.label())
+    } else {
+        " Command Palette ".to_string()
+    };
+
     let block = Block::default()
-        .title(" Command Palette ")
+        .title(title)
         .title_style(
             Style::default()
                 .fg(Color::Cyan)
@@ -733,15 +740,20 @@ fn render_command_palette(f: &mut Frame, app: &mut MuxApp) {
     let paragraph = Paragraph::new(lines).scroll((scroll_offset as u16, 0));
     f.render_widget(paragraph, items_area);
 
-    // Help text at bottom
+    // Help text at bottom - changes based on whether we're in a submenu
     let help_area = Rect::new(
         inner_area.x,
         inner_area.y + inner_area.height - 1,
         inner_area.width,
         1,
     );
+    let help_text = if app.command_palette.is_in_submenu() {
+        "↑↓: navigate │ Enter: select │ Esc: back"
+    } else {
+        "↑↓: navigate │ Enter: execute │ Esc: cancel"
+    };
     let help = Paragraph::new(Line::styled(
-        "↑↓: navigate │ Enter: execute │ Esc: cancel",
+        help_text,
         Style::default().fg(Color::DarkGray),
     ));
     f.render_widget(help, help_area);

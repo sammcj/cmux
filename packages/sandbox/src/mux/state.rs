@@ -21,6 +21,101 @@ enum SshConfigStatus {
     Failed(String),
 }
 
+/// Default editor choice for opening sandboxes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum EditorChoice {
+    VSCode,
+    #[default]
+    Cursor,
+    Zed,
+    Windsurf,
+    /// Custom command with `{host}` and `{path}` placeholders.
+    /// Example: `nvim --remote-ui ssh://root@{host}{path}`
+    Custom(String),
+}
+
+impl EditorChoice {
+    /// Get the display name for this editor.
+    pub fn label(&self) -> &str {
+        match self {
+            EditorChoice::VSCode => "VS Code",
+            EditorChoice::Cursor => "Cursor",
+            EditorChoice::Zed => "Zed",
+            EditorChoice::Windsurf => "Windsurf",
+            EditorChoice::Custom(_) => "Custom",
+        }
+    }
+
+    /// Execute the editor command for the given sandbox.
+    /// Returns Ok(status_message) on success, Err(error_message) on failure.
+    pub fn open(&self, ssh_host: &str, remote_path: &str) -> Result<String, String> {
+        match self {
+            EditorChoice::VSCode => {
+                std::process::Command::new("code")
+                    .args(["--remote", &format!("ssh-remote+{}", ssh_host), remote_path])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                    .map_err(|e| format!("Failed to open VS Code: {}", e))?;
+                Ok(format!("Opening VS Code to {}:{}", ssh_host, remote_path))
+            }
+            EditorChoice::Cursor => {
+                std::process::Command::new("cursor")
+                    .args(["--remote", &format!("ssh-remote+{}", ssh_host), remote_path])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                    .map_err(|e| format!("Failed to open Cursor: {}", e))?;
+                Ok(format!("Opening Cursor to {}:{}", ssh_host, remote_path))
+            }
+            EditorChoice::Zed => {
+                // Zed uses: zed ssh://[user@]host[:port]/path
+                let ssh_url = format!("ssh://root@{}{}", ssh_host, remote_path);
+                std::process::Command::new("zed")
+                    .arg(&ssh_url)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                    .map_err(|e| format!("Failed to open Zed: {}", e))?;
+                Ok(format!("Opening Zed to {}", ssh_url))
+            }
+            EditorChoice::Windsurf => {
+                // Windsurf uses the same CLI as VS Code: windsurf --remote ssh-remote+<host> <path>
+                std::process::Command::new("windsurf")
+                    .args(["--remote", &format!("ssh-remote+{}", ssh_host), remote_path])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                    .map_err(|e| format!("Failed to open Windsurf: {}", e))?;
+                Ok(format!("Opening Windsurf to {}:{}", ssh_host, remote_path))
+            }
+            EditorChoice::Custom(cmd_template) => {
+                // Replace {host} and {path} placeholders
+                let cmd = cmd_template
+                    .replace("{host}", ssh_host)
+                    .replace("{path}", remote_path);
+
+                // Parse the command - first word is the binary, rest are args
+                let parts: Vec<&str> = cmd.split_whitespace().collect();
+                if parts.is_empty() {
+                    return Err("Custom command is empty".to_string());
+                }
+
+                let binary = parts[0];
+                let args = &parts[1..];
+
+                std::process::Command::new(binary)
+                    .args(args)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                    .map_err(|e| format!("Failed to run custom command: {}", e))?;
+                Ok(format!("Running: {}", cmd))
+            }
+        }
+    }
+}
+
 /// Generates a dedicated passwordless SSH key for sandbox access.
 /// Returns the path to the private key, or an error message.
 fn ensure_sandbox_ssh_key(ssh_dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
@@ -365,6 +460,9 @@ pub struct MuxApp<'a> {
     /// The tab_id of the most recently initiated sandbox creation.
     /// Only this sandbox will steal focus/selection when it completes.
     pub most_recent_creation_tab_id: Option<String>,
+
+    /// Default editor for Alt+E "Open Editor" command
+    pub default_editor: EditorChoice,
 }
 
 impl<'a> MuxApp<'a> {
@@ -401,6 +499,30 @@ impl<'a> MuxApp<'a> {
             delta_enabled_sandboxes: HashSet::new(),
             pending_creation_tab_ids: HashSet::new(),
             most_recent_creation_tab_id: None,
+            default_editor: Self::editor_from_env(),
+        }
+    }
+
+    /// Load editor choice from DMUX_EDITOR env var, or use default.
+    /// Custom format: "myeditor --remote {host} {path}"
+    fn editor_from_env() -> EditorChoice {
+        match std::env::var("DMUX_EDITOR") {
+            Ok(val) => {
+                let val_lower = val.to_lowercase();
+                if val_lower == "vscode" || val_lower == "code" {
+                    EditorChoice::VSCode
+                } else if val_lower == "cursor" {
+                    EditorChoice::Cursor
+                } else if val_lower == "zed" {
+                    EditorChoice::Zed
+                } else if val_lower == "windsurf" {
+                    EditorChoice::Windsurf
+                } else {
+                    // Treat as custom command template
+                    EditorChoice::Custom(val)
+                }
+            }
+            Err(_) => EditorChoice::default(),
         }
     }
 
@@ -994,6 +1116,147 @@ impl<'a> MuxApp<'a> {
                         }
                         Err(e) => {
                             self.set_status(format!("Failed to open Cursor: {}", e));
+                        }
+                    }
+                } else {
+                    self.set_status("No sandbox selected");
+                }
+            }
+            MuxCommand::OpenZedSSH => {
+                if let Some(sandbox_id) = self.selected_sandbox_id() {
+                    let ssh_host = format!("sandbox-{}", sandbox_id);
+                    let remote_path = "/workspace";
+
+                    // Ensure SSH config is set up for sandbox-* hosts
+                    let config_status = ensure_ssh_config_for_sandboxes(&self.base_url);
+
+                    // Spawn Zed with SSH URL format: zed ssh://user@host/path
+                    let ssh_url = format!("ssh://root@{}{}", ssh_host, remote_path);
+                    match std::process::Command::new("zed")
+                        .arg(&ssh_url)
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                    {
+                        Ok(_) => {
+                            let msg = match config_status {
+                                SshConfigStatus::AlreadyConfigured => {
+                                    format!("Opening Zed to {}", ssh_url)
+                                }
+                                SshConfigStatus::JustConfigured => {
+                                    format!(
+                                        "Configured SSH for sandbox-* hosts. Opening Zed to {}",
+                                        ssh_url
+                                    )
+                                }
+                                SshConfigStatus::Failed(err) => {
+                                    format!(
+                                        "Warning: couldn't configure SSH ({}). Opening Zed to {}",
+                                        err, ssh_url
+                                    )
+                                }
+                            };
+                            self.set_status(msg);
+                        }
+                        Err(e) => {
+                            self.set_status(format!("Failed to open Zed: {}", e));
+                        }
+                    }
+                } else {
+                    self.set_status("No sandbox selected");
+                }
+            }
+            MuxCommand::OpenEditor => {
+                if let Some(sandbox_id) = self.selected_sandbox_id() {
+                    let ssh_host = format!("sandbox-{}", sandbox_id);
+                    let remote_path = "/workspace";
+
+                    // Ensure SSH config is set up for sandbox-* hosts
+                    let config_status = ensure_ssh_config_for_sandboxes(&self.base_url);
+
+                    // Use the default editor
+                    match self.default_editor.open(&ssh_host, remote_path) {
+                        Ok(msg) => {
+                            let full_msg = match config_status {
+                                SshConfigStatus::AlreadyConfigured => msg,
+                                SshConfigStatus::JustConfigured => {
+                                    format!("Configured SSH for sandbox-* hosts. {}", msg)
+                                }
+                                SshConfigStatus::Failed(err) => {
+                                    format!("Warning: couldn't configure SSH ({}). {}", err, msg)
+                                }
+                            };
+                            self.set_status(full_msg);
+                        }
+                        Err(e) => {
+                            self.set_status(e);
+                        }
+                    }
+                } else {
+                    self.set_status("No sandbox selected");
+                }
+            }
+            MuxCommand::SetDefaultEditor => {
+                // This normally opens a submenu in the palette, but if executed directly:
+                let current = self.default_editor.label();
+                self.set_status(format!(
+                    "Current editor: {}. For custom: set DMUX_EDITOR='myeditor --remote {{host}} {{path}}'",
+                    current
+                ));
+            }
+            MuxCommand::SetEditorVSCode => {
+                self.default_editor = EditorChoice::VSCode;
+                self.set_status("Default editor set to VS Code. Press Alt+E to open.");
+            }
+            MuxCommand::SetEditorCursor => {
+                self.default_editor = EditorChoice::Cursor;
+                self.set_status("Default editor set to Cursor. Press Alt+E to open.");
+            }
+            MuxCommand::SetEditorZed => {
+                self.default_editor = EditorChoice::Zed;
+                self.set_status("Default editor set to Zed. Press Alt+E to open.");
+            }
+            MuxCommand::SetEditorWindsurf => {
+                self.default_editor = EditorChoice::Windsurf;
+                self.set_status("Default editor set to Windsurf. Press Alt+E to open.");
+            }
+            MuxCommand::OpenWindsurfSSH => {
+                if let Some(sandbox_id) = self.selected_sandbox_id() {
+                    let ssh_host = format!("sandbox-{}", sandbox_id);
+                    let remote_path = "/workspace";
+
+                    // Ensure SSH config is set up for sandbox-* hosts
+                    let config_status = ensure_ssh_config_for_sandboxes(&self.base_url);
+
+                    // Spawn Windsurf with Remote-SSH extension (same CLI as VS Code)
+                    match std::process::Command::new("windsurf")
+                        .args(["--remote", &format!("ssh-remote+{}", ssh_host), remote_path])
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                    {
+                        Ok(_) => {
+                            let msg = match config_status {
+                                SshConfigStatus::AlreadyConfigured => {
+                                    format!("Opening Windsurf to {}:{}", ssh_host, remote_path)
+                                }
+                                SshConfigStatus::JustConfigured => {
+                                    format!(
+                                        "Configured SSH for sandbox-* hosts. Opening Windsurf to {}:{}",
+                                        ssh_host, remote_path
+                                    )
+                                }
+                                SshConfigStatus::Failed(err) => {
+                                    format!(
+                                        "Warning: couldn't configure SSH ({}). Opening Windsurf to {}:{}",
+                                        err, ssh_host, remote_path
+                                    )
+                                }
+                            };
+                            self.set_status(msg);
+                        }
+                        Err(e) => {
+                            self.set_status(format!("Failed to open Windsurf: {}", e));
                         }
                     }
                 } else {
