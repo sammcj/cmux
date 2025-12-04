@@ -9,8 +9,57 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import RFB from "@novnc/novnc/core/rfb";
 import clsx from "clsx";
+
+// RFB type definition (copied from @novnc/novnc types to avoid static imports)
+// The actual module is dynamically imported to avoid top-level await issues
+interface RFBOptions {
+  credentials?: {
+    username?: string;
+    password?: string;
+    target?: string;
+  };
+  wsProtocols?: string[];
+}
+
+interface RFBInstance {
+  scaleViewport: boolean;
+  clipViewport: boolean;
+  dragViewport: boolean;
+  resizeSession: boolean;
+  viewOnly: boolean;
+  showDotCursor: boolean;
+  background: string;
+  qualityLevel: number;
+  compressionLevel: number;
+  readonly capabilities: { power?: boolean };
+  disconnect(): void;
+  sendCredentials(credentials: { username?: string; password?: string; target?: string }): void;
+  sendKey(keysym: number, code: string | null, down?: boolean): void;
+  sendCtrlAltDel(): void;
+  focus(options?: FocusOptions): void;
+  blur(): void;
+  clipboardPasteFrom(text: string): void;
+  machineShutdown(): void;
+  machineReboot(): void;
+  machineReset(): void;
+  addEventListener(type: string, listener: (event: CustomEvent) => void): void;
+  removeEventListener(type: string, listener: (event: CustomEvent) => void): void;
+}
+
+interface RFBConstructor {
+  new (target: HTMLElement, urlOrChannel: string | WebSocket, options?: RFBOptions): RFBInstance;
+}
+
+// Dynamically import RFB to avoid top-level await issues with noVNC
+let RFBClass: RFBConstructor | null = null;
+const loadRFB = async (): Promise<RFBConstructor> => {
+  if (RFBClass) return RFBClass;
+  // noVNC 1.7.0-beta exports from core/rfb.js via package.json "exports"
+  const module = await import("@novnc/novnc");
+  RFBClass = module.default;
+  return RFBClass;
+};
 
 export type VncConnectionStatus =
   | "disconnected"
@@ -60,21 +109,24 @@ export interface VncViewerProps {
   /** Error fallback element */
   errorFallback?: ReactNode;
   /** Called when connection is established */
-  onConnect?: (rfb: RFB) => void;
+  onConnect?: (rfb: RFBInstance) => void;
   /** Called when connection is closed */
-  onDisconnect?: (rfb: RFB | null, detail: { clean: boolean }) => void;
+  onDisconnect?: (rfb: RFBInstance | null, detail: { clean: boolean }) => void;
   /** Called when credentials are required */
-  onCredentialsRequired?: (rfb: RFB) => void;
+  onCredentialsRequired?: (rfb: RFBInstance) => void;
   /** Called when security failure occurs */
-  onSecurityFailure?: (rfb: RFB | null, detail: { status: number; reason: string }) => void;
+  onSecurityFailure?: (
+    rfb: RFBInstance | null,
+    detail: { status: number; reason: string }
+  ) => void;
   /** Called when clipboard data is received from server */
-  onClipboard?: (rfb: RFB, text: string) => void;
+  onClipboard?: (rfb: RFBInstance, text: string) => void;
   /** Called when connection status changes */
   onStatusChange?: (status: VncConnectionStatus) => void;
   /** Called when desktop name is received */
-  onDesktopName?: (rfb: RFB, name: string) => void;
+  onDesktopName?: (rfb: RFBInstance, name: string) => void;
   /** Called when capabilities are received */
-  onCapabilities?: (rfb: RFB, capabilities: Record<string, boolean>) => void;
+  onCapabilities?: (rfb: RFBInstance, capabilities: Record<string, boolean>) => void;
 }
 
 export interface VncViewerHandle {
@@ -97,7 +149,7 @@ export interface VncViewerHandle {
   /** Blur the VNC canvas */
   blur: () => void;
   /** Get the underlying RFB instance */
-  getRfb: () => RFB | null;
+  getRfb: () => RFBInstance | null;
   /** Machine power actions */
   machineShutdown: () => void;
   machineReboot: () => void;
@@ -148,14 +200,16 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
     ref
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const rfbRef = useRef<RFB | null>(null);
-    const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const rfbRef = useRef<RFBInstance | null>(null);
+    const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+      null
+    );
     const reconnectAttemptsRef = useRef(0);
     const currentReconnectDelayRef = useRef(reconnectDelay);
     const isUnmountedRef = useRef(false);
     const urlRef = useRef(url);
     const shouldReconnectRef = useRef(autoReconnect);
-    const connectInternalRef = useRef<(() => void) | null>(null);
+    const connectInternalRef = useRef<(() => Promise<void>) | null>(null);
 
     const [status, setStatus] = useState<VncConnectionStatus>("disconnected");
 
@@ -221,10 +275,15 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
         );
         connectInternalRef.current?.();
       }, delay);
-    }, [clearReconnectTimer, maxReconnectAttempts, maxReconnectDelay, updateStatus]);
+    }, [
+      clearReconnectTimer,
+      maxReconnectAttempts,
+      maxReconnectDelay,
+      updateStatus,
+    ]);
 
     // Internal connect function
-    const connectInternal = useCallback(() => {
+    const connectInternal = useCallback(async () => {
       if (isUnmountedRef.current) return;
       if (!containerRef.current) {
         console.warn("[VncViewer] Container not available for connection");
@@ -244,6 +303,10 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
       updateStatus("connecting");
 
       try {
+        // Dynamically load RFB class
+        const RFB = await loadRFB();
+        if (isUnmountedRef.current) return;
+
         const wsUrl = urlRef.current;
         console.log(`[VncViewer] Connecting to ${wsUrl}`);
 
@@ -297,9 +360,8 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
 
         rfb.addEventListener("securityfailure", (e) => {
           if (isUnmountedRef.current) return;
-          const detail = (
-            e as CustomEvent<{ status: number; reason: string }>
-          ).detail;
+          const detail = (e as CustomEvent<{ status: number; reason: string }>)
+            .detail;
           console.error("[VncViewer] Security failure:", detail);
           updateStatus("error");
           onSecurityFailure?.(rfb, detail ?? { status: 0, reason: "Unknown" });
@@ -419,14 +481,17 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
           e.stopPropagation();
 
           // Use async clipboard API
-          navigator.clipboard.readText().then((text) => {
-            if (text) {
-              clipboardPaste(text);
-            }
-          }).catch((err) => {
-            // Clipboard API might fail due to permissions
-            console.warn("[VncViewer] Could not read clipboard:", err);
-          });
+          navigator.clipboard
+            .readText()
+            .then((text) => {
+              if (text) {
+                clipboardPaste(text);
+              }
+            })
+            .catch((err) => {
+              // Clipboard API might fail due to permissions
+              console.warn("[VncViewer] Could not read clipboard:", err);
+            });
         }
       },
       [clipboardPaste, viewOnly]
@@ -516,7 +581,10 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
 
       return () => {
         container.removeEventListener("paste", handlePaste as EventListener);
-        container.removeEventListener("keydown", handleKeyDown as EventListener);
+        container.removeEventListener(
+          "keydown",
+          handleKeyDown as EventListener
+        );
       };
     }, [handlePaste, handleKeyDown]);
 

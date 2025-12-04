@@ -1,7 +1,8 @@
 // Type declarations for @novnc/novnc
 // Based on https://github.com/novnc/noVNC/blob/master/docs/API.md
 
-declare module "@novnc/novnc/core/rfb" {
+// noVNC 1.7.0-beta exports from core/rfb.js via package.json "exports"
+declare module "@novnc/novnc" {
   export interface RFBOptions {
     /** Object specifying credentials to provide to the server */
     credentials?: {
