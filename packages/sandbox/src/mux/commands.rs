@@ -80,6 +80,9 @@ pub enum MuxCommand {
     EnableDeltaPager,
     DisableDeltaPager,
     CopyScrollback,
+
+    // External tools
+    OpenVsCodeSSH,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,6 +163,8 @@ impl MuxCommand {
             MuxCommand::EnableDeltaPager,
             MuxCommand::DisableDeltaPager,
             MuxCommand::CopyScrollback,
+            // External tools
+            MuxCommand::OpenVsCodeSSH,
         ]
     }
 
@@ -225,6 +230,7 @@ impl MuxCommand {
             MuxCommand::EnableDeltaPager => "Enable Delta Pager",
             MuxCommand::DisableDeltaPager => "Disable Delta Pager",
             MuxCommand::CopyScrollback => "Copy Scrollback",
+            MuxCommand::OpenVsCodeSSH => "Open VS Code (SSH)",
         }
     }
 
@@ -259,6 +265,7 @@ impl MuxCommand {
             MuxCommand::EnableDeltaPager => &["git diff", "syntax highlighting", "pretty diff"],
             MuxCommand::DisableDeltaPager => &["git diff", "plain diff", "default pager"],
             MuxCommand::CopyScrollback => &["copy", "clipboard", "terminal output", "history"],
+            MuxCommand::OpenVsCodeSSH => &["vscode", "code", "remote", "editor", "ide"],
             _ => &[],
         }
     }
@@ -325,6 +332,7 @@ impl MuxCommand {
             MuxCommand::EnableDeltaPager => "Use delta for syntax-highlighted git diffs",
             MuxCommand::DisableDeltaPager => "Use default pager for git diffs",
             MuxCommand::CopyScrollback => "Copy entire terminal scrollback to clipboard",
+            MuxCommand::OpenVsCodeSSH => "Open VS Code connected to sandbox via SSH",
         }
     }
 
@@ -397,6 +405,8 @@ impl MuxCommand {
             MuxCommand::EnableDeltaPager
             | MuxCommand::DisableDeltaPager
             | MuxCommand::CopyScrollback => "Terminal",
+
+            MuxCommand::OpenVsCodeSSH => "External",
         }
     }
 
@@ -525,6 +535,9 @@ impl MuxCommand {
             MuxCommand::EnableDeltaPager => None,
             MuxCommand::DisableDeltaPager => None,
             MuxCommand::CopyScrollback => None,
+
+            // External tools
+            MuxCommand::OpenVsCodeSSH => Some((KeyModifiers::ALT, KeyCode::Char('v'))),
         }
     }
 

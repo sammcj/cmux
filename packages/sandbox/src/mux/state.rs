@@ -756,6 +756,31 @@ impl<'a> MuxApp<'a> {
                     }
                 }
             }
+            MuxCommand::OpenVsCodeSSH => {
+                if let Some(sandbox_id) = self.selected_sandbox_id() {
+                    let ssh_host = format!("sandbox-{}", sandbox_id);
+                    let remote_path = "/workspace";
+
+                    // Spawn VS Code with Remote-SSH extension
+                    // Format: code --remote ssh-remote+<host> <path>
+                    match std::process::Command::new("code")
+                        .args(["--remote", &format!("ssh-remote+{}", ssh_host), remote_path])
+                        .spawn()
+                    {
+                        Ok(_) => {
+                            self.set_status(format!(
+                                "Opening VS Code to {}:{}",
+                                ssh_host, remote_path
+                            ));
+                        }
+                        Err(e) => {
+                            self.set_status(format!("Failed to open VS Code: {}", e));
+                        }
+                    }
+                } else {
+                    self.set_status("No sandbox selected");
+                }
+            }
         }
     }
 
