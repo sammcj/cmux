@@ -1,5 +1,6 @@
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
+import { withRelatedProject } from "@vercel/related-projects";
 
 export const env = createEnv({
   server: {},
@@ -13,7 +14,16 @@ export const env = createEnv({
     NEXT_PUBLIC_STACK_PROJECT_ID: z.string().min(1),
     NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY: z.string().min(1),
     NEXT_PUBLIC_GITHUB_APP_SLUG: z.string().optional(),
-    NEXT_PUBLIC_WWW_ORIGIN: z.string().min(1),
+    NEXT_PUBLIC_WWW_ORIGIN: z
+      .string()
+      .min(1)
+      .default(() => {
+        const wwwOrigin = withRelatedProject({
+          projectName: "cmux-www",
+          defaultHost: "https://cmux.dev",
+        });
+        return wwwOrigin;
+      }),
     NEXT_PUBLIC_SERVER_ORIGIN: z.string().optional(),
     NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
     NEXT_PUBLIC_POSTHOG_HOST: z.string().optional(),
