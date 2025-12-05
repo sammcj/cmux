@@ -839,6 +839,20 @@ function TaskTreeInner({
                   event.preventDefault();
                   return;
                 }
+                // For local workspaces with active VSCode, expand and navigate to VSCode view
+                if (localWorkspaceRunWithVscode) {
+                  event.preventDefault();
+                  setIsExpanded(true);
+                  void navigate({
+                    to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                    params: {
+                      teamSlugOrId,
+                      taskId: task._id,
+                      runId: localWorkspaceRunWithVscode._id,
+                    },
+                  });
+                  return;
+                }
                 handleToggle(event);
               }}
             >
