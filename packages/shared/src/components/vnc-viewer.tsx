@@ -552,7 +552,7 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
         const rfb = rfbRef.current;
         const code = e.code;
 
-        const handleShortcut = (logMsg: string, action: () => void) => {
+        const handleShortcut = (_logMsg: string, action: () => void) => {
           e.preventDefault();
           e.stopPropagation();
           if (!rfb) return;
