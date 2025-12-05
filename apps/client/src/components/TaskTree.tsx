@@ -6,7 +6,10 @@ import {
 } from "@/components/ui/tooltip";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useArchiveTask } from "@/hooks/useArchiveTask";
-import { useResumeMorphWorkspace } from "@/hooks/useMorphWorkspace";
+import {
+  useResumeMorphWorkspace,
+  useRefreshMorphGitHubAuth,
+} from "@/hooks/useMorphWorkspace";
 import { useOpenWithActions } from "@/hooks/useOpenWithActions";
 import { useTaskRename } from "@/hooks/useTaskRename";
 import { isElectron } from "@/lib/electron";
@@ -55,6 +58,7 @@ import {
   PinOff,
   Play,
   Plus,
+  RefreshCw,
   TerminalSquare,
   Loader2,
   Trash2,
@@ -345,6 +349,8 @@ function TaskTreeInner({
   defaultExpanded = false,
   teamSlugOrId,
 }: TaskTreeProps) {
+  const navigate = useNavigate();
+
   // Get the current route to determine if this task is selected
   const location = useLocation();
   const isTaskSelected = useMemo(
@@ -391,6 +397,18 @@ function TaskTreeInner({
   );
   const hasVisibleRuns = activeRunsFlat.length > 0;
   const showRunNumbers = flattenedRuns.length > 1;
+
+  // For local workspaces, find the run with VSCode to navigate to VSCode view directly
+  const localWorkspaceRunWithVscode = useMemo(() => {
+    if (!task.isLocalWorkspace) {
+      return null;
+    }
+    // Find the first active run with a running VSCode instance
+    return activeRunsFlat.find(
+      (run) => run.vscode?.status === "running" && run.vscode?.url
+    ) ?? null;
+  }, [task.isLocalWorkspace, activeRunsFlat]);
+
   const runMenuEntries = useMemo(
     () =>
       annotateAgentOrdinals(flattenedRuns).map((run) => ({
@@ -690,10 +708,10 @@ function TaskTreeInner({
     />
   );
   const taskTitleContent = isRenaming ? renameInputElement : taskTitleValue;
-  const canExpand = true;
   const isCrownEvaluating = task.crownEvaluationStatus === "in_progress";
   const isLocalWorkspace = task.isLocalWorkspace;
   const isCloudWorkspace = task.isCloudWorkspace;
+  const canExpand = true;
 
   const taskLeadingIcon = (() => {
     if (isCrownEvaluating) {
@@ -817,7 +835,11 @@ function TaskTreeInner({
               params={{ teamSlugOrId, taskId: task._id }}
               search={{ runId: undefined }}
               activeOptions={{ exact: true }}
-              className="group/task block"
+              className={clsx(
+                "group/task block",
+                // For local workspaces, manually add active class since we navigate to VSCode sub-route
+                localWorkspaceRunWithVscode && isTaskSelected && "active"
+              )}
               data-focus-visible={isTaskLinkFocusVisible ? "true" : undefined}
               onMouseEnter={handlePrefetch}
               onFocus={handleTaskLinkFocus}
@@ -834,6 +856,20 @@ function TaskTreeInner({
                 }
                 if (isRenaming) {
                   event.preventDefault();
+                  return;
+                }
+                // For local workspaces with active VSCode, expand and navigate to VSCode view
+                if (localWorkspaceRunWithVscode) {
+                  event.preventDefault();
+                  setIsExpanded(true);
+                  void navigate({
+                    to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                    params: {
+                      teamSlugOrId,
+                      taskId: task._id,
+                      runId: localWorkspaceRunWithVscode._id,
+                    },
+                  });
                   return;
                 }
                 handleToggle(event);
@@ -977,7 +1013,25 @@ function TaskTreeInner({
           </ContextMenu.Portal>
         </ContextMenu.Root>
 
-        {isExpanded ? (
+        {/* For local workspaces, only show VSCode link when expanded */}
+        {isExpanded && localWorkspaceRunWithVscode ? (
+          <TaskRunDetailLink
+            to="/$teamSlugOrId/task/$taskId/run/$runId/vscode"
+            params={{
+              teamSlugOrId,
+              taskId: task._id,
+              runId: localWorkspaceRunWithVscode._id,
+            }}
+            icon={
+              <VSCodeIcon className="w-3 h-3 mr-2 text-neutral-400 grayscale opacity-60" />
+            }
+            label="VS Code"
+            indentLevel={level + 1}
+          />
+        ) : null}
+
+        {/* For non-local workspaces, show normal task runs content */}
+        {isExpanded && !localWorkspaceRunWithVscode ? (
           <TaskRunsContent
             taskId={task._id}
             teamSlugOrId={teamSlugOrId}
@@ -1431,6 +1485,22 @@ function TaskRunTreeInner({
     });
   }, [resumeWorkspace, run._id, teamSlugOrId]);
 
+  const refreshGitHubAuth = useRefreshMorphGitHubAuth({
+    taskRunId: run._id,
+    teamSlugOrId,
+  });
+
+  const handleRefreshGitHubAuth = useCallback(() => {
+    if (refreshGitHubAuth.isPending) {
+      return;
+    }
+
+    void refreshGitHubAuth.mutateAsync({
+      path: { taskRunId: run._id },
+      body: { teamSlugOrId },
+    });
+  }, [refreshGitHubAuth, run._id, teamSlugOrId]);
+
   const shouldRenderPullRequestLink = Boolean(
     (run.pullRequestUrl && run.pullRequestUrl !== "pending") ||
       run.pullRequests?.some((pr) => pr.url)
@@ -1519,6 +1589,18 @@ function TaskRunTreeInner({
                 >
                   <Play className="w-3.5 h-3.5" />
                   {resumeWorkspace.isPending ? "Resuming…" : "Resume VM"}
+                </ContextMenu.Item>
+              ) : null}
+              {run.vscode?.provider === "morph" ? (
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  onClick={handleRefreshGitHubAuth}
+                  disabled={refreshGitHubAuth.isPending}
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  {refreshGitHubAuth.isPending
+                    ? "Refreshing…"
+                    : "Refresh GitHub auth"}
                 </ContextMenu.Item>
               ) : null}
               {hasOpenWithActions ? (
