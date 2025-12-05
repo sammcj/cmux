@@ -145,7 +145,6 @@ interface SidebarArchiveOverlayProps {
   icon: ReactNode;
   label: string;
   onArchive: () => void;
-  /** Named group for scoped hover (e.g., "task" or "run") */
   groupName: "task" | "run";
 }
 
@@ -155,7 +154,6 @@ function SidebarArchiveOverlay({
   onArchive,
   groupName,
 }: SidebarArchiveOverlayProps) {
-  // Use named groups to prevent parent hover from triggering child archive buttons
   const hoverShow =
     groupName === "task"
       ? "group-hover/task:opacity-100 group-hover/task:pointer-events-auto group-data-[focus-visible=true]/task:opacity-100 group-data-[focus-visible=true]/task:pointer-events-auto"
@@ -2071,7 +2069,6 @@ function TaskRunDetails({
 
   return (
     <Fragment>
-      {/* VSCode - always show for all workspaces */}
       <TaskRunDetailLink
         to="/$teamSlugOrId/task/$taskId/run/$runId/vscode"
         params={{
@@ -2088,7 +2085,6 @@ function TaskRunDetails({
         onReload={handleReloadVSCode}
       />
 
-      {/* Git diff - always show for all workspaces */}
       <TaskRunDetailLink
         to="/$teamSlugOrId/task/$taskId/run/$runId/diff"
         params={{ teamSlugOrId, taskId, runId: run._id }}
@@ -2097,7 +2093,6 @@ function TaskRunDetails({
         indentLevel={indentLevel}
       />
 
-      {/* Browser - only for cloud workspaces (not local) */}
       {!isLocalWorkspace ? (
         <TaskRunDetailLink
           to="/$teamSlugOrId/task/$taskId/run/$runId/browser"
@@ -2110,7 +2105,6 @@ function TaskRunDetails({
         />
       ) : null}
 
-      {/* Terminals - only for cloud workspaces (not local) */}
       {!isLocalWorkspace ? (
         <TaskRunDetailLink
           to="/$teamSlugOrId/task/$taskId/run/$runId/terminals"

@@ -14,7 +14,6 @@ export interface WorkspaceLoadingIndicatorProps {
   loadingDescription?: string;
   errorTitle?: string;
   errorDescription?: string;
-  /** Optional action button for error states */
   action?: React.ReactNode;
 }
 

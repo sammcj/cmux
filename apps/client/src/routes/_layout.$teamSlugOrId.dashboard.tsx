@@ -405,7 +405,6 @@ function DashboardComponent() {
             teamId: teamSlugOrId,
             environmentId: args.environmentId,
             isCloudWorkspace: args.isCloudWorkspace,
-            // Required fields for TaskRunWithChildren type
             children: [],
             environment: null,
           }));
