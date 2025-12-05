@@ -285,11 +285,12 @@ const MOCK_SCREENSHOTS: MockScreenshot[] = [
 ];
 
 // Height for both tab contents (consistent across tabs)
-const MOCK_BROWSER_CONTENT_HEIGHT = 975;
+const MOCK_BROWSER_CONTENT_HEIGHT = 829;
 
 function MockGitHubPRBrowser() {
   const [expandedImage, setExpandedImage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"github" | "workspace">("github");
+  const [activePRTab, setActivePRTab] = useState<"conversation" | "commits" | "checks" | "files">("conversation");
 
   // State for collapsed git diff files
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set(["file3"]));
@@ -515,28 +516,60 @@ function MockGitHubPRBrowser() {
           {/* PR tabs */}
           <div className="bg-[#0d1117] border-b border-[#30363d] px-6 shrink-0">
             <nav className="flex gap-4">
-              <button className="flex items-center gap-2 px-2 py-3 text-sm font-medium text-[#e6edf3] border-b-2 border-[#f78166] -mb-px">
+              <button
+                onClick={() => setActivePRTab("conversation")}
+                className={clsx(
+                  "flex items-center gap-2 px-2 py-3 text-sm -mb-px",
+                  activePRTab === "conversation"
+                    ? "font-medium text-[#e6edf3] border-b-2 border-[#f78166]"
+                    : "text-[#7d8590] hover:text-[#e6edf3]"
+                )}
+              >
                 <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M1.5 2.75a.25.25 0 0 1 .25-.25h8.5a.25.25 0 0 1 .25.25v5.5a.25.25 0 0 1-.25.25h-3.5a.75.75 0 0 0-.53.22L3.5 11.44V9.25a.75.75 0 0 0-.75-.75h-1a.25.25 0 0 1-.25-.25Zm-1.5 0a1.75 1.75 0 0 1 1.75-1.75h8.5A1.75 1.75 0 0 1 12 2.75v5.5A1.75 1.75 0 0 1 10.25 10H7.061l-2.574 2.573A1.458 1.458 0 0 1 2 11.543V10h-.25A1.75 1.75 0 0 1 0 8.25Zm14.5 2a.25.25 0 0 0-.25-.25h-.5a.75.75 0 0 1 0-1.5h.5A1.75 1.75 0 0 1 16 4.75v5.5A1.75 1.75 0 0 1 14.25 12H14v1.543a1.458 1.458 0 0 1-2.487 1.03L9.22 12.28a.749.749 0 0 1 .326-1.275.749.749 0 0 1 .734.215l2.22 2.22v-2.19a.75.75 0 0 1 .75-.75h1a.25.25 0 0 0 .25-.25Z" />
                 </svg>
                 Conversation
-                <span className="px-1.5 py-0.5 rounded-full bg-[#30363d] text-xs text-[#e6edf3]">3</span>
+                <span className="px-1.5 py-0.5 rounded-full bg-[#30363d] text-xs text-[#e6edf3]">2</span>
               </button>
-              <button className="flex items-center gap-2 px-2 py-3 text-sm text-[#7d8590] hover:text-[#e6edf3]">
+              <button
+                onClick={() => setActivePRTab("commits")}
+                className={clsx(
+                  "flex items-center gap-2 px-2 py-3 text-sm -mb-px",
+                  activePRTab === "commits"
+                    ? "font-medium text-[#e6edf3] border-b-2 border-[#f78166]"
+                    : "text-[#7d8590] hover:text-[#e6edf3]"
+                )}
+              >
                 <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M11.93 8.5a4.002 4.002 0 0 1-7.86 0H.75a.75.75 0 0 1 0-1.5h3.32a4.002 4.002 0 0 1 7.86 0h3.32a.75.75 0 0 1 0 1.5Zm-1.43-.75a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z" />
                 </svg>
                 Commits
                 <span className="px-1.5 py-0.5 rounded-full bg-[#30363d] text-xs text-[#e6edf3]">14</span>
               </button>
-              <button className="flex items-center gap-2 px-2 py-3 text-sm text-[#7d8590] hover:text-[#e6edf3]">
+              <button
+                onClick={() => setActivePRTab("checks")}
+                className={clsx(
+                  "flex items-center gap-2 px-2 py-3 text-sm -mb-px",
+                  activePRTab === "checks"
+                    ? "font-medium text-[#e6edf3] border-b-2 border-[#f78166]"
+                    : "text-[#7d8590] hover:text-[#e6edf3]"
+                )}
+              >
                 <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775Zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25ZM6 5a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z" />
                 </svg>
                 Checks
                 <span className="px-1.5 py-0.5 rounded-full bg-[#30363d] text-xs text-[#e6edf3]">4</span>
               </button>
-              <button className="flex items-center gap-2 px-2 py-3 text-sm text-[#7d8590] hover:text-[#e6edf3]">
+              <button
+                onClick={() => setActivePRTab("files")}
+                className={clsx(
+                  "flex items-center gap-2 px-2 py-3 text-sm -mb-px",
+                  activePRTab === "files"
+                    ? "font-medium text-[#e6edf3] border-b-2 border-[#f78166]"
+                    : "text-[#7d8590] hover:text-[#e6edf3]"
+                )}
+              >
                 <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z" />
                 </svg>
@@ -548,173 +581,292 @@ function MockGitHubPRBrowser() {
 
           {/* GitHub PR content - scrollable */}
           <div className="bg-[#0d1117] overflow-y-auto flex-1 min-h-0" style={{ scrollbarWidth: "thin", scrollbarColor: "#30363d #0d1117" }}>
-            <div className="px-6 py-4 space-y-4">
-              {/* Timeline: User opened PR */}
-              <div className="flex items-center gap-3 text-sm">
-                <div className="w-8 flex justify-center">
-                  <div className="w-8 h-8 rounded-full overflow-hidden">
+            {activePRTab === "conversation" && (
+              <div className="px-6 py-4 space-y-4">
+                {/* User's PR description comment */}
+                <div className="flex gap-3">
+                  <div className="shrink-0 relative">
                     <Image
                       src="https://avatars.githubusercontent.com/u/38676809?v=4"
                       alt="austinywang"
-                      width={32}
-                      height={32}
+                      width={40}
+                      height={40}
+                      className="rounded-full"
                       unoptimized
                     />
+                    {/* Timeline connector line */}
+                    <div className="absolute top-10 left-1/2 -translate-x-1/2 w-0.5 h-[calc(100%+16px)] bg-[#30363d]" />
                   </div>
-                </div>
-                <div className="flex-1">
-                  <span className="font-semibold text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer">austinywang</span>
-                  <span className="text-[#7d8590]"> opened this pull request </span>
-                  <span className="text-[#7d8590]">yesterday</span>
-                </div>
-              </div>
-
-              {/* Timeline connector */}
-              <div className="flex">
-                <div className="w-8 flex justify-center">
-                  <div className="w-0.5 h-4 bg-[#30363d]" />
-                </div>
-              </div>
-
-              {/* User's PR description comment */}
-              <div className="flex gap-3">
-                <div className="shrink-0 relative">
-                  <Image
-                    src="https://avatars.githubusercontent.com/u/38676809?v=4"
-                    alt="austinywang"
-                    width={40}
-                    height={40}
-                    className="rounded-full"
-                    unoptimized
-                  />
-                  {/* Timeline connector line */}
-                  <div className="absolute top-10 left-1/2 -translate-x-1/2 w-0.5 h-[calc(100%+16px)] bg-[#30363d]" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="rounded-md border border-[#30363d] overflow-hidden">
-                    <div className="flex items-center gap-2 px-4 py-2 bg-[#161b22] border-b border-[#30363d]">
-                      <span className="font-semibold text-sm text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer">austinywang</span>
-                      <span className="text-sm text-[#7d8590]">commented yesterday</span>
-                      <span className="ml-auto px-1.5 py-0.5 rounded-md text-xs font-medium bg-[#388bfd26] text-[#2f81f7] border border-[#388bfd66]">
-                        Author
-                      </span>
-                    </div>
-                    <div className="p-4 bg-[#0d1117]">
-                      <h3 className="text-base font-semibold text-[#e6edf3] mb-2">Summary</h3>
-                      <p className="text-sm text-[#e6edf3] mb-3">
-                        This PR refactors the preview config component to be reusable in the step-by-step wizard flow. The same form components are now shared between the initial setup page and the sidebar wizard.
-                      </p>
-                      <h3 className="text-base font-semibold text-[#e6edf3] mb-2">Changes</h3>
-                      <ul className="text-sm text-[#e6edf3] list-disc list-inside space-y-1">
-                        <li>Extract shared form components</li>
-                        <li>Add collapsible sections for wizard steps</li>
-                        <li>Sync state between views</li>
-                      </ul>
+                  <div className="flex-1 min-w-0">
+                    <div className="rounded-md border border-[#30363d] overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-2 bg-[#161b22] border-b border-[#30363d]">
+                        <span className="font-semibold text-sm text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer">austinywang</span>
+                        <span className="text-sm text-[#7d8590]">opened this pull request yesterday</span>
+                        <span className="ml-auto px-1.5 py-0.5 rounded-md text-xs font-medium bg-[#388bfd26] text-[#2f81f7] border border-[#388bfd66]">
+                          Author
+                        </span>
+                      </div>
+                      <div className="p-4 bg-[#0d1117]">
+                        <h3 className="text-base font-semibold text-[#e6edf3] mb-2">Summary</h3>
+                        <p className="text-sm text-[#e6edf3] mb-3">
+                          This PR refactors the preview config component to be reusable in the step-by-step wizard flow. The same form components are now shared between the initial setup page and the sidebar wizard.
+                        </p>
+                        <h3 className="text-base font-semibold text-[#e6edf3] mb-2">Changes</h3>
+                        <ul className="text-sm text-[#e6edf3] list-disc list-inside space-y-1">
+                          <li>Extract shared form components</li>
+                          <li>Add collapsible sections for wizard steps</li>
+                          <li>Sync state between views</li>
+                        </ul>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Bot comment */}
-              <div className="flex gap-3">
-                <div className="shrink-0">
-                  <Image
-                    src="https://avatars.githubusercontent.com/u/171392238?v=4"
+                {/* Bot comment */}
+                <div className="flex gap-3">
+                  <div className="shrink-0 w-10 h-10 rounded-full bg-[#0d1117] border border-[#30363d] flex items-center justify-center relative z-10">
+                    <Image
+                    src="https://avatars.githubusercontent.com/in/1690796?s=80&v=4"
                     alt="cmux-agent avatar"
                     width={40}
                     height={40}
                     className="rounded-full"
                     unoptimized
                   />
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="rounded-md border border-[#30363d] overflow-hidden">
-                    <div className="flex items-center gap-2 px-4 py-2 bg-[#161b22] border-b border-[#30363d]">
-                      <span className="font-semibold text-sm text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer">cmux-agent</span>
-                      <span className="px-1.5 py-0.5 rounded-md text-xs font-medium bg-[#6e40c926] text-[#a371f7] border border-[#6e40c966]">
-                        bot
-                      </span>
-                      <span className="text-sm text-[#7d8590]">commented yesterday</span>
-                    </div>
-
-                    <div className="p-4 bg-[#0d1117]">
-                      <h2 className="text-xl font-semibold text-[#e6edf3] pb-4 border-b border-[#30363d] mb-4">
-                        Preview Screenshots
-                      </h2>
-
-                      <p className="text-sm text-[#e6edf3] mb-4">
-                        <span className="text-[#2f81f7] hover:underline cursor-pointer">Open Workspace (1 hr expiry)</span>
-                        <span className="text-[#7d8590]"> · </span>
-                        <span className="text-[#2f81f7] hover:underline cursor-pointer">Open Dev Browser (1 hr expiry)</span>
-                        <span className="text-[#7d8590]"> · </span>
-                        <span className="text-[#2f81f7] hover:underline cursor-pointer">Open Diff Heatmap</span>
-                      </p>
-
-                      <p className="text-sm text-[#e6edf3] mb-6">
-                        Captured {MOCK_SCREENSHOTS.length} screenshots for commit{" "}
-                        <code className="px-1.5 py-0.5 rounded-md bg-[#6e768166] text-[#e6edf3] font-mono text-xs">
-                          ee59b00
-                        </code>{" "}
-                        (2025-12-03 06:56:40.263 UTC).
-                      </p>
-
-                      <div className="space-y-6">
-                        {MOCK_SCREENSHOTS.map((screenshot) => (
-                          <div key={screenshot.id}>
-                            <p className="text-sm text-[#e6edf3] mb-2">
-                              <strong>{screenshot.caption}</strong>
-                            </p>
-                            <button
-                              onClick={() => setExpandedImage(expandedImage === screenshot.id ? null : screenshot.id)}
-                              className="block rounded-md border border-[#30363d] overflow-hidden hover:border-[#8b949e] transition-colors"
-                            >
-                              <div className={clsx(
-                                "relative overflow-hidden transition-all duration-300",
-                                expandedImage === screenshot.id ? "max-h-[600px]" : "max-h-[300px]"
-                              )}>
-                                <Image
-                                  src={screenshot.imageUrl}
-                                  alt={screenshot.caption}
-                                  width={800}
-                                  height={450}
-                                  unoptimized
-                                  className="w-full h-auto"
-                                />
-                              </div>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-
-                      <hr className="border-[#30363d] my-6" />
-
-                      <p className="text-sm text-[#7d8590] italic">
-                        Generated by{" "}
-                        <span className="text-[#2f81f7] hover:underline cursor-pointer">cmux</span>{" "}
-                        preview system
-                      </p>
-                    </div>
                   </div>
 
-                  <div className="flex items-center gap-1 mt-2">
-                    <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[#30363d] bg-[#21262d] text-xs hover:bg-[#30363d] transition-colors">
-                      <span>+1</span>
-                      <span className="text-[#7d8590]">2</span>
-                    </button>
-                    <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[#30363d] bg-[#21262d] text-xs hover:bg-[#30363d] transition-colors">
-                      <span>rocket</span>
-                      <span className="text-[#7d8590]">1</span>
-                    </button>
-                    <button className="p-1 rounded text-[#7d8590] hover:text-[#e6edf3] hover:bg-[#21262d]">
-                      <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm3.82 1.636a.75.75 0 0 1 1.038.175l.007.009c.103.118.22.222.35.31.264.178.683.37 1.285.37.602 0 1.02-.192 1.285-.371.13-.088.247-.192.35-.31l.007-.008a.75.75 0 0 1 1.222.87l-.022.03c-.2.252-.44.47-.714.647-.554.358-1.28.582-2.128.582-.848 0-1.574-.224-2.128-.582a2.7 2.7 0 0 1-.714-.647l-.022-.03a.75.75 0 0 1 .175-1.045ZM6.25 6.5c-.457 0-.75.378-.75.75 0 .37.293.75.75.75.457 0 .75-.378.75-.75 0-.37-.293-.75-.75-.75Zm4.25.75c0-.372-.293-.75-.75-.75s-.75.378-.75.75c0 .37.293.75.75.75s.75-.378.75-.75Z" />
-                      </svg>
-                    </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="rounded-md border border-[#30363d] overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-2 bg-[#161b22] border-b border-[#30363d]">
+                        <span className="font-semibold text-sm text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer">cmux-agent</span>
+                        <span className="px-1.5 py-0.5 rounded-md text-xs font-medium bg-[#6e40c926] text-[#a371f7] border border-[#6e40c966]">
+                          bot
+                        </span>
+                        <span className="text-sm text-[#7d8590]">commented yesterday</span>
+                      </div>
+
+                      <div className="p-4 bg-[#0d1117]">
+                        <h2 className="text-xl font-semibold text-[#e6edf3] pb-4 border-b border-[#30363d] mb-4">
+                          Preview Screenshots
+                        </h2>
+
+                        <p className="text-sm text-[#e6edf3] mb-4">
+                          <span className="text-[#2f81f7] hover:underline cursor-pointer">Open Workspace (1 hr expiry)</span>
+                          <span className="text-[#7d8590]"> · </span>
+                          <span className="text-[#2f81f7] hover:underline cursor-pointer">Open Dev Browser (1 hr expiry)</span>
+                          <span className="text-[#7d8590]"> · </span>
+                          <span className="text-[#2f81f7] hover:underline cursor-pointer">Open Diff Heatmap</span>
+                        </p>
+
+                        <p className="text-sm text-[#e6edf3] mb-6">
+                          Captured {MOCK_SCREENSHOTS.length} screenshots for commit{" "}
+                          <code className="px-1.5 py-0.5 rounded-md bg-[#6e768166] text-[#e6edf3] font-mono text-xs">
+                            ee59b00
+                          </code>{" "}
+                          (2025-12-03 06:56:40.263 UTC).
+                        </p>
+
+                        <div className="space-y-6">
+                          {MOCK_SCREENSHOTS.map((screenshot) => (
+                            <div key={screenshot.id}>
+                              <p className="text-sm text-[#e6edf3] mb-2">
+                                <strong>{screenshot.caption}</strong>
+                              </p>
+                              <button
+                                onClick={() => setExpandedImage(expandedImage === screenshot.id ? null : screenshot.id)}
+                                className="block rounded-md border border-[#30363d] overflow-hidden hover:border-[#8b949e] transition-colors"
+                              >
+                                <div className={clsx(
+                                  "relative overflow-hidden transition-all duration-300",
+                                  expandedImage === screenshot.id ? "max-h-[600px]" : "max-h-[300px]"
+                                )}>
+                                  <Image
+                                    src={screenshot.imageUrl}
+                                    alt={screenshot.caption}
+                                    width={800}
+                                    height={450}
+                                    unoptimized
+                                    className="w-full h-auto"
+                                  />
+                                </div>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        <hr className="border-[#30363d] my-6" />
+
+                        <p className="text-sm text-[#7d8590] italic">
+                          Generated by{" "}
+                          <span className="text-[#2f81f7] hover:underline cursor-pointer">cmux</span>{" "}
+                          preview system
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 mt-2">
+                      <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[#30363d] bg-[#21262d] text-xs hover:bg-[#30363d] transition-colors">
+                        <span>+1</span>
+                        <span className="text-[#7d8590]">2</span>
+                      </button>
+                      <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[#30363d] bg-[#21262d] text-xs hover:bg-[#30363d] transition-colors">
+                        <span>rocket</span>
+                        <span className="text-[#7d8590]">1</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
+
+            {activePRTab === "commits" && (
+              <div className="px-6 py-4">
+                <div className="space-y-0">
+                  {/* Commit group header */}
+                  <div className="flex items-center gap-2 py-2 text-sm text-[#7d8590]">
+                    <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M11.93 8.5a4.002 4.002 0 0 1-7.86 0H.75a.75.75 0 0 1 0-1.5h3.32a4.002 4.002 0 0 1 7.86 0h3.32a.75.75 0 0 1 0 1.5Zm-1.43-.75a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z" />
+                    </svg>
+                    <span>Commits on Dec 2, 2025</span>
+                  </div>
+
+                  {/* Commits list */}
+                  {[
+                    { sha: "ee59b00", msg: "fix: reuse preview config component in wizard", time: "yesterday" },
+                    { sha: "a1b2c3d", msg: "refactor: extract shared form components", time: "yesterday" },
+                    { sha: "d4e5f6g", msg: "feat: add collapsible sections for wizard steps", time: "yesterday" },
+                    { sha: "h7i8j9k", msg: "fix: sync state between initial and wizard views", time: "yesterday" },
+                    { sha: "l0m1n2o", msg: "chore: clean up unused imports", time: "yesterday" },
+                    { sha: "p3q4r5s", msg: "style: improve spacing in wizard sidebar", time: "2 days ago" },
+                    { sha: "t6u7v8w", msg: "fix: handle edge case in env var parsing", time: "2 days ago" },
+                    { sha: "x9y0z1a", msg: "feat: add framework preset autofill", time: "2 days ago" },
+                    { sha: "b2c3d4e", msg: "refactor: consolidate script input components", time: "2 days ago" },
+                    { sha: "f5g6h7i", msg: "fix: wizard step navigation", time: "2 days ago" },
+                    { sha: "j8k9l0m", msg: "chore: update dependencies", time: "3 days ago" },
+                    { sha: "n1o2p3q", msg: "feat: add save configuration button", time: "3 days ago" },
+                    { sha: "r4s5t6u", msg: "style: dark mode improvements", time: "3 days ago" },
+                    { sha: "v7w8x9y", msg: "initial: setup preview config wizard", time: "3 days ago" },
+                  ].map((commit) => (
+                    <div key={commit.sha} className="flex items-center gap-3 py-2 border-t border-[#21262d] hover:bg-[#161b22] -mx-2 px-2 rounded">
+                      <Image
+                        src="https://avatars.githubusercontent.com/u/38676809?v=4"
+                        alt="austinywang"
+                        width={24}
+                        height={24}
+                        className="rounded-full"
+                        unoptimized
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer truncate block">{commit.msg}</span>
+                      </div>
+                      <code className="text-xs text-[#2f81f7] font-mono hover:underline cursor-pointer">{commit.sha}</code>
+                      <span className="text-xs text-[#7d8590] shrink-0">{commit.time}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activePRTab === "checks" && (
+              <div className="px-6 py-4">
+                {/* All checks passed banner */}
+                <div className="flex items-center gap-3 p-4 rounded-md border border-[#238636] bg-[#2ea04326] mb-4">
+                  <svg className="h-6 w-6 text-[#3fb950]" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 16A8 8 0 1 1 8 0a8 8 0 0 1 0 16Zm3.78-9.72a.751.751 0 0 0-.018-1.042.751.751 0 0 0-1.042-.018L6.75 9.19 5.28 7.72a.751.751 0 0 0-1.042.018.751.751 0 0 0-.018 1.042l2 2a.75.75 0 0 0 1.06 0Z" />
+                  </svg>
+                  <div>
+                    <div className="text-sm font-semibold text-[#e6edf3]">All checks have passed</div>
+                    <div className="text-xs text-[#7d8590]">4 successful checks</div>
+                  </div>
+                </div>
+
+                {/* Checks list */}
+                <div className="border border-[#30363d] rounded-md overflow-hidden">
+                  {[
+                    { name: "build", desc: "Build succeeded", time: "45s" },
+                    { name: "lint", desc: "ESLint passed", time: "12s" },
+                    { name: "typecheck", desc: "TypeScript compilation succeeded", time: "28s" },
+                    { name: "test", desc: "All tests passed (142 tests)", time: "1m 23s" },
+                  ].map((check, i) => (
+                    <div key={check.name} className={clsx("flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-[#21262d]")}>
+                      <svg className="h-4 w-4 text-[#3fb950]" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 16A8 8 0 1 1 8 0a8 8 0 0 1 0 16Zm3.78-9.72a.751.751 0 0 0-.018-1.042.751.751 0 0 0-1.042-.018L6.75 9.19 5.28 7.72a.751.751 0 0 0-1.042.018.751.751 0 0 0-.018 1.042l2 2a.75.75 0 0 0 1.06 0Z" />
+                      </svg>
+                      <div className="flex-1">
+                        <div className="text-sm text-[#e6edf3]">{check.name}</div>
+                        <div className="text-xs text-[#7d8590]">{check.desc}</div>
+                      </div>
+                      <span className="text-xs text-[#7d8590]">{check.time}</span>
+                      <button className="text-xs text-[#2f81f7] hover:underline">Details</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activePRTab === "files" && (
+              <div className="px-6 py-4">
+                {/* Files changed header */}
+                <div className="flex items-center gap-4 pb-4 border-b border-[#30363d] mb-4">
+                  <span className="text-sm text-[#e6edf3]">
+                    Showing <strong>2 changed files</strong> with <span className="text-[#3fb950]">73 additions</span> and <span className="text-[#f85149]">16 deletions</span>
+                  </span>
+                </div>
+
+                {/* File diffs */}
+                <div className="space-y-4">
+                  {/* File 1 */}
+                  <div className="border border-[#30363d] rounded-md overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-2 bg-[#161b22] border-b border-[#30363d]">
+                      <svg className="h-4 w-4 text-[#7d8590]" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688Z" />
+                      </svg>
+                      <span className="text-sm text-[#e6edf3]">apps/client/src/components/TaskItem.tsx</span>
+                      <span className="ml-auto text-xs">
+                        <span className="text-[#3fb950]">+28</span>
+                        <span className="text-[#7d8590] mx-1">−</span>
+                        <span className="text-[#f85149]">4</span>
+                      </span>
+                    </div>
+                    <div className="text-[11px] font-mono overflow-x-auto">
+                      <div className="px-2 py-0.5 text-[#7d8590] bg-[#161b22]">@@ -1,12 +1,15 @@</div>
+                      <div className="flex"><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#0d1117]">1</span><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#0d1117]">1</span><span className="flex-1 px-2 text-[#e6edf3]">import {"{"} useState {"}"} from &quot;react&quot;;</span></div>
+                      <div className="flex"><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#0d1117]">2</span><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#0d1117]">2</span><span className="flex-1 px-2 text-[#e6edf3]">import {"{"} useQuery {"}"} from &quot;convex/react&quot;;</span></div>
+                      <div className="flex bg-[#f851491a]"><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#f851494d]">3</span><span className="w-8 text-right pr-2 select-none bg-[#0d1117]"></span><span className="flex-1 px-2 text-[#f85149]">-import {"{"} api {"}"} from &quot;@/convex&quot;;</span></div>
+                      <div className="flex bg-[#2ea04326]"><span className="w-8 text-right pr-2 select-none bg-[#0d1117]"></span><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#2ea0434d]">3</span><span className="flex-1 px-2 text-[#3fb950]">+import {"{"} api {"}"} from &quot;@cmux/convex/api&quot;;</span></div>
+                      <div className="flex bg-[#2ea04326]"><span className="w-8 text-right pr-2 select-none bg-[#0d1117]"></span><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#2ea0434d]">4</span><span className="flex-1 px-2 text-[#3fb950]">+import {"{"} isFakeConvexId {"}"} from &quot;@/lib/utils&quot;;</span></div>
+                      <div className="flex"><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#0d1117]">4</span><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#0d1117]">5</span><span className="flex-1 px-2 text-[#e6edf3]">import {"{"} TaskTree {"}"} from &quot;./TaskTree&quot;;</span></div>
+                    </div>
+                  </div>
+
+                  {/* File 2 */}
+                  <div className="border border-[#30363d] rounded-md overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-2 bg-[#161b22] border-b border-[#30363d]">
+                      <svg className="h-4 w-4 text-[#3fb950]" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688Z" />
+                      </svg>
+                      <span className="text-sm text-[#e6edf3]">apps/client/src/lib/utils.ts</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#2ea04326] text-[#3fb950] border border-[#2ea04366]">Added</span>
+                      <span className="ml-auto text-xs">
+                        <span className="text-[#3fb950]">+45</span>
+                        <span className="text-[#7d8590] mx-1">−</span>
+                        <span className="text-[#7d8590]">0</span>
+                      </span>
+                    </div>
+                    <div className="text-[11px] font-mono overflow-x-auto">
+                      <div className="px-2 py-0.5 text-[#7d8590] bg-[#161b22]">@@ -0,0 +1,45 @@</div>
+                      <div className="flex bg-[#2ea04326]"><span className="w-8 text-right pr-2 select-none bg-[#0d1117]"></span><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#2ea0434d]">1</span><span className="flex-1 px-2 text-[#3fb950]">+export function isFakeConvexId(id: string): boolean {"{"}</span></div>
+                      <div className="flex bg-[#2ea04326]"><span className="w-8 text-right pr-2 select-none bg-[#0d1117]"></span><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#2ea0434d]">2</span><span className="flex-1 px-2 text-[#3fb950]">+  return id.startsWith(&quot;fake_&quot;);</span></div>
+                      <div className="flex bg-[#2ea04326]"><span className="w-8 text-right pr-2 select-none bg-[#0d1117]"></span><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#2ea0434d]">3</span><span className="flex-1 px-2 text-[#3fb950]">+{"}"}</span></div>
+                      <div className="flex bg-[#2ea04326]"><span className="w-8 text-right pr-2 select-none bg-[#0d1117]"></span><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#2ea0434d]">4</span><span className="flex-1 px-2 text-[#3fb950]">+</span></div>
+                      <div className="flex bg-[#2ea04326]"><span className="w-8 text-right pr-2 select-none bg-[#0d1117]"></span><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#2ea0434d]">5</span><span className="flex-1 px-2 text-[#3fb950]">+export function rewriteLocalId(id: string) {"{"}</span></div>
+                      <div className="flex bg-[#2ea04326]"><span className="w-8 text-right pr-2 select-none bg-[#0d1117]"></span><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#2ea0434d]">6</span><span className="flex-1 px-2 text-[#3fb950]">+  return id.replace(&quot;fake_&quot;, &quot;&quot;);</span></div>
+                      <div className="flex bg-[#2ea04326]"><span className="w-8 text-right pr-2 select-none bg-[#0d1117]"></span><span className="w-8 text-[#7d8590] text-right pr-2 select-none bg-[#2ea0434d]">7</span><span className="flex-1 px-2 text-[#3fb950]">+{"}"}</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         ) : (
