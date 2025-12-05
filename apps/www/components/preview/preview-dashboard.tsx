@@ -533,8 +533,188 @@ function MockGitHubPRBrowser() {
           </div>
         </div>
         ) : (
-          <div className="bg-[#0d1117] flex items-center justify-center min-h-[400px]">
-            <p className="text-[#7d8590] text-sm">Workspace preview coming soon</p>
+          <div className="bg-[#1e1e1e] flex h-[550px]">
+            {/* Left Sidebar - Source Control */}
+            <div className="w-[280px] bg-[#252526] border-r border-[#3c3c3c] flex flex-col shrink-0">
+              {/* Sidebar Header */}
+              <div className="flex items-center justify-between px-3 py-2 border-b border-[#3c3c3c]">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-[#7c3aed]">&gt;</span>
+                  <span className="text-sm font-medium text-white">Workspace</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button className="p-1 text-[#858585] hover:text-white hover:bg-[#3c3c3c] rounded">
+                    <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M9.5 13a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Search */}
+              <div className="px-2 py-2">
+                <div className="flex items-center gap-2 px-2 py-1 bg-[#3c3c3c] rounded text-sm">
+                  <Search className="h-3.5 w-3.5 text-[#858585]" />
+                  <span className="text-[#858585]">workspace</span>
+                </div>
+              </div>
+
+              {/* Source Control Section */}
+              <div className="flex-1 overflow-y-auto">
+                <div className="px-2">
+                  <div className="flex items-center gap-1 py-1 text-[11px] font-semibold text-[#858585] uppercase tracking-wide">
+                    <svg className="h-3 w-3" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M5 3l6 5-6 5V3z"/>
+                    </svg>
+                    Source Control
+                  </div>
+
+                  {/* Changes header */}
+                  <div className="flex items-center justify-between py-1 text-[11px] text-[#858585]">
+                    <span className="flex items-center gap-1">
+                      <svg className="h-3 w-3" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M5 3l6 5-6 5V3z"/>
+                      </svg>
+                      CHANGES
+                    </span>
+                  </div>
+
+                  {/* Message input */}
+                  <div className="mt-1 mb-2">
+                    <input
+                      type="text"
+                      placeholder="Message (⌘..."
+                      className="w-full px-2 py-1 bg-[#3c3c3c] border border-[#3c3c3c] rounded text-xs text-white placeholder:text-[#858585] focus:outline-none focus:border-[#007acc]"
+                    />
+                  </div>
+
+                  {/* Publish Branch button */}
+                  <button className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-[#0e639c] hover:bg-[#1177bb] text-white text-xs rounded mb-3">
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M5 3.25a.75.75 0 0 1 1.5 0v2.5h2.5a.75.75 0 0 1 0 1.5h-2.5v2.5a.75.75 0 0 1-1.5 0v-2.5h-2.5a.75.75 0 0 1 0-1.5h2.5v-2.5Z"/>
+                    </svg>
+                    Publish Branch
+                  </button>
+
+                  {/* File changes */}
+                  <div className="space-y-0.5 text-[12px]">
+                    <div className="flex items-center gap-2 px-1 py-0.5 hover:bg-[#2a2d2e] rounded cursor-pointer">
+                      <span className="text-[#73c991]">M</span>
+                      <span className="text-[#cccccc] truncate">TaskTree.tsx</span>
+                      <span className="text-[#858585] text-[10px] ml-auto">apps/client/src...</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Diff preview */}
+                <div className="mt-3 px-2">
+                  <div className="rounded border border-[#3c3c3c] overflow-hidden text-[10px] font-mono">
+                    <div className="bg-[#2d2d2d] px-2 py-1 text-[#858585] border-b border-[#3c3c3c]">
+                      TaskTree.tsx
+                    </div>
+                    <div className="bg-[#1e1e1e] p-2 space-y-0.5">
+                      <div className="text-[#858585]">  7  import &#123;</div>
+                      <div className="text-[#858585]">  8    import &#123;</div>
+                      <div className="text-[#858585]">  9    import &#123;</div>
+                      <div className="bg-[#2ea04326] text-[#3fb950]">+10  import &#123;</div>
+                      <div className="text-[#858585]"> 11    import &#123;</div>
+                      <div className="text-[#858585]"> 12    import &#123;</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Content Area */}
+            <div className="flex-1 flex flex-col">
+              {/* Top Row - VS Code and Browser */}
+              <div className="flex-1 flex min-h-0">
+                {/* VS Code Panel */}
+                <div className="flex-1 bg-[#1e1e1e] border-r border-[#3c3c3c] flex flex-col">
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-[#252526] border-b border-[#3c3c3c]">
+                    <svg className="h-4 w-4 text-[#007acc]" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z"/>
+                    </svg>
+                    <span className="text-xs text-[#cccccc]">VS Code</span>
+                  </div>
+                  <div className="flex-1 flex items-center justify-center text-[#858585] text-xs">
+                    <div className="text-center">
+                      <svg className="h-8 w-8 mx-auto mb-2 text-[#007acc]" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z"/>
+                      </svg>
+                      <p>Get Started with VS Code</p>
+                      <p className="text-[10px] mt-1">for the Web</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Browser Panel */}
+                <div className="w-[280px] bg-[#1e1e1e] flex flex-col shrink-0">
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-[#252526] border-b border-[#3c3c3c]">
+                    <svg className="h-4 w-4 text-[#858585]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/>
+                      <path d="M3 9h18"/>
+                      <circle cx="7" cy="6" r="1"/>
+                      <circle cx="10" cy="6" r="1"/>
+                    </svg>
+                    <span className="text-xs text-[#cccccc]">Browser</span>
+                  </div>
+                  <div className="flex-1 bg-[#0d1117] flex flex-col items-center justify-center p-4">
+                    <div className="w-12 h-12 rounded-lg bg-[#161b22] border border-[#30363d] flex items-center justify-center mb-3">
+                      <svg className="h-6 w-6 text-[#7d8590]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path d="M12 4v16m8-8H4"/>
+                      </svg>
+                    </div>
+                    <h3 className="text-white text-sm font-medium mb-1">Build with Agent</h3>
+                    <p className="text-[#7d8590] text-[10px] text-center">AI responses may be inaccurate.</p>
+                    <div className="mt-3 flex flex-col gap-1.5 w-full">
+                      <button className="px-3 py-1 border border-[#30363d] rounded text-[10px] text-[#7d8590] hover:bg-[#161b22]">
+                        Build Workspace
+                      </button>
+                      <button className="px-3 py-1 border border-[#30363d] rounded text-[10px] text-[#7d8590] hover:bg-[#161b22]">
+                        Show Config
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Row - Git Diff with Screenshots */}
+              <div className="h-[180px] bg-[#1e1e1e] border-t border-[#3c3c3c] flex flex-col shrink-0">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-[#252526] border-b border-[#3c3c3c]">
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4 text-[#858585]" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Z"/>
+                    </svg>
+                    <span className="text-xs text-[#cccccc]">Git Diff</span>
+                  </div>
+                </div>
+                <div className="flex-1 p-3 overflow-hidden">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-medium text-white">Screenshots</span>
+                    <span className="text-[10px] text-[#858585]">1 capture</span>
+                  </div>
+                  <div className="flex items-center gap-1 mb-2">
+                    <button className="px-2 py-0.5 bg-[#0e639c] text-white text-[10px] rounded">Completed</button>
+                    <button className="px-2 py-0.5 text-[#858585] text-[10px] hover:bg-[#3c3c3c] rounded">Latest</button>
+                    <span className="text-[10px] text-[#858585] ml-2">5 minutes ago</span>
+                    <span className="text-[10px] text-[#858585]">fcca1695305e</span>
+                    <span className="text-[10px] text-[#858585]">10 images</span>
+                  </div>
+                  {/* Screenshot thumbnails */}
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => (
+                      <div
+                        key={i}
+                        className="w-[50px] h-[35px] rounded border border-[#3c3c3c] bg-[#2d2d2d] shrink-0 flex items-center justify-center text-[8px] text-[#858585]"
+                      >
+                        {i}...
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
