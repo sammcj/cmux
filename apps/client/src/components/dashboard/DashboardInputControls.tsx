@@ -520,38 +520,40 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                 <Server className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
                 <span className="select-none">Create environment</span>
               </Link>
-              {env.NEXT_PUBLIC_GITHUB_APP_SLUG ? (
-                <button
-                  type="button"
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    try {
-                      const slug = env.NEXT_PUBLIC_GITHUB_APP_SLUG!;
-                      const baseUrl = `https://github.com/apps/${slug}/installations/new`;
-                      const { state } = await mintState({ teamSlugOrId });
-                      const sep = baseUrl.includes("?") ? "&" : "?";
-                      const url = `${baseUrl}${sep}state=${encodeURIComponent(
-                        state,
-                      )}`;
-                      const win = openCenteredPopup(
-                        url,
-                        { name: "github-install" },
-                        () => {
-                          router.options.context?.queryClient?.invalidateQueries();
-                        },
-                      );
-                      win?.focus?.();
-                    } catch (err) {
-                      console.error("Failed to start GitHub install:", err);
-                      alert("Failed to start installation. Please try again.");
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  try {
+                    const slug = env.NEXT_PUBLIC_GITHUB_APP_SLUG;
+                    if (!slug) {
+                      alert("GitHub App not configured. Please contact support.");
+                      return;
                     }
-                  }}
-                  className="w-full px-2 h-8 flex items-center gap-2 text-[13.5px] text-neutral-800 dark:text-neutral-200 rounded-md hover:bg-neutral-50 dark:hover:bg-neutral-900"
-                >
-                  <GitHubIcon className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
-                  <span className="select-none">Add repos from GitHub</span>
-                </button>
-              ) : null}
+                    const baseUrl = `https://github.com/apps/${slug}/installations/new`;
+                    const { state } = await mintState({ teamSlugOrId });
+                    const sep = baseUrl.includes("?") ? "&" : "?";
+                    const url = `${baseUrl}${sep}state=${encodeURIComponent(
+                      state,
+                    )}`;
+                    const win = openCenteredPopup(
+                      url,
+                      { name: "github-install" },
+                      () => {
+                        router.options.context?.queryClient?.invalidateQueries();
+                      },
+                    );
+                    win?.focus?.();
+                  } catch (err) {
+                    console.error("Failed to start GitHub install:", err);
+                    alert("Failed to start installation. Please try again.");
+                  }
+                }}
+                className="w-full px-2 h-8 flex items-center gap-2 text-[13.5px] text-neutral-800 dark:text-neutral-200 rounded-md hover:bg-neutral-50 dark:hover:bg-neutral-900"
+              >
+                <GitHubIcon className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
+                <span className="select-none">Add repos from GitHub</span>
+              </button>
               <button
                 type="button"
                 onClick={(e) => {
