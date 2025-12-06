@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useId } from "react";
 import {
-  ArrowLeft,
   Camera,
   CheckCircle2,
   ChevronDown,
@@ -514,7 +513,7 @@ function MockGitHubPRBrowser() {
         {/* Chrome-style tab bar */}
         <div className="flex items-end h-10 bg-[#202124] pt-2 px-2">
           {/* Traffic lights */}
-          <div className="flex items-center gap-2 px-2 pb-2">
+          <div className="flex items-center gap-2 px-2 mb-auto mt-2">
             <div className="w-3 h-3 rounded-full bg-[#ff5f57]" />
             <div className="w-3 h-3 rounded-full bg-[#febc2e]" />
             <div className="w-3 h-3 rounded-full bg-[#28c840]" />
@@ -3020,14 +3019,6 @@ function PreviewDashboardInner({
     <div className="w-full max-w-5xl px-6 py-10 font-sans">
       {/* Header */}
       <div className="pb-10">
-        <Link
-          href="https://cmux.dev"
-          className="inline-flex items-center gap-2 text-sm text-neutral-400 transition hover:text-white pb-5"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          <span>Back to cmux</span>
-        </Link>
-
         <h1 className="text-3xl font-semibold tracking-tight text-white pb-2">
           Screenshot previews for GitHub PRs
         </h1>
