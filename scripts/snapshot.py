@@ -2085,7 +2085,7 @@ async def task_check_envctl(ctx: TaskContext) -> None:
 
 @registry.task(
     name="check-ssh-service",
-    deps=("configure-memory-protection", "cleanup-build-artifacts"),
+    deps=("configure-memory-protection", "cleanup-build-artifacts", "configure-sshd"),
     description="Verify SSH service is active on port 22222",
 )
 async def task_check_ssh_service(ctx: TaskContext) -> None:
