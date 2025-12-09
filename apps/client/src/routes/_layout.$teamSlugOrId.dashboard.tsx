@@ -23,7 +23,10 @@ import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { createFakeConvexId } from "@/lib/fakeConvexId";
 import { attachTaskLifecycleListeners } from "@/lib/socket/taskLifecycleListeners";
-import { branchesQueryOptions, defaultBranchQueryOptions } from "@/queries/branches";
+import {
+  getApiIntegrationsGithubDefaultBranchOptions,
+  getApiIntegrationsGithubBranchesOptions,
+} from "@/queries/branches";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
@@ -202,20 +205,22 @@ function DashboardComponent() {
 
   // Fast query to get just the default branch (single API call)
   const defaultBranchQuery = useQuery({
-    ...defaultBranchQueryOptions({
-      teamSlugOrId,
-      repoFullName: selectedProject[0] || "",
+    ...getApiIntegrationsGithubDefaultBranchOptions({
+      query: { repo: selectedProject[0] || "" },
     }),
+    staleTime: 60_000, // Default branch rarely changes
     enabled: !!selectedProject[0] && !isEnvSelected,
   });
 
   // Full branches query - only runs when selector is open
   const branchesQuery = useQuery({
-    ...branchesQueryOptions({
-      teamSlugOrId,
-      repoFullName: selectedProject[0] || "",
-      search: branchSearch || undefined,
+    ...getApiIntegrationsGithubBranchesOptions({
+      query: {
+        repo: selectedProject[0] || "",
+        search: branchSearch || undefined,
+      },
     }),
+    staleTime: 10_000,
     enabled: !!selectedProject[0] && !isEnvSelected && branchSelectorOpen,
   });
 
