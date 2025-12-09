@@ -3,14 +3,16 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
-import { honoIntegration } from "@sentry/node";
 import { SENTRY_RELEASE } from "@/lib/sentry-release";
 
 Sentry.init({
   dsn: "https://96214f39aa409867381a22a79ff3e6a4@o4507547940749312.ingest.us.sentry.io/4510308518854656",
   release: SENTRY_RELEASE,
 
-  integrations: [honoIntegration()],
+  // Note: honoIntegration() is NOT used here because it requires Node's --import flag
+  // for ESM loader hooks, which is not supported in Vercel/Next.js serverless functions.
+  // Instead, we use setupHonoErrorHandler(app) in hono-app.ts for manual error capture.
+  // See: https://docs.sentry.io/platforms/javascript/guides/hono/install/esm/
 
   // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
   tracesSampleRate: 1,
