@@ -996,6 +996,8 @@ else
 fi
 
 ln -sf /usr/lib/systemd/system/cmux.target /etc/systemd/system/multi-user.target.wants/cmux.target
+# Create cmux-ide.service alias so systemd can find the unit when cmux.target requires it
+ln -sf /usr/lib/systemd/system/\${IDE_SERVICE} /etc/systemd/system/cmux-ide.service
 ln -sf /usr/lib/systemd/system/\${IDE_SERVICE} /etc/systemd/system/cmux.target.wants/cmux-ide.service
 ln -sf /usr/lib/systemd/system/cmux-worker.service /etc/systemd/system/cmux.target.wants/cmux-worker.service
 ln -sf /usr/lib/systemd/system/cmux-proxy.service /etc/systemd/system/cmux.target.wants/cmux-proxy.service
