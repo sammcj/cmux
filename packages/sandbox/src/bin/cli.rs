@@ -2365,10 +2365,7 @@ async fn get_user_info(client: &Client, refresh_token: &str) -> anyhow::Result<S
         .header("x-stack-project-id", &project_id)
         .header("x-stack-publishable-client-key", &publishable_key)
         .header("x-stack-access-type", "client")
-        .header(
-            "Authorization",
-            format!("Bearer {}", token_response.access_token),
-        )
+        .header("x-stack-access-token", &token_response.access_token)
         .send()
         .await?;
 
