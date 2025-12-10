@@ -489,6 +489,27 @@ export const updatePreviewComment = internalAction({
 
       const octokit = createOctokit(accessToken);
 
+      // First, fetch the existing comment to check if it's been collapsed
+      let isCollapsed = false;
+      try {
+        const existingComment = await octokit.rest.issues.getComment({
+          owner: repo.owner,
+          repo: repo.repo,
+          comment_id: commentId,
+        });
+        isCollapsed = existingComment.data.body?.includes(COLLAPSE_MARKER) ?? false;
+        if (isCollapsed) {
+          console.log("[github_pr_comments] Existing comment is collapsed, will preserve wrapper", {
+            commentId,
+          });
+        }
+      } catch (error) {
+        console.warn("[github_pr_comments] Could not fetch existing comment to check collapse state", {
+          commentId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
       const screenshotSet = await ctx.runQuery(
         internal.previewScreenshots.getScreenshotSet,
         { screenshotSetId },
@@ -580,7 +601,23 @@ export const updatePreviewComment = internalAction({
       }
 
       commentSections.push("---", PREVIEW_SIGNATURE);
-      const commentBody = commentSections.join("\n\n");
+      let commentBody = commentSections.join("\n\n");
+
+      // If the comment was previously collapsed by another agent, preserve the collapse wrapper
+      if (isCollapsed) {
+        commentBody = [
+          COLLAPSE_MARKER,
+          "<details>",
+          `<summary>${COLLAPSE_SUMMARY}</summary>`,
+          "",
+          commentBody,
+          "",
+          "</details>",
+        ]
+          .join("\n")
+          .replace(/\n{3,}/g, "\n\n")
+          .trimEnd();
+      }
 
       // Update the existing comment
       await octokit.rest.issues.updateComment({
