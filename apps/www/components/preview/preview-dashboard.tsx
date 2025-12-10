@@ -2167,7 +2167,9 @@ function MockGitHubPRBrowser() {
                         {/* Tabs */}
                         <VSCodeTabBar>
                           <VSCodeTab
-                            icon={<FileText className="h-3 w-3 text-[#858585]" />}
+                            icon={
+                              <FileText className="h-3 w-3 text-[#858585]" />
+                            }
                             label="LAUNCH.md"
                             isActive
                           />
@@ -2363,7 +2365,12 @@ function MockGitHubPRBrowser() {
                         <div className="flex-1 bg-[#030712] overflow-hidden">
                           <iframe
                             src="/"
-                            className="w-full h-full border-0"
+                            className="border-0 origin-top-left"
+                            style={{
+                              width: "200%",
+                              height: "200%",
+                              transform: "scale(0.5)",
+                            }}
                             title="cmux landing page"
                           />
                         </div>
@@ -2816,7 +2823,12 @@ function MockGitHubPRBrowser() {
                     <div className="flex-1 bg-[#030712] overflow-hidden">
                       <iframe
                         src="/"
-                        className="w-full h-full border-0"
+                        className="border-0 origin-top-left"
+                        style={{
+                          width: "200%",
+                          height: "200%",
+                          transform: "scale(0.5)",
+                        }}
                         title="cmux landing page"
                       />
                     </div>
