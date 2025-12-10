@@ -341,6 +341,299 @@ export const addPrReaction = internalAction({
 });
 
 /**
+ * Posts an initial "in progress" preview comment to a GitHub PR.
+ * This is called early in the preview process to give users immediate feedback
+ * with the diff heatmap link while screenshots are still being captured.
+ *
+ * Returns the comment ID and URL which should be stored for later updates.
+ */
+export const postInitialPreviewComment = internalAction({
+  args: {
+    installationId: v.number(),
+    repoFullName: v.string(),
+    prNumber: v.number(),
+    previewRunId: v.id("previewRuns"),
+  },
+  handler: async (ctx, args): Promise<{ ok: true; commentId: number; commentUrl: string } | { ok: false; error: string }> => {
+    const { installationId, repoFullName, prNumber, previewRunId } = args;
+
+    try {
+      const accessToken = await fetchInstallationAccessToken(installationId);
+      if (!accessToken) {
+        console.error(
+          "[github_pr_comments] Failed to get access token for initial preview comment",
+          { installationId },
+        );
+        return { ok: false, error: "Failed to get access token" };
+      }
+
+      const repo = parseRepoFullName(repoFullName);
+      if (!repo) {
+        console.error("[github_pr_comments] Invalid repo full name", {
+          repoFullName,
+        });
+        return { ok: false, error: "Invalid repository name" };
+      }
+
+      const octokit = createOctokit(accessToken);
+
+      // Build the initial comment with diff heatmap link and loading state
+      const commentSections: string[] = ["## Preview Screenshots"];
+
+      // Add diff heatmap link (available immediately)
+      const heatmapUrl = `https://github.com/${repoFullName}/pull/${prNumber}?${UTM_PARAMS}&utm_content=diff_heatmap`;
+      commentSections.push(`<a href="${heatmapUrl}" target="_blank">Open Diff Heatmap</a>`);
+
+      // Show loading state for screenshots
+      commentSections.push(
+        "⏳ **Preview screenshots are being captured...**",
+        "",
+        "_Workspace and dev browser links will appear here once the preview environment is ready._",
+      );
+
+      commentSections.push("---", PREVIEW_SIGNATURE);
+      const commentBody = commentSections.join("\n\n");
+
+      const { data } = await octokit.rest.issues.createComment({
+        owner: repo.owner,
+        repo: repo.repo,
+        issue_number: prNumber,
+        body: commentBody,
+      });
+
+      console.log("[github_pr_comments] Posted initial preview comment", {
+        installationId,
+        repoFullName,
+        prNumber,
+        commentId: data.id,
+        commentUrl: data.html_url,
+      });
+
+      // Store the comment ID on the preview run for later updates
+      await ctx.runMutation(internal.previewRuns.updateStatus, {
+        previewRunId,
+        status: "running",
+        githubCommentUrl: data.html_url,
+        githubCommentId: data.id,
+      });
+
+      return { ok: true, commentId: data.id, commentUrl: data.html_url };
+    } catch (error) {
+      console.error(
+        "[github_pr_comments] Unexpected error posting initial preview comment",
+        {
+          installationId,
+          repoFullName,
+          prNumber,
+          error,
+        },
+      );
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  },
+});
+
+/**
+ * Updates an existing preview comment with screenshot results and workspace links.
+ * This is called after screenshots are captured to update the initial "in progress" comment.
+ */
+export const updatePreviewComment = internalAction({
+  args: {
+    installationId: v.number(),
+    repoFullName: v.string(),
+    prNumber: v.number(),
+    commentId: v.number(),
+    screenshotSetId: v.id("taskRunScreenshotSets"),
+    previewRunId: v.id("previewRuns"),
+    // Optional links
+    workspaceUrl: v.optional(v.string()),
+    devServerUrl: v.optional(v.string()),
+    // Previous runs for history
+    includePreviousRuns: v.optional(v.boolean()),
+    previewConfigId: v.optional(v.id("previewConfigs")),
+  },
+  handler: async (ctx, args): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const {
+      installationId,
+      repoFullName,
+      prNumber,
+      commentId,
+      screenshotSetId,
+      previewRunId,
+      workspaceUrl,
+      devServerUrl,
+      includePreviousRuns = false,
+      previewConfigId,
+    } = args;
+
+    try {
+      const accessToken = await fetchInstallationAccessToken(installationId);
+      if (!accessToken) {
+        console.error(
+          "[github_pr_comments] Failed to get access token for update preview comment",
+          { installationId },
+        );
+        return { ok: false, error: "Failed to get access token" };
+      }
+
+      const repo = parseRepoFullName(repoFullName);
+      if (!repo) {
+        console.error("[github_pr_comments] Invalid repo full name", {
+          repoFullName,
+        });
+        return { ok: false, error: "Invalid repository name" };
+      }
+
+      const octokit = createOctokit(accessToken);
+
+      const screenshotSet = await ctx.runQuery(
+        internal.previewScreenshots.getScreenshotSet,
+        { screenshotSetId },
+      );
+
+      if (!screenshotSet) {
+        console.error("[github_pr_comments] Screenshot set not found for update", {
+          screenshotSetId,
+        });
+        return { ok: false, error: "Screenshot set not found" };
+      }
+
+      // Build comment sections
+      const commentSections: string[] = ["## Preview Screenshots"];
+
+      // Build links row (under the heading)
+      const linkParts: string[] = [];
+      if (workspaceUrl) {
+        linkParts.push(`<a href="${workspaceUrl}?${UTM_PARAMS}&utm_content=workspace" target="_blank">Open Workspace (1 hr expiry)</a>`);
+      }
+      if (devServerUrl) {
+        linkParts.push(`<a href="${devServerUrl}?${UTM_PARAMS}&utm_content=dev_browser" target="_blank">Open Dev Browser (1 hr expiry)</a>`);
+      }
+      linkParts.push(`<a href="https://github.com/${repoFullName}/pull/${prNumber}?${UTM_PARAMS}&utm_content=diff_heatmap" target="_blank">Open Diff Heatmap</a>`);
+
+      if (linkParts.length > 0) {
+        commentSections.push(linkParts.join(" · "));
+      }
+
+      // Render the main screenshot section
+      const latestHeading = includePreviousRuns
+        ? `### Latest commit ${formatCommitLabel(screenshotSet)}`
+        : "";
+      const latestSection = await renderScreenshotSetMarkdown(
+        ctx,
+        screenshotSet,
+        latestHeading,
+      );
+
+      commentSections.push(latestSection);
+
+      // Fetch and render previous runs if requested
+      if (includePreviousRuns && previewConfigId) {
+        const previousRuns =
+          (await ctx.runQuery(internal.previewRuns.listByConfigAndPr, {
+            previewConfigId,
+            prNumber,
+            limit: MAX_PREVIOUS_SCREENSHOT_SETS + 1,
+          })) ?? [];
+
+        const previousSetEntries: Array<{
+          run: PreviewRunDoc;
+          set: ScreenshotSetDoc;
+        }> = [];
+        for (const run of previousRuns) {
+          if (run._id === previewRunId) continue;
+          if (!run.screenshotSetId) continue;
+          const priorSet = await ctx.runQuery(
+            internal.previewScreenshots.getScreenshotSet,
+            { screenshotSetId: run.screenshotSetId },
+          );
+          if (!priorSet) continue;
+          previousSetEntries.push({ run, set: priorSet });
+          if (previousSetEntries.length >= MAX_PREVIOUS_SCREENSHOT_SETS) {
+            break;
+          }
+        }
+
+        if (previousSetEntries.length > 0) {
+          const collapsedSections: string[] = [];
+          for (const entry of previousSetEntries) {
+            const sectionHeading = `#### ${summarizeSet(entry.set, entry.run)}`;
+            collapsedSections.push(
+              await renderScreenshotSetMarkdown(ctx, entry.set, sectionHeading),
+            );
+          }
+
+          const previousBlock = [
+            "<details>",
+            `<summary>Previous preview runs (${previousSetEntries.length})</summary>`,
+            "",
+            collapsedSections.join("\n\n---\n\n"),
+            "",
+            "</details>",
+          ].join("\n");
+
+          commentSections.push(previousBlock);
+        }
+      }
+
+      commentSections.push("---", PREVIEW_SIGNATURE);
+      const commentBody = commentSections.join("\n\n");
+
+      // Update the existing comment
+      await octokit.rest.issues.updateComment({
+        owner: repo.owner,
+        repo: repo.repo,
+        comment_id: commentId,
+        body: commentBody,
+      });
+
+      console.log("[github_pr_comments] Updated preview comment with screenshots", {
+        installationId,
+        repoFullName,
+        prNumber,
+        commentId,
+      });
+
+      // Update the preview run status
+      await ctx.runMutation(internal.previewRuns.updateStatus, {
+        previewRunId,
+        status: screenshotSet.status as "completed" | "failed" | "skipped",
+        screenshotSetId,
+      });
+
+      // Collapse older preview comments
+      await collapseOlderPreviewComments({
+        octokit,
+        owner: repo.owner,
+        repo: repo.repo,
+        prNumber,
+        latestCommentId: commentId,
+      });
+
+      return { ok: true };
+    } catch (error) {
+      console.error(
+        "[github_pr_comments] Unexpected error updating preview comment",
+        {
+          installationId,
+          repoFullName,
+          prNumber,
+          commentId,
+          error,
+        },
+      );
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  },
+});
+
+/**
  * Unified function to post preview comments to GitHub PRs.
  *
  * Options:
@@ -419,7 +712,7 @@ export const postPreviewComment = internalAction({
       if (devServerUrl) {
         linkParts.push(`<a href="${devServerUrl}?${UTM_PARAMS}&utm_content=dev_browser" target="_blank">Open Dev Browser (1 hr expiry)</a>`);
       }
-      linkParts.push(`<a href="https://0github.com/${repoFullName}/pull/${prNumber}?${UTM_PARAMS}&utm_content=diff_heatmap" target="_blank">Open Diff Heatmap</a>`);
+      linkParts.push(`<a href="https://github.com/${repoFullName}/pull/${prNumber}?${UTM_PARAMS}&utm_content=diff_heatmap" target="_blank">Open Diff Heatmap</a>`);
 
       if (linkParts.length > 0) {
         commentSections.push(linkParts.join(" · "));
