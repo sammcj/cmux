@@ -24,6 +24,7 @@ import {
   Link2,
   Loader2,
   Monitor,
+  MoreVertical,
   Pencil,
   Plus,
   Search,
@@ -564,9 +565,6 @@ function MockGitHubPRBrowser() {
   // State for active tmux session
   const [activeTmuxSession, setActiveTmuxSession] = useState<number>(0);
 
-  // State for terminal input
-  const [terminalInput, setTerminalInput] = useState<string>("");
-
   // State for reactions
   const [thumbsUpActive, setThumbsUpActive] = useState(false);
   const [rocketActive, setRocketActive] = useState(false);
@@ -722,8 +720,8 @@ function MockGitHubPRBrowser() {
         </div>
 
         {/* URL bar toolbar */}
-        <div className="flex items-center gap-2 h-11 px-3 bg-[#35363A] border-b border-[#202124]">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center h-11 pl-[5px] pr-0 bg-[#35363A] border-b border-[#202124]">
+          <div className="flex items-center gap-1 pr-2">
             <button className="p-2 text-[#E8EAED] opacity-60 hover:opacity-100 hover:bg-[#4A4B50] rounded-full transition-all">
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
@@ -767,7 +765,11 @@ function MockGitHubPRBrowser() {
             </span>
           </div>
 
-          <div className="flex items-center gap-1 px-1"></div>
+          <div className="flex items-center gap-1 px-1">
+            <button className="p-2 text-[#E8EAED] opacity-60 hover:opacity-100 hover:bg-[#4A4B50] rounded-full transition-all">
+              <MoreVertical className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Content area - conditionally render based on active tab */}
@@ -3314,18 +3316,6 @@ function MockGitHubPRBrowser() {
                           )}
                         </>
                       )}
-                    </div>
-                    {/* Interactive input area */}
-                    <div className="mt-2 flex items-center text-[#c9d1d9]">
-                      <span className="text-[#8b949e] mr-1">$</span>
-                      <input
-                        type="text"
-                        value={terminalInput}
-                        onChange={(e) => setTerminalInput(e.target.value)}
-                        className="flex-1 bg-transparent outline-none border-none text-[#c9d1d9] caret-white"
-                        placeholder=""
-                        autoFocus
-                      />
                     </div>
                   </div>
                   {/* tmux status bar */}
