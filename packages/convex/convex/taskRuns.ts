@@ -778,7 +778,10 @@ export const updateScreenshotMetadata = internalMutation({
 });
 
 export const clearScreenshotMetadata = internalMutation({
-  args: { id: v.id("taskRuns") },
+  args: {
+    id: v.id("taskRuns"),
+    screenshotSetId: v.optional(v.id("taskRunScreenshotSets")),
+  },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, {
       screenshotStorageId: undefined,
@@ -786,7 +789,7 @@ export const clearScreenshotMetadata = internalMutation({
       screenshotMimeType: undefined,
       screenshotFileName: undefined,
       screenshotCommitSha: undefined,
-      latestScreenshotSetId: undefined,
+      latestScreenshotSetId: args.screenshotSetId,
       updatedAt: Date.now(),
     });
   },
