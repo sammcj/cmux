@@ -924,34 +924,55 @@ sandboxesRouter.openapi(
     const { teamSlugOrId } = c.req.valid("query");
 
     try {
-      // Verify team access
-      const team = await verifyTeamAccess({
-        req: c.req.raw,
-        teamSlugOrId,
-      });
-
       const convex = getConvex({ accessToken });
 
       let morphInstanceId: string | null = null;
 
       // Check if the id is a Morph instance ID (starts with "morphvm_")
       if (id.startsWith("morphvm_")) {
-        // Direct Morph instance ID - verify it belongs to a task run in this team
-        const taskRun = await convex.query(api.taskRuns.getByContainerName, {
-          teamSlugOrId,
-          containerName: id,
-        });
-
-        if (!taskRun) {
-          return c.text("Sandbox not found or not accessible", 404);
+        // Direct Morph instance ID - first try to find it in task runs
+        // Note: The getByContainerName query may throw if the team doesn't exist in Convex,
+        // which is fine for direct cloud VMs - we handle this gracefully below
+        let taskRun = null;
+        try {
+          taskRun = await convex.query(api.taskRuns.getByContainerName, {
+            teamSlugOrId,
+            containerName: id,
+          });
+        } catch (convexError) {
+          // Team doesn't exist in Convex or other query error - treat as direct VM access
+          console.log(
+            `[sandboxes.ssh] Convex query failed for ${id}, treating as direct cloud VM:`,
+            convexError,
+          );
         }
 
-        if (taskRun.vscode?.provider !== "morph") {
-          return c.text("Sandbox is not a Morph instance", 404);
+        if (taskRun) {
+          // Found in task runs - verify team access and that it's a Morph instance
+          await verifyTeamAccess({
+            req: c.req.raw,
+            teamSlugOrId,
+          });
+          if (taskRun.vscode?.provider !== "morph") {
+            return c.text("Sandbox is not a Morph instance", 404);
+          }
+        } else {
+          // Not found in task runs - this could be a direct cloud VM created via CLI
+          // For direct cloud VMs, we skip team verification since:
+          // 1. The VM was created with the user's credentials via dmux vm create
+          // 2. The Morph API will validate access when connecting
+          console.log(
+            `[sandboxes.ssh] Direct Morph instance access for ${id} (team: ${teamSlugOrId})`,
+          );
         }
 
         morphInstanceId = id;
       } else {
+        // For task-run IDs, verify team access
+        const team = await verifyTeamAccess({
+          req: c.req.raw,
+          teamSlugOrId,
+        });
         // Assume it's a task-run ID - look up the sandbox
         let taskRun: Doc<"taskRuns"> | null = null;
 

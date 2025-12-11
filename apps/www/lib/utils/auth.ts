@@ -63,3 +63,46 @@ export async function getAccessTokenFromRequest(
 
   return null;
 }
+
+/**
+ * Get Stack Auth user from request, supporting both cookie-based (web) and
+ * Bearer token (CLI) authentication.
+ *
+ * For CLI clients, we pass the access token directly to the Stack Auth SDK
+ * using the { accessToken, refreshToken } format.
+ */
+export async function getUserFromRequest(req: Request) {
+  // First, try cookie-based auth (standard web flow)
+  try {
+    const user = await stackServerAppJs.getUser({ tokenStore: req });
+    if (user) {
+      return user;
+    }
+  } catch (_e) {
+    // Fall through to try Bearer token
+  }
+
+  // Fallback: Check for Bearer token in Authorization header (for CLI clients)
+  const authHeader = req.headers.get("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7); // Remove "Bearer " prefix
+
+    // Validate the token by checking its structure and claims
+    if (isValidStackAuthToken(token)) {
+      try {
+        // Pass the token directly to Stack Auth SDK
+        // The SDK accepts { accessToken, refreshToken } format
+        const user = await stackServerAppJs.getUser({
+          tokenStore: { accessToken: token, refreshToken: token },
+        });
+        if (user) {
+          return user;
+        }
+      } catch (_e) {
+        // Bearer token auth failed
+      }
+    }
+  }
+
+  return null;
+}

@@ -20,7 +20,8 @@ pub use acp_client::{
 pub use api::build_router;
 pub use bubblewrap::BubblewrapService;
 pub use keyring::{
-    build_default_env_vars, delete_stack_refresh_token, extract_api_key_from_output,
+    build_default_env_vars, cache_access_token, clear_cached_access_token,
+    delete_stack_refresh_token, extract_api_key_from_output, get_cached_access_token,
     get_claude_token, get_stack_refresh_token, store_claude_token, store_stack_refresh_token,
 };
 pub use mux::run_mux_tui;

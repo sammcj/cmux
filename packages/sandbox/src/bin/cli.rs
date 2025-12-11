@@ -804,13 +804,16 @@ async fn run() -> anyhow::Result<()> {
             handle_onboard().await?;
         }
         Command::Ssh(args) => {
-            handle_real_ssh(&client, &cli.base_url, &args).await?;
+            let api_url = get_cmux_api_url();
+            handle_real_ssh(&client, &api_url, &args).await?;
         }
         Command::SshExec(args) => {
-            handle_ssh_exec(&client, &cli.base_url, &args).await?;
+            let api_url = get_cmux_api_url();
+            handle_ssh_exec(&client, &api_url, &args).await?;
         }
         Command::SshConfig => {
-            handle_ssh_config(&client, &cli.base_url).await?;
+            let api_url = get_cmux_api_url();
+            handle_ssh_config(&client, &api_url).await?;
         }
         Command::SshKeys(cmd) => match cmd {
             SshKeysCommand::List => {

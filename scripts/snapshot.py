@@ -919,7 +919,8 @@ async def task_install_base_packages(ctx: TaskContext) -> None:
             gh \
             zsh \
             zsh-autosuggestions \
-            ripgrep
+            ripgrep \
+            openssh-server
 
 
         # Download and install Chrome
@@ -959,10 +960,7 @@ async def task_configure_sshd(ctx: TaskContext) -> None:
         """
         set -eux
 
-        # Install openssh-server
-        DEBIAN_FRONTEND=noninteractive apt-get update
-        DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server
-
+        # openssh-server is installed by install-base-packages
         # Generate host keys if they don't exist
         ssh-keygen -A
 
@@ -995,8 +993,6 @@ EOF
         fi
 
         echo "sshd configured and running on port 22222"
-
-        rm -rf /var/lib/apt/lists/*
         """
     )
     await ctx.run("configure-sshd", cmd)

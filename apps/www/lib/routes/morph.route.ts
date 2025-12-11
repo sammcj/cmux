@@ -3,7 +3,7 @@ import {
   MORPH_SNAPSHOT_PRESETS,
   type MorphSnapshotId,
 } from "@/lib/utils/morph-defaults";
-import { getAccessTokenFromRequest } from "@/lib/utils/auth";
+import { getAccessTokenFromRequest, getUserFromRequest } from "@/lib/utils/auth";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
@@ -561,9 +561,10 @@ morphRouter.openapi(
     },
   }),
   async (c) => {
+    // Use getUserFromRequest which supports both cookie-based (web) and Bearer token (CLI) auth
     const user = await Sentry.startSpan(
-      { name: "stackServerAppJs.getUser", op: "auth" },
-      () => stackServerAppJs.getUser({ tokenStore: c.req.raw })
+      { name: "getUserFromRequest", op: "auth" },
+      () => getUserFromRequest(c.req.raw)
     );
     if (!user) {
       return c.text("Unauthorized", 401);

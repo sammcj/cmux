@@ -89,7 +89,10 @@ async function computeSshFingerprint(publicKey: string): Promise<string> {
     throw new Error("Invalid base64 in SSH public key");
   }
 
-  const hashBuffer = await crypto.subtle.digest("SHA-256", binaryData);
+  // Copy to a new ArrayBuffer to satisfy crypto.subtle.digest type requirements
+  const buffer = new ArrayBuffer(binaryData.length);
+  new Uint8Array(buffer).set(binaryData);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
   const hashArray = new Uint8Array(hashBuffer);
 
   // Convert to base64 without padding (matches ssh-keygen output)
