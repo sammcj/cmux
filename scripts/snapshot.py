@@ -953,7 +953,7 @@ async def task_install_base_packages(ctx: TaskContext) -> None:
 @registry.task(
     name="configure-sshd",
     deps=("install-base-packages",),
-    description="Install and configure OpenSSH server on port 22222",
+    description="Configure OpenSSH server on ports 22 (Morph internal) and 22222 (user SSH)",
 )
 async def task_configure_sshd(ctx: TaskContext) -> None:
     cmd = textwrap.dedent(
@@ -964,8 +964,11 @@ async def task_configure_sshd(ctx: TaskContext) -> None:
         # Generate host keys if they don't exist
         ssh-keygen -A
 
-        # Configure sshd for port 22222 with secure settings
+        # Configure sshd to ALSO listen on port 22222 (in addition to default port 22)
+        # Port 22 is required for Morph's internal SSH mechanism
+        # Port 22222 is for user SSH access via the SSH gateway
         cat > /etc/ssh/sshd_config.d/cmux.conf << 'EOF'
+Port 22
 Port 22222
 PermitRootLogin prohibit-password
 PubkeyAuthentication yes
@@ -983,8 +986,14 @@ EOF
         systemctl enable ssh
         systemctl restart ssh
 
-        # Verify sshd is running and listening on port 22222
+        # Verify sshd is running and listening on both ports
         sleep 2
+        if ! ss -tlnp | grep -q ':22 '; then
+            echo "ERROR: sshd not listening on port 22" >&2
+            systemctl status ssh --no-pager || true
+            journalctl -u ssh --no-pager -n 50 || true
+            exit 1
+        fi
         if ! ss -tlnp | grep -q ':22222'; then
             echo "ERROR: sshd not listening on port 22222" >&2
             systemctl status ssh --no-pager || true
@@ -992,7 +1001,7 @@ EOF
             exit 1
         fi
 
-        echo "sshd configured and running on port 22222"
+        echo "sshd configured and running on ports 22 and 22222"
         """
     )
     await ctx.run("configure-sshd", cmd)
