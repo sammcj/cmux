@@ -163,17 +163,28 @@ exit 0`;
     mode: "755",
   });
 
+  // Check if user has provided an OAuth token (preferred) or API key
+  const hasOAuthToken =
+    ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
+    ctx.apiKeys.CLAUDE_CODE_OAUTH_TOKEN.trim().length > 0;
+  const hasAnthropicApiKey =
+    ctx.apiKeys?.ANTHROPIC_API_KEY &&
+    ctx.apiKeys.ANTHROPIC_API_KEY.trim().length > 0;
+
   // Create settings.json with hooks configuration
+  // When OAuth token is present, we don't use the cmux proxy (user pays directly via their subscription)
+  // When only API key is present, we route through cmux proxy for tracking/rate limiting
   const settingsConfig: Record<string, unknown> = {
     alwaysThinkingEnabled: true,
+    // Configure helper to avoid env-var based prompting (only when not using OAuth)
+    ...(hasOAuthToken ? {} : { apiKeyHelper: claudeApiKeyHelperPath }),
     // Use the Anthropic API key from cmux settings.json instead of env vars
     // This ensures Claude Code always uses the key from cmux, bypassing any
     // ANTHROPIC_API_KEY environment variables in the repo
-    ...(ctx.apiKeys?.ANTHROPIC_API_KEY
-      ? { anthropicApiKey: ctx.apiKeys.ANTHROPIC_API_KEY }
+    // Only set this when NOT using OAuth token (OAuth token takes precedence)
+    ...(!hasOAuthToken && hasAnthropicApiKey
+      ? { anthropicApiKey: ctx.apiKeys?.ANTHROPIC_API_KEY }
       : {}),
-    // Configure helper to avoid env-var based prompting
-    apiKeyHelper: claudeApiKeyHelperPath,
     hooks: {
       Stop: [
         {
@@ -188,8 +199,14 @@ exit 0`;
     },
     env: {
       CLAUDE_CODE_ENABLE_TELEMETRY: 0,
-      ANTHROPIC_BASE_URL: "https://www.cmux.dev/api/anthropic",
-      ANTHROPIC_CUSTOM_HEADERS: `x-cmux-token:${ctx.taskRunJwt}`,
+      // Only route through cmux proxy when NOT using OAuth token
+      // OAuth token users go directly to Anthropic API (they pay via their subscription)
+      ...(hasOAuthToken
+        ? {}
+        : {
+            ANTHROPIC_BASE_URL: "https://www.cmux.dev/api/anthropic",
+            ANTHROPIC_CUSTOM_HEADERS: `x-cmux-token:${ctx.taskRunJwt}`,
+          }),
     },
   };
 
