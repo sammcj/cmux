@@ -1236,11 +1236,13 @@ export async function runPreviewJob(
 
     if (taskRunId && previewJwt) {
       // Apply environment variables via envctl (same as crown runs)
+      // CMUX_IS_STAGING tells the screenshot collector to use staging vs production releases
       const envLines = [
         `CMUX_TASK_RUN_ID="${taskRunId}"`,
         `CMUX_TASK_RUN_JWT="${previewJwt}"`,
         `CONVEX_SITE_URL="${convexUrl}"`,
         `CONVEX_URL="${convexUrl}"`,
+        `CMUX_IS_STAGING="${env.CMUX_IS_STAGING ?? "true"}"`,
       ];
       const envVarsContent = envLines.join("\n");
       if (envVarsContent.length === 0) {

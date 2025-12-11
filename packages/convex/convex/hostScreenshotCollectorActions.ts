@@ -25,7 +25,7 @@ export const syncRelease = action({
   handler: async (ctx, args): Promise<SyncResult> => {
     // Decode base64 content
     const fileBuffer = Buffer.from(args.fileContent, "base64");
-    const blob = new Blob([fileBuffer], { type: "application/javascript" });
+    const blob = new Blob([new Uint8Array(fileBuffer)], { type: "application/javascript" });
 
     // Upload to Convex storage
     const storageId = await ctx.storage.store(blob);

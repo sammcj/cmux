@@ -18,6 +18,8 @@ import type { ClaudeCodeAuthConfig } from "./claudeScreenshotCollector";
 export interface StartScreenshotCollectionOptions {
   anthropicApiKey?: string | null;
   taskRunJwt?: string | null;
+  /** Convex site URL for fetching remote screenshot collector */
+  convexUrl?: string | null;
   outputPath?: string;
   prTitle?: string | null;
   prDescription?: string | null;
@@ -142,9 +144,9 @@ export async function startScreenshotCollection(
     openVSCodeUrl: SCREENSHOT_COLLECTOR_DIRECTORY_URL,
   });
 
-  // Load the screenshot collector module (may fetch from Convex or use bundled fallback)
+  // Load the screenshot collector module from Convex storage
   await logToScreenshotCollector("Loading screenshot collector module...");
-  const collectorModule = await loadScreenshotCollector();
+  const collectorModule = await loadScreenshotCollector(options.convexUrl ?? undefined);
   await logToScreenshotCollector("Screenshot collector module loaded");
 
   const workspaceRoot = WORKSPACE_ROOT;
