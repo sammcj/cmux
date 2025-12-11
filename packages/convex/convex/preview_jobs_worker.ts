@@ -217,12 +217,13 @@ async function runScreenshotCollector({
     collectorPath,
   });
 
-  // Download the collector
+  // Download the collector - use curl with --fail to error on HTTP errors
+  // Pass as array to avoid shell quoting issues
   const downloadResponse = await execInstanceInstanceIdExecPost({
     client: morphClient,
     path: { instance_id: instanceId },
     body: {
-      command: ["bash", "-lc", `curl -sL -o '${collectorPath}' '${collectorUrl}'`],
+      command: ["curl", "-fsSL", "-o", collectorPath, collectorUrl],
     },
   });
 
@@ -231,6 +232,35 @@ async function runScreenshotCollector({
       `Failed to download screenshot collector: ${downloadResponse.data?.stderr || downloadResponse.error}`
     );
   }
+
+  console.log("[preview-jobs] Download command completed, verifying file", {
+    previewRunId,
+    collectorPath,
+    downloadStdout: sliceOutput(downloadResponse.data?.stdout),
+    downloadStderr: sliceOutput(downloadResponse.data?.stderr),
+  });
+
+  // Verify the file was actually downloaded and has content
+  const verifyResponse = await execInstanceInstanceIdExecPost({
+    client: morphClient,
+    path: { instance_id: instanceId },
+    body: {
+      command: ["stat", "-c", "%s", collectorPath],
+    },
+  });
+
+  const fileSize = parseInt(verifyResponse.data?.stdout?.trim() || "0", 10);
+  if (verifyResponse.error || verifyResponse.data?.exit_code !== 0 || fileSize === 0) {
+    throw new Error(
+      `Screenshot collector file missing or empty after download: size=${fileSize}, stderr=${verifyResponse.data?.stderr || verifyResponse.error}`
+    );
+  }
+
+  console.log("[preview-jobs] Screenshot collector downloaded successfully", {
+    previewRunId,
+    collectorPath,
+    fileSize,
+  });
 
   console.log("[preview-jobs] Running screenshot collector", {
     previewRunId,
