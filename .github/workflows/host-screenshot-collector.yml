@@ -88,6 +88,7 @@ jobs:
     name: Sync to Convex
     needs: build-and-release
     runs-on: ubuntu-latest
+    environment: electron
     strategy:
       matrix:
         environment: [production, staging]
@@ -108,7 +109,7 @@ jobs:
         env:
           VERSION: ${{ needs.build-and-release.outputs.version }}
           RELEASE_URL: ${{ needs.build-and-release.outputs.release_url }}
-          CONVEX_URL: ${{ matrix.environment == 'production' && secrets.CONVEX_URL || secrets.CONVEX_URL_STAGING }}
+          CONVEX_URL: ${{ matrix.environment == 'production' && secrets.NEXT_PUBLIC_CONVEX_URL || secrets.CONVEX_URL_STAGING }}
           IS_STAGING: ${{ matrix.environment == 'staging' && 'true' || 'false' }}
         run: |
           # Upload the file to Convex via HTTP endpoint
