@@ -4,9 +4,37 @@ import * as os from "node:os";
 
 import { log } from "../logger";
 
+/** Auth config for Claude Code screenshot collection */
+export type ClaudeCodeAuthConfig =
+  | { auth: { taskRunJwt: string } }
+  | { auth: { anthropicApiKey: string } };
+
+/** Result from screenshot collection */
+export interface ScreenshotResult {
+  status: "completed" | "failed" | "skipped";
+  screenshots?: { path: string; description?: string }[];
+  hasUiChanges?: boolean;
+  error?: string;
+  reason?: string;
+}
+
+/** Options for capturing PR screenshots */
+export type CaptureScreenshotsOptions = {
+  workspaceDir: string;
+  changedFiles: string[];
+  prTitle: string;
+  prDescription: string;
+  outputDir: string;
+  baseBranch: string;
+  headBranch: string;
+  pathToClaudeCodeExecutable?: string;
+  installCommand?: string;
+  devCommand?: string;
+} & ({ auth: { taskRunJwt: string } } | { auth: { anthropicApiKey: string } });
+
 export interface ScreenshotCollectorModule {
-  claudeCodeCapturePRScreenshots: typeof import("./claudeScreenshotCollector").claudeCodeCapturePRScreenshots;
-  normalizeScreenshotOutputDir: typeof import("./claudeScreenshotCollector").normalizeScreenshotOutputDir;
+  claudeCodeCapturePRScreenshots: (options: CaptureScreenshotsOptions) => Promise<ScreenshotResult>;
+  normalizeScreenshotOutputDir: (outputDir: string) => string;
   SCREENSHOT_STORAGE_ROOT: string;
 }
 

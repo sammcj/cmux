@@ -11,9 +11,7 @@ import {
 } from "./logger";
 import { detectGitRepoPath, listGitRepoPaths } from "../crown/git";
 import { readPrDescription } from "./context";
-import { loadScreenshotCollector, type ScreenshotCollectorModule } from "./screenshotCollectorLoader";
-// Keep the bundled import for type references
-import type { ClaudeCodeAuthConfig } from "./claudeScreenshotCollector";
+import { loadScreenshotCollector, type ScreenshotCollectorModule, type ClaudeCodeAuthConfig } from "./screenshotCollectorLoader";
 
 export interface StartScreenshotCollectionOptions {
   anthropicApiKey?: string | null;
