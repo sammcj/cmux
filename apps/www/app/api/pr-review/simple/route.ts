@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { stackServerApp } from "@/lib/utils/stack";
 import { runSimpleAnthropicReviewStream } from "@/lib/services/code-review/run-simple-anthropic-review";
 import { isRepoPublic } from "@/lib/github/check-repo-visibility";
-import { parseModelConfigFromUrlSearchParams } from "@/lib/services/code-review/model-config";
+import {
+  parseModelConfigFromUrlSearchParams,
+  parseTooltipLanguageFromUrlSearchParams,
+} from "@/lib/services/code-review/model-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,6 +45,7 @@ export async function GET(request: NextRequest) {
     const repoFullName = parseRepoFullName(searchParams.get("repoFullName"));
     const prNumber = parsePrNumber(searchParams.get("prNumber"));
     const modelConfig = parseModelConfigFromUrlSearchParams(searchParams);
+    const tooltipLanguage = parseTooltipLanguageFromUrlSearchParams(searchParams);
 
     if (!repoFullName || prNumber === null) {
       return NextResponse.json(
@@ -116,6 +120,7 @@ export async function GET(request: NextRequest) {
             prIdentifier,
             githubToken: normalizedGithubToken,
             modelConfig,
+            tooltipLanguage,
             signal: abortController.signal,
             onEvent: async (event) => {
               switch (event.type) {
