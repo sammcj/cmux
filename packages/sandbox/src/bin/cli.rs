@@ -16,6 +16,7 @@ use cmux_sandbox::{
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use futures::{SinkExt, StreamExt};
 use ignore::WalkBuilder;
+use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 use serde::Serialize;
 use std::io::IsTerminal;
@@ -2963,35 +2964,78 @@ async fn handle_onboard() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Normalize a sandbox ID - add morphvm_ prefix if it looks like a raw VM ID
+fn normalize_sandbox_id(id: &str) -> String {
+    // If it already has a prefix or looks like a task-run ID, use as-is
+    if id.starts_with("morphvm_") || id.contains("-") || id.len() > 20 {
+        id.to_string()
+    } else {
+        // Assume it's a raw VM ID, add prefix
+        format!("morphvm_{}", id)
+    }
+}
+
+/// Create a spinner with a message
+fn create_spinner(msg: &str) -> ProgressBar {
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+            .template("{spinner:.cyan} {msg} {elapsed:.dim}")
+            .expect("Invalid spinner template"),
+    );
+    spinner.set_message(msg.to_string());
+    spinner.enable_steady_tick(std::time::Duration::from_millis(80));
+    spinner
+}
+
+/// Finish a spinner with a success message
+fn finish_spinner(spinner: &ProgressBar, msg: &str) {
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .template("{msg}")
+            .expect("Invalid spinner template"),
+    );
+    spinner.finish_with_message(format!("✓ {}", msg));
+}
+
 /// Handle real SSH to a sandbox (via direct TCP to Morph)
 async fn handle_real_ssh(client: &Client, base_url: &str, args: &SshArgs) -> anyhow::Result<()> {
-    // Get access token
-    eprintln!("Authenticating...");
+    // Authenticate
+    let spinner = create_spinner("Authenticating");
     let access_token = get_access_token(client).await?;
+    finish_spinner(&spinner, "Authenticated");
 
-    // For morphvm_ IDs, team is optional (Morph API validates access)
+    // Normalize the ID (add morphvm_ prefix if needed)
+    let id = normalize_sandbox_id(&args.id);
+
+    // For VM IDs, team is optional (provider validates access)
     // For task-run IDs, team is required
-    let team = if args.id.starts_with("morphvm_") && args.team.is_none() {
+    let team = if id.starts_with("morphvm_") && args.team.is_none() {
         None
     } else {
         Some(resolve_team(client, &access_token, args.team.as_deref()).await?)
     };
 
     // Get SSH info from the API (includes status)
-    eprintln!("Resolving sandbox...");
+    let spinner = create_spinner("Resolving sandbox");
     let ssh_info =
-        get_sandbox_ssh_info(client, &access_token, &args.id, team.as_deref(), base_url).await?;
+        get_sandbox_ssh_info(client, &access_token, &id, team.as_deref(), base_url).await?;
+    finish_spinner(&spinner, "Sandbox resolved");
 
     // Check if the sandbox is paused and resume it
     if ssh_info.status == "paused" {
-        eprintln!("Sandbox is paused. Resuming...");
-        resume_sandbox(client, &access_token, &args.id, team.as_deref(), base_url).await?;
+        let spinner = create_spinner("Resuming sandbox");
+        resume_sandbox(client, &access_token, &id, team.as_deref(), base_url).await?;
         // Wait a moment for the instance to be fully ready
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-        eprintln!("Sandbox resumed.");
+        finish_spinner(&spinner, "Sandbox resumed");
     }
 
-    eprintln!("Connecting...");
+    let spinner = create_spinner("Connecting");
+    // Small delay to show the spinner before SSH takes over
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    spinner.finish_and_clear();
 
     // Build SSH command using Morph's per-instance SSH tokens
     // Connection format: ssh {access_token}@ssh.cloud.morph.so
@@ -3044,12 +3088,15 @@ async fn handle_ssh_exec(
     base_url: &str,
     args: &SshExecArgs,
 ) -> anyhow::Result<()> {
-    // Get access token
+    // Get access token (no spinner for exec - keep it minimal for scripting)
     let access_token = get_access_token(client).await?;
 
-    // For morphvm_ IDs, team is optional (Morph API validates access)
+    // Normalize the ID (add morphvm_ prefix if needed)
+    let id = normalize_sandbox_id(&args.id);
+
+    // For VM IDs, team is optional (provider validates access)
     // For task-run IDs, team is required
-    let team = if args.id.starts_with("morphvm_") && args.team.is_none() {
+    let team = if id.starts_with("morphvm_") && args.team.is_none() {
         None
     } else {
         Some(resolve_team(client, &access_token, args.team.as_deref()).await?)
@@ -3057,14 +3104,15 @@ async fn handle_ssh_exec(
 
     // Get SSH info from the API (includes status)
     let ssh_info =
-        get_sandbox_ssh_info(client, &access_token, &args.id, team.as_deref(), base_url).await?;
+        get_sandbox_ssh_info(client, &access_token, &id, team.as_deref(), base_url).await?;
 
     // Check if the sandbox is paused and resume it
     if ssh_info.status == "paused" {
-        eprintln!("Sandbox is paused. Resuming...");
-        resume_sandbox(client, &access_token, &args.id, team.as_deref(), base_url).await?;
+        let spinner = create_spinner("Resuming sandbox");
+        resume_sandbox(client, &access_token, &id, team.as_deref(), base_url).await?;
         // Wait a moment for the instance to be fully ready
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        finish_spinner(&spinner, "Sandbox resumed");
     }
 
     // Build SSH command
