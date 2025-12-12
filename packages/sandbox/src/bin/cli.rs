@@ -2063,6 +2063,7 @@ struct SandboxSshInfo {
     #[serde(rename = "accessToken")]
     access_token: String,
     user: String,
+    status: String,
 }
 
 /// Stack Auth team info
@@ -2266,8 +2267,24 @@ async fn get_sandbox_ssh_info(
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
+
+        // Provide helpful error messages for common cases
+        if status.as_u16() == 404 {
+            return Err(anyhow::anyhow!(
+                "Sandbox not found. The ID may be invalid or the sandbox no longer exists."
+            ));
+        } else if status.as_u16() == 401 {
+            return Err(anyhow::anyhow!(
+                "Not authenticated. Please run 'cmux auth login' first."
+            ));
+        } else if status.as_u16() == 403 {
+            return Err(anyhow::anyhow!(
+                "Access denied. You may not have permission to access this sandbox."
+            ));
+        }
+
         return Err(anyhow::anyhow!(
-            "Failed to get SSH info: {} - {}",
+            "Failed to get sandbox info: {} - {}",
             status,
             text
         ));
@@ -2275,6 +2292,45 @@ async fn get_sandbox_ssh_info(
 
     let ssh_info: SandboxSshInfo = response.json().await?;
     Ok(ssh_info)
+}
+
+/// Resume a paused sandbox
+async fn resume_sandbox(
+    client: &Client,
+    access_token: &str,
+    sandbox_id: &str,
+    team_slug_or_id: Option<&str>,
+    base_url: &str,
+) -> anyhow::Result<()> {
+    let api_url = base_url;
+
+    // Build URL with optional team parameter
+    let resume_url = if let Some(team) = team_slug_or_id {
+        let query: String = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("teamSlugOrId", team)
+            .finish();
+        format!("{}/api/sandboxes/{}/resume?{}", api_url, sandbox_id, query)
+    } else {
+        format!("{}/api/sandboxes/{}/resume", api_url, sandbox_id)
+    };
+
+    let response = client
+        .post(&resume_url)
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow::anyhow!(
+            "Failed to resume sandbox: {} - {}",
+            status,
+            text
+        ));
+    }
+
+    Ok(())
 }
 
 /// Resolve the team to use - from explicit flag, env var, or first available team
@@ -2921,10 +2977,20 @@ async fn handle_real_ssh(client: &Client, base_url: &str, args: &SshArgs) -> any
         Some(resolve_team(client, &access_token, args.team.as_deref()).await?)
     };
 
-    // Get SSH info from the API (includes Morph per-instance SSH token)
+    // Get SSH info from the API (includes status)
     eprintln!("Resolving sandbox...");
     let ssh_info =
         get_sandbox_ssh_info(client, &access_token, &args.id, team.as_deref(), base_url).await?;
+
+    // Check if the sandbox is paused and resume it
+    if ssh_info.status == "paused" {
+        eprintln!("Sandbox is paused. Resuming...");
+        resume_sandbox(client, &access_token, &args.id, team.as_deref(), base_url).await?;
+        // Wait a moment for the instance to be fully ready
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        eprintln!("Sandbox resumed.");
+    }
+
     eprintln!("Connecting...");
 
     // Build SSH command using Morph's per-instance SSH tokens
@@ -2989,11 +3055,19 @@ async fn handle_ssh_exec(
         Some(resolve_team(client, &access_token, args.team.as_deref()).await?)
     };
 
-    // Get SSH info from the API (includes Morph per-instance SSH token)
+    // Get SSH info from the API (includes status)
     let ssh_info =
         get_sandbox_ssh_info(client, &access_token, &args.id, team.as_deref(), base_url).await?;
 
-    // Build SSH command using Morph's per-instance SSH tokens
+    // Check if the sandbox is paused and resume it
+    if ssh_info.status == "paused" {
+        eprintln!("Sandbox is paused. Resuming...");
+        resume_sandbox(client, &access_token, &args.id, team.as_deref(), base_url).await?;
+        // Wait a moment for the instance to be fully ready
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+
+    // Build SSH command
     // Use -T to disable pseudo-terminal allocation (non-interactive)
     // Use -o BatchMode=yes to prevent password prompts
     let mut ssh_args = vec![

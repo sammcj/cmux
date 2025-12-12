@@ -173,7 +173,7 @@ sandboxesRouter.openapi(
     method: "post" as const,
     path: "/sandboxes/start",
     tags: ["Sandboxes"],
-    summary: "Start a sandbox environment (Morph-backed)",
+    summary: "Start a sandbox environment",
     request: {
       body: {
         content: {
@@ -878,9 +878,10 @@ sandboxesRouter.openapi(
 const SandboxSshResponse = z
   .object({
     morphInstanceId: z.string(),
-    sshCommand: z.string().describe("SSH command to connect: ssh {accessToken}@ssh.cloud.morph.so"),
-    accessToken: z.string().describe("Morph per-instance SSH access token"),
+    sshCommand: z.string().describe("Full SSH command to connect to this sandbox"),
+    accessToken: z.string().describe("SSH access token for this sandbox"),
     user: z.string(),
+    status: z.enum(["running", "paused"]).describe("Current instance status"),
   })
   .openapi("SandboxSshResponse");
 
@@ -892,7 +893,7 @@ sandboxesRouter.openapi(
     tags: ["Sandboxes"],
     summary: "Get SSH connection details for a sandbox",
     description:
-      "Returns SSH connection info for a sandbox using Morph's per-instance SSH tokens. Simply run: ssh {accessToken}@ssh.cloud.morph.so. The id can be either a Morph instance ID (morphvm_xxx) or a task-run ID.",
+      "Returns SSH connection info for a sandbox. Use the returned sshCommand or accessToken to connect.",
     request: {
       params: z.object({ id: z.string() }),
       query: z.object({
@@ -910,7 +911,7 @@ sandboxesRouter.openapi(
       },
       401: { description: "Unauthorized" },
       403: { description: "Forbidden - not a team member" },
-      404: { description: "Sandbox not found or not a Morph sandbox" },
+      404: { description: "Sandbox not found" },
       500: { description: "Failed to get SSH info" },
     },
   }),
@@ -957,7 +958,7 @@ sandboxesRouter.openapi(
               teamSlugOrId,
             });
             if (taskRun.vscode?.provider !== "morph") {
-              return c.text("Sandbox is not a Morph instance", 404);
+              return c.text("Sandbox type not supported for SSH", 404);
             }
           } else {
             console.log(
@@ -1013,7 +1014,7 @@ sandboxesRouter.openapi(
         }
 
         if (taskRun.vscode.provider !== "morph") {
-          return c.text("Sandbox is not a Morph instance", 404);
+          return c.text("Sandbox type not supported for SSH", 404);
         }
 
         if (!taskRun.vscode.containerName) {
@@ -1048,10 +1049,15 @@ sandboxesRouter.openapi(
       );
 
       if (!sshKeyResponse.ok) {
+        const errorText = await sshKeyResponse.text();
         console.error(
-          `[sandboxes.ssh] Morph API returned ${sshKeyResponse.status}: ${await sshKeyResponse.text()}`
+          `[sandboxes.ssh] Morph API returned ${sshKeyResponse.status}: ${errorText}`
         );
-        return c.text("Failed to get SSH credentials from provider", 500);
+        // Return 404 if the instance doesn't exist in Morph
+        if (sshKeyResponse.status === 404 || errorText.includes("not found")) {
+          return c.text("Sandbox not found", 404);
+        }
+        return c.text("Failed to get SSH credentials", 500);
       }
 
       const sshKeyData = (await sshKeyResponse.json()) as {
@@ -1063,8 +1069,13 @@ sandboxesRouter.openapi(
 
       if (!sshKeyData.access_token) {
         console.error("[sandboxes.ssh] Morph API did not return access_token");
-        return c.text("Failed to get SSH credentials from provider", 500);
+        return c.text("Failed to get SSH credentials", 500);
       }
+
+      // Get instance status from Morph
+      const morphClient = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+      const instance = await morphClient.instances.get({ instanceId: morphInstanceId });
+      const status = instance.status === "paused" ? "paused" : "running";
 
       const sshCommand = `ssh ${sshKeyData.access_token}@ssh.cloud.morph.so`;
       return c.json({
@@ -1072,6 +1083,7 @@ sandboxesRouter.openapi(
         sshCommand,
         accessToken: sshKeyData.access_token,
         user: "root",
+        status,
       });
     } catch (error) {
       if (error instanceof HTTPException) {
@@ -1079,6 +1091,129 @@ sandboxesRouter.openapi(
       }
       console.error("[sandboxes.ssh] Failed to get SSH info:", error);
       return c.text("Failed to get SSH info", 500);
+    }
+  },
+);
+
+// Resume a paused sandbox
+const SandboxResumeResponse = z
+  .object({
+    resumed: z.literal(true),
+  })
+  .openapi("SandboxResumeResponse");
+
+sandboxesRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/sandboxes/{id}/resume",
+    tags: ["Sandboxes"],
+    summary: "Resume a paused sandbox",
+    description: "Resumes a paused sandbox so it can accept SSH connections.",
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({
+        teamSlugOrId: z.string().optional(),
+      }),
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: SandboxResumeResponse,
+          },
+        },
+        description: "Sandbox resumed successfully",
+      },
+      401: { description: "Unauthorized" },
+      403: { description: "Forbidden - not a team member" },
+      404: { description: "Sandbox not found" },
+      500: { description: "Failed to resume sandbox" },
+    },
+  }),
+  async (c) => {
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const { id } = c.req.valid("param");
+    const { teamSlugOrId } = c.req.valid("query");
+
+    try {
+      const convex = getConvex({ accessToken });
+      let morphInstanceId: string | null = null;
+
+      // Check if the id is a direct VM ID
+      if (id.startsWith("morphvm_")) {
+        morphInstanceId = id;
+
+        if (teamSlugOrId) {
+          // Team provided - try to find it in task runs for verification
+          let taskRun = null;
+          try {
+            taskRun = await convex.query(api.taskRuns.getByContainerName, {
+              teamSlugOrId,
+              containerName: id,
+            });
+          } catch {
+            // Team doesn't exist in Convex - treat as direct VM access
+          }
+
+          if (taskRun) {
+            await verifyTeamAccess({
+              req: c.req.raw,
+              teamSlugOrId,
+            });
+          }
+        }
+      } else {
+        // Task-run ID - team is required
+        if (!teamSlugOrId) {
+          return c.text("teamSlugOrId is required for task-run IDs", 400);
+        }
+
+        await verifyTeamAccess({
+          req: c.req.raw,
+          teamSlugOrId,
+        });
+
+        const taskRun = await convex.query(api.taskRuns.get, {
+          teamSlugOrId,
+          id: id as Id<"taskRuns">,
+        });
+
+        if (!taskRun || !taskRun.vscode?.containerName) {
+          return c.text("Sandbox not found", 404);
+        }
+
+        if (taskRun.vscode.provider !== "morph") {
+          return c.text("Sandbox type not supported", 404);
+        }
+
+        morphInstanceId = taskRun.vscode.containerName;
+      }
+
+      if (!morphInstanceId) {
+        return c.text("Could not resolve sandbox instance", 404);
+      }
+
+      // Resume the instance using Morph API
+      const morphClient = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+      const instance = await morphClient.instances.get({ instanceId: morphInstanceId });
+
+      if (instance.status !== "paused") {
+        // Already running, just return success
+        return c.json({ resumed: true });
+      }
+
+      await instance.resume();
+      return c.json({ resumed: true });
+    } catch (error) {
+      if (error instanceof HTTPException) {
+        return c.text(error.message || "Request failed", error.status);
+      }
+      console.error("[sandboxes.resume] Failed to resume sandbox:", error);
+      return c.text("Failed to resume sandbox", 500);
     }
   },
 );

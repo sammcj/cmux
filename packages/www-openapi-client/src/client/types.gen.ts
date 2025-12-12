@@ -572,14 +572,22 @@ export type UpdateSandboxEnvBody = {
 export type SandboxSshResponse = {
     morphInstanceId: string;
     /**
-     * SSH command to connect: ssh {accessToken}@ssh.cloud.morph.so
+     * Full SSH command to connect to this sandbox
      */
     sshCommand: string;
     /**
-     * Morph per-instance SSH access token
+     * SSH access token for this sandbox
      */
     accessToken: string;
     user: string;
+    /**
+     * Current instance status
+     */
+    status: 'running' | 'paused';
+};
+
+export type SandboxResumeResponse = {
+    resumed: true;
 };
 
 export type CreateTeamResponse = {
@@ -2558,7 +2566,7 @@ export type GetApiSandboxesByIdSshErrors = {
      */
     403: unknown;
     /**
-     * Sandbox not found or not a Morph sandbox
+     * Sandbox not found
      */
     404: unknown;
     /**
@@ -2575,6 +2583,45 @@ export type GetApiSandboxesByIdSshResponses = {
 };
 
 export type GetApiSandboxesByIdSshResponse = GetApiSandboxesByIdSshResponses[keyof GetApiSandboxesByIdSshResponses];
+
+export type PostApiSandboxesByIdResumeData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: {
+        teamSlugOrId?: string;
+    };
+    url: '/api/sandboxes/{id}/resume';
+};
+
+export type PostApiSandboxesByIdResumeErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden - not a team member
+     */
+    403: unknown;
+    /**
+     * Sandbox not found
+     */
+    404: unknown;
+    /**
+     * Failed to resume sandbox
+     */
+    500: unknown;
+};
+
+export type PostApiSandboxesByIdResumeResponses = {
+    /**
+     * Sandbox resumed successfully
+     */
+    200: SandboxResumeResponse;
+};
+
+export type PostApiSandboxesByIdResumeResponse = PostApiSandboxesByIdResumeResponses[keyof PostApiSandboxesByIdResumeResponses];
 
 export type PostApiTeamsData = {
     body: CreateTeamRequest;
