@@ -2275,9 +2275,7 @@ async fn get_user_teams(client: &Client, access_token: &str) -> anyhow::Result<V
         .map(|t| StackTeam {
             id: t["id"].as_str().unwrap_or_default().to_string(),
             display_name: t["displayName"].as_str().map(String::from),
-            client_metadata: t["slug"]
-                .as_str()
-                .map(|s| serde_json::json!({ "slug": s })),
+            client_metadata: t["slug"].as_str().map(|s| serde_json::json!({ "slug": s })),
         })
         .collect();
 
@@ -2811,16 +2809,23 @@ async fn handle_vm_create(args: VmCreateArgs) -> anyhow::Result<()> {
             }))?
         );
     } else {
+        // Strip morphvm_ prefix for display
+        let display_id = result
+            .instance_id
+            .strip_prefix("morphvm_")
+            .unwrap_or(&result.instance_id);
+        let ssh_id = format!("c_{}", display_id);
+
         eprintln!("\x1b[32m✓ VM created successfully!\x1b[0m");
         eprintln!();
-        eprintln!("  Instance ID: {}", result.instance_id);
+        eprintln!("  Instance ID: {}", display_id);
         eprintln!("  VS Code URL: {}", result.vscode_url);
         if !result.cloned_repos.is_empty() {
             eprintln!("  Cloned repos: {}", result.cloned_repos.join(", "));
         }
         eprintln!();
         eprintln!("Connect via SSH:");
-        eprintln!("  cmux ssh {}", result.instance_id);
+        eprintln!("  cmux ssh {}", ssh_id);
     }
 
     Ok(())
