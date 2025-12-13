@@ -7,8 +7,8 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 DMUX="${ROOT_DIR}/packages/sandbox/target/release/dmux"
 SANDBOX_ID=""
 
-# Set base URL for dmux (dev server runs on 46831, not dmux's default 46833)
-export CMUX_SANDBOX_URL="http://localhost:46831"
+# Set base URL for dmux - reload.sh starts dmux-sandbox-dev-run on port 46833
+export CMUX_SANDBOX_URL="http://localhost:46833"
 
 # Colors for output
 RED='\033[0;31m'
@@ -27,7 +27,7 @@ cleanup() {
     # Delete sandbox if created
     if [[ -n "${SANDBOX_ID}" ]]; then
         log_info "Deleting sandbox ${SANDBOX_ID}..."
-        curl -sf -X DELETE "http://localhost:46831/sandboxes/${SANDBOX_ID}" || true
+        curl -sf -X DELETE "http://localhost:46833/sandboxes/${SANDBOX_ID}" || true
     fi
 }
 trap cleanup EXIT
@@ -39,7 +39,7 @@ log_info "Rebuilding and reloading dev environment..."
 # Wait for health check after reload
 log_info "Waiting for dev server to be ready..."
 for i in $(seq 1 30); do
-    if curl -sf "http://localhost:46831/healthz" >/dev/null 2>&1; then
+    if curl -sf "http://localhost:46833/healthz" >/dev/null 2>&1; then
         log_info "Dev server ready after ${i}s"
         break
     fi
@@ -60,7 +60,7 @@ log_info "=========================================="
 
 # Create a local sandbox
 log_test "Creating local sandbox..."
-CREATE_OUTPUT=$(curl -sf -X POST "http://localhost:46831/sandboxes" \
+CREATE_OUTPUT=$(curl -sf -X POST "http://localhost:46833/sandboxes" \
     -H "Content-Type: application/json" \
     -d '{"name": "e2e-ssh-test", "workspace": "/tmp/e2e-ssh-test"}')
 SANDBOX_ID=$(echo "${CREATE_OUTPUT}" | jq -r '.id')
