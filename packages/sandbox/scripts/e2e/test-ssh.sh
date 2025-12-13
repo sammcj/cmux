@@ -141,27 +141,79 @@ else
 fi
 
 # ============================================================================
-# CLOUD SANDBOX TESTS (optional - requires CMUX_API_URL)
+# CLOUD SANDBOX TESTS (optional - requires CMUX_TEAM)
 # ============================================================================
 
-if [[ -n "${CMUX_API_URL:-}" ]] && [[ -n "${TEST_CLOUD_SANDBOX_ID:-}" ]]; then
+CLOUD_SANDBOX_ID=""
+
+cloud_cleanup() {
+    if [[ -n "${CLOUD_SANDBOX_ID}" ]]; then
+        log_info "Cloud sandbox ${CLOUD_SANDBOX_ID} will auto-pause after TTL"
+    fi
+}
+
+if [[ -n "${CMUX_TEAM:-}" ]]; then
     log_info "=========================================="
     log_info "CLOUD SANDBOX TESTS"
     log_info "=========================================="
 
-    CLOUD_ID="c_${TEST_CLOUD_SANDBOX_ID}"
-    log_info "Cloud ID: ${CLOUD_ID}"
+    # Create a cloud sandbox with short TTL (2 minutes)
+    log_test "Creating cloud sandbox (TTL=120s)..."
+    VM_OUTPUT=$("${DMUX}" vm create --team "${CMUX_TEAM}" --ttl 120 --output json 2>&1) || {
+        log_warn "Failed to create cloud sandbox: ${VM_OUTPUT}"
+        log_warn "Skipping cloud tests (check authentication with 'dmux auth status')"
+    }
 
-    # Test ssh-exec with cloud sandbox
-    log_test "Testing ssh-exec with cloud sandbox..."
-    EXEC_OUTPUT=$("${DMUX}" ssh-exec "${CLOUD_ID}" echo "hello from cloud sandbox" 2>&1 || true)
-    if [[ "${EXEC_OUTPUT}" == *"hello from cloud sandbox"* ]]; then
-        log_info "PASS: ssh-exec cloud sandbox"
-    else
-        log_warn "WARN: ssh-exec cloud sandbox (output: ${EXEC_OUTPUT})"
+    if [[ -n "${VM_OUTPUT}" ]] && echo "${VM_OUTPUT}" | jq -e '.id' >/dev/null 2>&1; then
+        CLOUD_SANDBOX_ID=$(echo "${VM_OUTPUT}" | jq -r '.id')
+        # Strip morphvm_ prefix if present for display
+        CLOUD_DISPLAY_ID="${CLOUD_SANDBOX_ID#morphvm_}"
+        log_info "Created cloud sandbox: ${CLOUD_DISPLAY_ID}"
+
+        # Use c_ prefix for cloud sandboxes
+        CLOUD_ID="c_${CLOUD_DISPLAY_ID}"
+        log_info "Cloud ID: ${CLOUD_ID}"
+
+        # Wait a moment for the sandbox to be ready
+        log_info "Waiting for cloud sandbox to be ready..."
+        sleep 5
+
+        # Test ssh-exec with cloud sandbox
+        log_test "Testing ssh-exec with c_<id>..."
+        EXEC_OUTPUT=$("${DMUX}" ssh-exec "${CLOUD_ID}" echo "hello cloud" 2>&1) || true
+        if [[ "${EXEC_OUTPUT}" == *"hello cloud"* ]]; then
+            log_info "PASS: ssh-exec c_<id>"
+        else
+            log_error "FAIL: ssh-exec c_<id>"
+            log_error "Output: ${EXEC_OUTPUT}"
+            # Don't exit - continue with other tests
+        fi
+
+        # Test ssh-exec exit code propagation
+        log_test "Testing cloud ssh-exec exit code propagation..."
+        set +e
+        "${DMUX}" ssh-exec "${CLOUD_ID}" "exit 42"
+        CLOUD_EXIT_CODE=$?
+        set -e
+        if [[ "${CLOUD_EXIT_CODE}" -eq 42 ]]; then
+            log_info "PASS: cloud ssh-exec exit code propagation (got ${CLOUD_EXIT_CODE})"
+        else
+            log_warn "WARN: cloud ssh-exec exit code (expected 42, got ${CLOUD_EXIT_CODE})"
+        fi
+
+        # Test interactive SSH with cloud sandbox
+        log_test "Testing interactive SSH with c_<id>..."
+        INTERACTIVE_OUTPUT=$(echo "echo 'interactive cloud' && exit" | timeout 15 "${DMUX}" ssh "${CLOUD_ID}" 2>&1 || true)
+        if [[ "${INTERACTIVE_OUTPUT}" == *"interactive cloud"* ]] || [[ "${INTERACTIVE_OUTPUT}" == *"Connected"* ]]; then
+            log_info "PASS: interactive SSH c_<id>"
+        else
+            log_warn "WARN: interactive SSH c_<id> may have issues"
+        fi
+
+        log_info "Cloud sandbox will auto-pause in ~2 minutes"
     fi
 else
-    log_warn "Skipping cloud tests (set CMUX_API_URL and TEST_CLOUD_SANDBOX_ID to enable)"
+    log_warn "Skipping cloud tests (set CMUX_TEAM to enable)"
 fi
 
 # ============================================================================
