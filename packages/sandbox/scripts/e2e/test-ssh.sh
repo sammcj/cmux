@@ -4,7 +4,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
-DMUX="${ROOT_DIR}/packages/sandbox/target/release/dmux"
+# Use dmux from PATH (installed by reload.sh to ~/.local/bin/dmux)
+# This ensures we use the same binary with auth tokens
+DMUX="dmux"
 SANDBOX_ID=""
 CLOUD_SANDBOX_ID=""
 TEST_START_TIME=""
@@ -195,8 +197,24 @@ if ! curl -sf "http://localhost:9779/api" >/dev/null 2>&1; then
 fi
 log_info "www server is running"
 
-# Get team - use CMUX_TEAM env var or default to 'test'
-TEAM="${CMUX_TEAM:-test}"
+# Set API URL to local dev server (must be set before vm list)
+export CMUX_API_URL="http://localhost:9779"
+
+# Get team - use CMUX_TEAM env var or detect from existing VMs
+if [[ -n "${CMUX_TEAM:-}" ]]; then
+    TEAM="${CMUX_TEAM}"
+else
+    # Try to get team ID from existing VMs
+    log_info "Detecting team from existing VMs..."
+    VM_LIST=$("${DMUX}" vm list --output json 2>&1) || true
+    TEAM=$(echo "${VM_LIST}" | jq -r '.[0].metadata.teamId // empty' 2>/dev/null || true)
+    if [[ -z "${TEAM}" ]]; then
+        log_error "FAIL: CMUX_TEAM not set and no existing VMs found to detect team"
+        log_error "VM list output: ${VM_LIST}"
+        log_error "Set CMUX_TEAM=<your-team-id> and try again"
+        exit 1
+    fi
+fi
 log_info "Using team: ${TEAM}"
 
 # Create a cloud sandbox with short TTL (2 minutes)
@@ -210,13 +228,21 @@ VM_OUTPUT=$("${DMUX}" vm create --team "${TEAM}" --ttl 120 --output json 2>&1) |
 }
 log_time "create cloud sandbox" $(elapsed_ms)
 
-if ! echo "${VM_OUTPUT}" | jq -e '.id' >/dev/null 2>&1; then
-    log_error "FAIL: Invalid response from vm create"
+# Extract JSON from output (skip "Creating cloud VM..." line and parse multi-line JSON)
+VM_JSON=$(echo "${VM_OUTPUT}" | sed -n '/^{/,/^}/p')
+if [[ -z "${VM_JSON}" ]]; then
+    log_error "FAIL: Could not extract JSON from vm create output"
     log_error "Output: ${VM_OUTPUT}"
     exit 1
 fi
 
-CLOUD_SANDBOX_ID=$(echo "${VM_OUTPUT}" | jq -r '.id')
+if ! echo "${VM_JSON}" | jq -e '.instanceId' >/dev/null 2>&1; then
+    log_error "FAIL: Invalid response from vm create"
+    log_error "JSON: ${VM_JSON}"
+    exit 1
+fi
+
+CLOUD_SANDBOX_ID=$(echo "${VM_JSON}" | jq -r '.instanceId')
 # Strip morphvm_ prefix if present for display
 CLOUD_DISPLAY_ID="${CLOUD_SANDBOX_ID#morphvm_}"
 log_info "Created cloud sandbox: ${CLOUD_DISPLAY_ID}"
