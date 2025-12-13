@@ -171,6 +171,19 @@ exit 0`;
     ctx.apiKeys?.ANTHROPIC_API_KEY &&
     ctx.apiKeys.ANTHROPIC_API_KEY.trim().length > 0;
 
+  // If OAuth token is provided, write it to /etc/claude-code/env
+  // The wrapper scripts (claude, npx, bunx) source this file before running claude-code
+  // This is necessary because CLAUDE_CODE_OAUTH_TOKEN must be set as an env var
+  // BEFORE claude-code starts (it checks OAuth early, before loading settings.json)
+  if (hasOAuthToken) {
+    const oauthEnvContent = `CLAUDE_CODE_OAUTH_TOKEN=${ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN}\n`;
+    files.push({
+      destinationPath: "/etc/claude-code/env",
+      contentBase64: Buffer.from(oauthEnvContent).toString("base64"),
+      mode: "600", // Restrictive permissions for the token
+    });
+  }
+
   // Create settings.json with hooks configuration
   // When OAuth token is present, we don't use the cmux proxy (user pays directly via their subscription)
   // When only API key is present, we route through cmux proxy for tracking/rate limiting
