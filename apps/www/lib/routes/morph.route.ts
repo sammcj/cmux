@@ -855,7 +855,11 @@ morphRouter.openapi(
     },
   }),
   async (c) => {
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    const user = await getUserFromRequest(c.req.raw);
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+    const { accessToken } = await user.getAuthJson();
     if (!accessToken) {
       return c.text("Unauthorized", 401);
     }
@@ -863,12 +867,23 @@ morphRouter.openapi(
     const { teamId } = c.req.valid("query");
 
     try {
+      const convex = getConvex({ accessToken });
+
+      // Get user's team memberships to scope the results
+      const memberships = await convex.query(api.teams.listTeamMemberships, {});
+      const userTeamIds = new Set(memberships.map((m) => m.team.teamId));
+
+      // If teamId filter is specified, verify user belongs to that team
+      if (teamId && !userTeamIds.has(teamId)) {
+        return c.text("Forbidden - not a member of this team", 403);
+      }
+
       const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
 
       // List all instances from Morph
       const instances = await client.instances.list();
 
-      // Filter instances that belong to cmux and optionally by team
+      // Filter instances: user must own them directly or be a member of the owning team
       const filteredInstances = instances.filter((instance) => {
         const meta = instance.metadata as
           | { app?: string; teamId?: string; userId?: string }
@@ -881,6 +896,14 @@ morphRouter.openapi(
 
         // Filter by team if specified
         if (teamId && meta?.teamId !== teamId) {
+          return false;
+        }
+
+        // Security: Only show instances the user owns or belongs to their teams
+        const isOwner = meta?.userId === user.id;
+        const isTeamMember = meta?.teamId ? userTeamIds.has(meta.teamId) : false;
+
+        if (!isOwner && !isTeamMember) {
           return false;
         }
 
