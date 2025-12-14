@@ -10,6 +10,7 @@ const KEYCHAIN_ACCOUNT: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 
 /// Get the Stack Auth project ID for credential storage
 /// This ensures dev and prod credentials are stored separately
+#[cfg(target_os = "macos")]
 fn get_stack_project_id_for_storage() -> String {
     std::env::var("STACK_PROJECT_ID").unwrap_or_else(|_| {
         #[cfg(debug_assertions)]
