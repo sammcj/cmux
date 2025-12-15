@@ -39,6 +39,8 @@ const DOCKER_CONTAINER_SOCKET: &str = "/run/docker.sock";
 /// Handle for a multiplexed PTY session.
 struct PtySessionHandle {
     input_tx: mpsc::UnboundedSender<Vec<u8>>,
+    /// Channel to send resize events to the reader thread's VirtualTerminal
+    resize_tx: std::sync::mpsc::Sender<(u16, u16)>,
     master: Box<dyn MasterPty + Send>,
     #[allow(dead_code)]
     child: Box<dyn portable_pty::Child + Send + Sync>,
@@ -866,6 +868,8 @@ fi
             .map_err(|e| SandboxError::Internal(format!("failed to take pty writer: {e}")))?;
 
         let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        // Channel for sending resize events to the reader thread's VirtualTerminal
+        let (resize_tx, resize_rx) = std::sync::mpsc::channel::<(u16, u16)>();
 
         // Reader thread: PTY -> output channel
         // Uses a VirtualTerminal to process escape sequences and handle DA queries locally.
@@ -879,6 +883,11 @@ fi
             // We use it to detect and respond to terminal queries (DA1, DA2, etc.)
             let mut vterm = VirtualTerminal::new(rows as usize, cols as usize);
             loop {
+                // Check for any pending resize events (non-blocking)
+                while let Ok((new_rows, new_cols)) = resize_rx.try_recv() {
+                    vterm.resize(new_rows as usize, new_cols as usize);
+                }
+
                 match reader.read(&mut buf) {
                     Ok(0) => {
                         // PTY closed
@@ -934,6 +943,7 @@ fi
 
         Ok(PtySessionHandle {
             input_tx,
+            resize_tx,
             master: pair.master,
             child,
             child_pid,
@@ -1872,12 +1882,16 @@ impl SandboxService for BubblewrapService {
                         } => {
                             let sessions = sessions.lock().await;
                             if let Some(handle) = sessions.get(&session_id) {
+                                // Resize the PTY
                                 let _ = handle.master.resize(PtySize {
                                     rows,
                                     cols,
                                     pixel_width: 0,
                                     pixel_height: 0,
                                 });
+                                // Also resize the VirtualTerminal in the reader thread
+                                // so window-size queries return correct dimensions
+                                let _ = handle.resize_tx.send((rows, cols));
                             }
                         }
 
