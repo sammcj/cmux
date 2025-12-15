@@ -12,6 +12,7 @@ use crossterm::{
 use futures::StreamExt;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
@@ -30,6 +31,7 @@ use crate::mux::terminal::{
 };
 use crate::mux::ui::ui;
 use crate::sync_files::{detect_sync_files, upload_sync_files_with_list};
+use crate::terminal_guard;
 
 /// Run the multiplexer TUI.
 ///
@@ -50,10 +52,16 @@ pub async fn run_mux_tui(base_url: String, workspace_path: Option<PathBuf>) -> R
     )?;
     enable_raw_mode()?;
 
+    // Mark that terminal modes are enabled so panic hook knows to clean up
+    terminal_guard::TERMINAL_MODES_ENABLED.store(true, Ordering::SeqCst);
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let result = run_main_loop(&mut terminal, base_url, workspace_path).await;
+
+    // Mark cleanup as done to prevent panic hook from double-cleaning
+    terminal_guard::CLEANUP_DONE.store(true, Ordering::SeqCst);
 
     // Cleanup must happen in reverse order, and PopKeyboardEnhancementFlags
     // must be sent BEFORE LeaveAlternateScreen to properly restore terminal state.
@@ -73,6 +81,10 @@ pub async fn run_mux_tui(base_url: String, workspace_path: Option<PathBuf>) -> R
     if let Err(e) = terminal.show_cursor() {
         eprintln!("Warning: failed to show cursor: {e}");
     }
+
+    // Reset global state
+    terminal_guard::TERMINAL_MODES_ENABLED.store(false, Ordering::SeqCst);
+    terminal_guard::CLEANUP_DONE.store(false, Ordering::SeqCst);
 
     result
 }
