@@ -868,10 +868,16 @@ fi
         let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
         // Reader thread: PTY -> output channel
+        // Uses a VirtualTerminal to process escape sequences and handle DA queries locally.
+        // This avoids the PTY echo issue where responses sent back through the PTY get echoed.
         let session_id_clone = session_id.clone();
         let output_tx_clone = output_tx.clone();
+        let input_tx_clone = input_tx.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
+            // Create a VirtualTerminal for processing escape sequences
+            // We use it to detect and respond to terminal queries (DA1, DA2, etc.)
+            let mut vterm = VirtualTerminal::new(rows as usize, cols as usize);
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => {
@@ -883,10 +889,22 @@ fi
                         break;
                     }
                     Ok(n) => {
+                        let data = &buf[..n];
+
+                        // Process through VirtualTerminal to detect queries
+                        vterm.process(data);
+
+                        // Send any pending responses (DA1, DA2, DSR, etc.) back to PTY
+                        let responses = vterm.drain_responses();
+                        for response in responses {
+                            let _ = input_tx_clone.send(response);
+                        }
+
+                        // Forward original output to WebSocket
                         if output_tx_clone
                             .send(MuxServerMessage::Output {
                                 session_id: session_id_clone.clone(),
-                                data: buf[..n].to_vec(),
+                                data: data.to_vec(),
                             })
                             .is_err()
                         {

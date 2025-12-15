@@ -60,11 +60,10 @@ pub async fn run_mux_tui(base_url: String, workspace_path: Option<PathBuf>) -> R
 
     let result = run_main_loop(&mut terminal, base_url, workspace_path).await;
 
-    // Mark cleanup as done to prevent panic hook from double-cleaning
-    terminal_guard::CLEANUP_DONE.store(true, Ordering::SeqCst);
-
     // Cleanup must happen in reverse order, and PopKeyboardEnhancementFlags
     // must be sent BEFORE LeaveAlternateScreen to properly restore terminal state.
+    // Don't set CLEANUP_DONE until after cleanup succeeds, so the panic hook
+    // can still restore terminal if cleanup panics.
     // Print errors but continue cleanup to ensure all steps run.
     if let Err(e) = disable_raw_mode() {
         eprintln!("Warning: failed to disable raw mode: {e}");
@@ -82,14 +81,13 @@ pub async fn run_mux_tui(base_url: String, workspace_path: Option<PathBuf>) -> R
         eprintln!("Warning: failed to show cursor: {e}");
     }
 
-    // Small delay to let any pending terminal responses arrive (like DA1/DA2 responses
-    // to keyboard enhancement or other queries)
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    // Aggressively drain stdin to consume any leftover terminal responses
+    // (like DA1/DA2 responses to keyboard enhancement or other queries).
+    // This does multiple passes with delays to catch slow responses.
+    terminal_guard::drain_stdin_aggressive();
 
-    // Drain stdin to consume any leftover terminal responses
-    terminal_guard::drain_stdin();
-
-    // Reset global state
+    // Mark cleanup as done AFTER it succeeds, then reset for potential reuse
+    terminal_guard::CLEANUP_DONE.store(true, Ordering::SeqCst);
     terminal_guard::TERMINAL_MODES_ENABLED.store(false, Ordering::SeqCst);
     terminal_guard::CLEANUP_DONE.store(false, Ordering::SeqCst);
 

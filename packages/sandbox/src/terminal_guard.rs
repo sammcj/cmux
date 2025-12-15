@@ -37,6 +37,12 @@ pub static TERMINAL_MODES_ENABLED: AtomicBool = AtomicBool::new(false);
 /// have arrived after we sent terminal mode change sequences.
 #[cfg(unix)]
 pub fn drain_stdin() {
+    drain_stdin_once();
+}
+
+/// Internal: single pass of stdin draining.
+#[cfg(unix)]
+fn drain_stdin_once() {
     use std::os::unix::io::AsRawFd;
 
     let stdin = std::io::stdin();
@@ -64,6 +70,22 @@ pub fn drain_stdin() {
     // Restore blocking mode
     unsafe { libc::fcntl(stdin_fd, libc::F_SETFL, flags) };
 }
+
+/// Aggressively drain stdin with multiple passes and delays.
+/// This is more thorough for cleanup scenarios where responses may arrive with delay.
+#[cfg(unix)]
+pub fn drain_stdin_aggressive() {
+    // Multiple passes with delays to catch slow responses
+    for _ in 0..3 {
+        drain_stdin_once();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    drain_stdin_once();
+}
+
+/// No-op on non-Unix platforms.
+#[cfg(not(unix))]
+pub fn drain_stdin_aggressive() {}
 
 /// No-op on non-Unix platforms.
 #[cfg(not(unix))]
@@ -107,12 +129,9 @@ pub fn restore_terminal() {
     let _ = stdout.write_all(b"\x1b[?25h"); // Show cursor
     let _ = stdout.flush();
 
-    // Small delay to let any pending terminal responses arrive
-    std::thread::sleep(std::time::Duration::from_millis(10));
-
-    // Drain stdin to consume any leftover terminal responses (DA1/DA2, etc.)
+    // Aggressively drain stdin to consume any leftover terminal responses (DA1/DA2, etc.)
     // These might have been sent in response to our terminal mode changes
-    drain_stdin();
+    drain_stdin_aggressive();
 }
 
 /// Install a panic hook that restores terminal state.
@@ -231,11 +250,8 @@ impl Drop for TerminalGuard {
         let _ = stdout.write_all(b"\x1b[?25h");
         let _ = stdout.flush();
 
-        // Small delay to let any pending terminal responses arrive
-        std::thread::sleep(std::time::Duration::from_millis(10));
-
-        // Drain stdin to consume any leftover terminal responses
-        drain_stdin();
+        // Aggressively drain stdin to consume any leftover terminal responses
+        drain_stdin_aggressive();
 
         // Reset the global flags for potential reuse
         TERMINAL_MODES_ENABLED.store(false, Ordering::SeqCst);

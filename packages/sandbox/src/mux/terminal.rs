@@ -2202,8 +2202,14 @@ impl Perform for VirtualTerminal {
                 }
             }
             // Device Attributes (DA1 and DA2)
+            // Important: We must distinguish between QUERIES (which we respond to) and
+            // RESPONSES (which we ignore). Both DA1 and DA2 responses have the same
+            // intermediate characters as queries, so we use parameter count to distinguish:
+            // - Query: no params or just [0]
+            // - Response: multiple params (e.g., [64, 1, 2, ...] for DA1, [41, 354, 0] for DA2)
             'c' => {
-                if intermediates.is_empty() {
+                let is_query = params_vec.is_empty() || params_vec == [0];
+                if intermediates.is_empty() && is_query {
                     // Primary Device Attributes (DA1): CSI c or CSI 0 c
                     // Respond as xterm-compatible VT420 with capabilities:
                     // 64 = VT420
@@ -2221,14 +2227,16 @@ impl Perform for VirtualTerminal {
                     // 29 = ANSI text locator
                     self.pending_responses
                         .push(b"\x1b[?64;1;2;6;9;15;16;17;18;21;22;28;29c".to_vec());
-                } else if intermediates == [b'>'] {
-                    // Secondary Device Attributes (DA2): CSI > c
+                } else if intermediates == [b'>'] && is_query {
+                    // Secondary Device Attributes (DA2): CSI > c or CSI > 0 c
                     // Respond as xterm version 314+:
                     // 41 = xterm terminal type
                     // 354 = version number (xterm 354+)
                     // 0 = ROM cartridge registration number (always 0)
                     self.pending_responses.push(b"\x1b[>41;354;0c".to_vec());
                 }
+                // DA1 responses (CSI ? params c) and DA2 responses (CSI > params c)
+                // are silently consumed - they have intermediates but multiple params
             }
             // Set scroll region
             'r' => {
@@ -3455,25 +3463,18 @@ impl TerminalManager {
     }
 
     /// Handle output by session ID (used by the mux connection handler).
-    /// Automatically sends any pending responses back to the PTY.
+    /// Note: Terminal query responses (DA1, DA2, DSR, etc.) are handled by the
+    /// sandbox server's VirtualTerminal, not here. This avoids the PTY echo issue
+    /// and prevents duplicate responses.
     pub fn handle_output_by_session(
         &mut self,
         session_id: &PtySessionId,
         data: Vec<u8>,
     ) -> Option<PaneId> {
         let pane_id = *self.session_to_pane.get(session_id)?;
-        let responses = self.handle_output(pane_id, data);
-        // Send any pending responses back to the PTY
-        if !responses.is_empty() {
-            if let Some(sender) = &self.mux_sender {
-                for response in responses {
-                    sender.send(MuxClientMessage::Input {
-                        session_id: session_id.clone(),
-                        data: response,
-                    });
-                }
-            }
-        }
+        // Process the output (this updates terminal state and may generate responses,
+        // but we discard them since the sandbox server handles responses)
+        let _responses = self.handle_output(pane_id, data);
         Some(pane_id)
     }
 
@@ -4109,6 +4110,48 @@ mod tests {
         assert_eq!(responses.len(), 1);
         // Response: CSI 8 ; height ; width t
         assert_eq!(responses[0], b"\x1b[8;24;80t");
+    }
+
+    #[test]
+    fn virtual_terminal_ignores_da1_response() {
+        let mut term = VirtualTerminal::new(24, 80);
+        // Process a DA1 RESPONSE (not query) - should be consumed silently, no new response
+        // DA1 response has '?' intermediate and multiple params
+        term.process(b"\x1b[?1;2c"); // VT100 style response
+
+        let responses = term.drain_responses();
+        assert!(
+            responses.is_empty(),
+            "DA1 response should not trigger a new response"
+        );
+    }
+
+    #[test]
+    fn virtual_terminal_ignores_da2_response() {
+        let mut term = VirtualTerminal::new(24, 80);
+        // Process a DA2 RESPONSE (not query) - should be consumed silently, no new response
+        // DA2 response has '>' intermediate and multiple params
+        term.process(b"\x1b[>0;276;0c"); // VT100 style response
+
+        let responses = term.drain_responses();
+        assert!(
+            responses.is_empty(),
+            "DA2 response should not trigger a new response"
+        );
+    }
+
+    #[test]
+    fn virtual_terminal_ignores_own_da_responses() {
+        let mut term = VirtualTerminal::new(24, 80);
+        // Process our own DA responses (as if echoed back from PTY)
+        term.process(b"\x1b[?64;1;2;6;9;15;16;17;18;21;22;28;29c"); // Our DA1 response
+        term.process(b"\x1b[>41;354;0c"); // Our DA2 response
+
+        let responses = term.drain_responses();
+        assert!(
+            responses.is_empty(),
+            "Own DA responses should not trigger new responses"
+        );
     }
 
     #[test]

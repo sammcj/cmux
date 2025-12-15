@@ -33,9 +33,8 @@ pub async fn run_demo_tui() -> Result<()> {
 
     let res = run_demo_loop(&mut terminal).await;
 
-    // Mark cleanup as done to prevent panic hook from double-cleaning
-    terminal_guard::CLEANUP_DONE.store(true, Ordering::SeqCst);
-
+    // Perform cleanup - don't set CLEANUP_DONE until after cleanup succeeds,
+    // so the panic hook can still restore terminal if cleanup panics
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -45,13 +44,11 @@ pub async fn run_demo_tui() -> Result<()> {
     )?;
     terminal.show_cursor()?;
 
-    // Small delay to let any pending terminal responses arrive
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    // Aggressively drain stdin to consume any leftover terminal responses
+    terminal_guard::drain_stdin_aggressive();
 
-    // Drain stdin to consume any leftover terminal responses
-    terminal_guard::drain_stdin();
-
-    // Reset global state
+    // Mark cleanup as done AFTER it succeeds, then reset for potential reuse
+    terminal_guard::CLEANUP_DONE.store(true, Ordering::SeqCst);
     terminal_guard::TERMINAL_MODES_ENABLED.store(false, Ordering::SeqCst);
     terminal_guard::CLEANUP_DONE.store(false, Ordering::SeqCst);
 
