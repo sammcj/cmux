@@ -132,7 +132,8 @@ export function parseReviewHeatmap(raw: unknown): ReviewHeatmapLine[] {
       continue;
     }
 
-    const reason = parseNullableString(record.shouldReviewWhy);
+    const rawReason = parseNullableString(record.shouldReviewWhy);
+    const reason = filterReasonText(rawReason);
     const mostImportantWord = parseNullableString(
       record.mostImportantWord
     );
@@ -830,6 +831,22 @@ function parseNullableString(value: unknown): string | null {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Filter out diamond and other special marker characters from tooltip reason text.
+ * These characters are sometimes added by AI models as bullet points or markers.
+ */
+function filterReasonText(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  // Remove diamond characters (◆, ◇, ♦, ◊) and trim whitespace
+  const filtered = value
+    .replace(/[◆◇♦◊]/g, "")
+    .replace(/^\s*[-•·]\s*/, "") // Also remove leading bullets/dashes
+    .trim();
+  return filtered.length > 0 ? filtered : null;
 }
 
 function unwrapCodexPayload(value: unknown): unknown {

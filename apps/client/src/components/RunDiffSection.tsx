@@ -1,6 +1,6 @@
 import { gitDiffQueryOptions } from "@/queries/git-diff";
 import { useQueries } from "@tanstack/react-query";
-import { useMemo, type ComponentProps } from "react";
+import { useMemo, useRef, type ComponentProps } from "react";
 import { GitDiffViewer, GitDiffViewerWithHeatmap } from "./git-diff-viewer";
 import type { ReplaceDiffEntry } from "@cmux/shared/diff-types";
 import type { ReviewHeatmapLine } from "@/lib/heatmap";
@@ -88,6 +88,15 @@ export function RunDiffSection(props: RunDiffSectionProps) {
     })),
   });
 
+  // IMPORTANT: Refs must be declared before any early returns (React hooks rule)
+  // These refs maintain stable combinedDiffs reference to prevent infinite loops
+  const combinedDiffsRef = useRef<ReplaceDiffEntry[]>([]);
+  const prevDepsRef = useRef<{
+    queryData: Array<ReplaceDiffEntry[] | undefined>;
+    repoFullNames: string[];
+    shouldPrefix: boolean;
+  }>({ queryData: [], repoFullNames: [], shouldPrefix: false });
+
   const isPending = queries.some(
     (query) => query.isPending || query.isFetching,
   );
@@ -126,11 +135,29 @@ export function RunDiffSection(props: RunDiffSectionProps) {
 
   const shouldPrefix = withRepoPrefix ?? repoFullNames.length > 1;
 
-  const combinedDiffs = repoFullNames.flatMap((repo, index) => {
-    const data = queries[index]?.data ?? [];
-    const prefix = shouldPrefix ? `${repo}:` : null;
-    return data.map((entry) => applyRepoPrefix(entry, prefix));
-  });
+  // Check if any dependencies have actually changed
+  const currentQueryData = queries.map((q) => q.data);
+  const depsChanged =
+    currentQueryData.length !== prevDepsRef.current.queryData.length ||
+    currentQueryData.some((data, i) => data !== prevDepsRef.current.queryData[i]) ||
+    repoFullNames.length !== prevDepsRef.current.repoFullNames.length ||
+    repoFullNames.some((name, i) => name !== prevDepsRef.current.repoFullNames[i]) ||
+    shouldPrefix !== prevDepsRef.current.shouldPrefix;
+
+  if (depsChanged) {
+    prevDepsRef.current = {
+      queryData: currentQueryData,
+      repoFullNames: [...repoFullNames],
+      shouldPrefix,
+    };
+    combinedDiffsRef.current = repoFullNames.flatMap((repo, index) => {
+      const data = queries[index]?.data ?? [];
+      const prefix = shouldPrefix ? `${repo}:` : null;
+      return data.map((entry) => applyRepoPrefix(entry, prefix));
+    });
+  }
+
+  const combinedDiffs = combinedDiffsRef.current;
 
   if (combinedDiffs.length === 0) {
     return (

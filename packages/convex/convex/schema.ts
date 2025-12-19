@@ -569,8 +569,9 @@ const convexSchema = defineSchema({
     autoPrEnabled: v.optional(v.boolean()), // Auto-create PR for crown winner (default: false)
     nextLocalWorkspaceSequence: v.optional(v.number()), // Counter for local workspace naming
     // Heatmap review settings
-    heatmapModel: v.optional(v.string()), // Model to use for heatmap review (e.g., "gpt-4o-mini", "claude-3-5-haiku")
+    heatmapModel: v.optional(v.string()), // Model to use for heatmap review (e.g., "anthropic-opus-4-5", "cmux-heatmap-2")
     heatmapThreshold: v.optional(v.number()), // Score threshold for filtering (0-1, default: 0)
+    heatmapTooltipLanguage: v.optional(v.string()), // Language for tooltip text (e.g., "en", "zh-Hant", "ja")
     heatmapColors: v.optional(
       v.object({
         line: v.object({ start: v.string(), end: v.string() }), // Line background gradient colors

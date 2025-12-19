@@ -98,10 +98,12 @@ function SettingsComponent() {
     useState<typeof containerSettingsData>(null);
 
   // Heatmap settings state
-  const [heatmapModel, setHeatmapModel] = useState<string>("gpt-4o-mini");
-  const [originalHeatmapModel, setOriginalHeatmapModel] = useState<string>("gpt-4o-mini");
+  const [heatmapModel, setHeatmapModel] = useState<string>("anthropic-opus-4-5");
+  const [originalHeatmapModel, setOriginalHeatmapModel] = useState<string>("anthropic-opus-4-5");
   const [heatmapThreshold, setHeatmapThreshold] = useState<number>(0);
   const [originalHeatmapThreshold, setOriginalHeatmapThreshold] = useState<number>(0);
+  const [heatmapTooltipLanguage, setHeatmapTooltipLanguage] = useState<string>("en");
+  const [originalHeatmapTooltipLanguage, setOriginalHeatmapTooltipLanguage] = useState<string>("en");
   const [heatmapColors, setHeatmapColors] = useState<{
     line: { start: string; end: string };
     token: { start: string; end: string };
@@ -113,6 +115,31 @@ function SettingsComponent() {
     line: { start: "#fefce8", end: "#f8e1c9" },
     token: { start: "#fde047", end: "#ffa270" },
   });
+
+  // Heatmap model options from model-config.ts
+  const HEATMAP_MODEL_OPTIONS = [
+    { value: "anthropic-opus-4-5", label: "Claude Opus 4.5 (Most Accurate)", description: "Best quality reviews, slower" },
+    { value: "anthropic", label: "Claude Opus 4.1", description: "High quality, balanced speed" },
+    { value: "cmux-heatmap-2", label: "cmux-heatmap-2 (GPT-4.1 Fine-tuned)", description: "Fast, cost-effective" },
+    { value: "cmux-heatmap-1", label: "cmux-heatmap-1 (GPT-4.1 Mini)", description: "Fastest, most cost-effective" },
+  ];
+
+  // Tooltip language options
+  const TOOLTIP_LANGUAGE_OPTIONS = [
+    { value: "en", label: "English" },
+    { value: "zh-Hant", label: "繁體中文" },
+    { value: "zh-Hans", label: "简体中文" },
+    { value: "ja", label: "日本語" },
+    { value: "ko", label: "한국어" },
+    { value: "es", label: "Español" },
+    { value: "fr", label: "Français" },
+    { value: "de", label: "Deutsch" },
+    { value: "pt", label: "Português" },
+    { value: "ru", label: "Русский" },
+    { value: "vi", label: "Tiếng Việt" },
+    { value: "th", label: "ไทย" },
+    { value: "id", label: "Bahasa Indonesia" },
+  ];
 
   // Get all required API keys from agent configs
   const apiKeys = Array.from(
@@ -204,6 +231,7 @@ function SettingsComponent() {
       const settings = workspaceSettings as unknown as {
         heatmapModel?: string;
         heatmapThreshold?: number;
+        heatmapTooltipLanguage?: string;
         heatmapColors?: {
           line: { start: string; end: string };
           token: { start: string; end: string };
@@ -216,6 +244,10 @@ function SettingsComponent() {
       if (settings?.heatmapThreshold !== undefined) {
         setHeatmapThreshold(settings.heatmapThreshold);
         setOriginalHeatmapThreshold(settings.heatmapThreshold);
+      }
+      if (settings?.heatmapTooltipLanguage) {
+        setHeatmapTooltipLanguage(settings.heatmapTooltipLanguage);
+        setOriginalHeatmapTooltipLanguage(settings.heatmapTooltipLanguage);
       }
       if (settings?.heatmapColors) {
         setHeatmapColors(settings.heatmapColors);
@@ -323,6 +355,7 @@ function SettingsComponent() {
     // Heatmap settings changes
     const heatmapModelChanged = heatmapModel !== originalHeatmapModel;
     const heatmapThresholdChanged = heatmapThreshold !== originalHeatmapThreshold;
+    const heatmapTooltipLanguageChanged = heatmapTooltipLanguage !== originalHeatmapTooltipLanguage;
     const heatmapColorsChanged =
       JSON.stringify(heatmapColors) !== JSON.stringify(originalHeatmapColors);
 
@@ -333,6 +366,7 @@ function SettingsComponent() {
       containerSettingsChanged ||
       heatmapModelChanged ||
       heatmapThresholdChanged ||
+      heatmapTooltipLanguageChanged ||
       heatmapColorsChanged
     );
   };
@@ -350,6 +384,7 @@ function SettingsComponent() {
         autoPrEnabled !== originalAutoPrEnabled ||
         heatmapModel !== originalHeatmapModel ||
         heatmapThreshold !== originalHeatmapThreshold ||
+        heatmapTooltipLanguage !== originalHeatmapTooltipLanguage ||
         JSON.stringify(heatmapColors) !== JSON.stringify(originalHeatmapColors);
 
       if (workspaceSettingsChanged) {
@@ -359,12 +394,14 @@ function SettingsComponent() {
           autoPrEnabled,
           heatmapModel,
           heatmapThreshold,
+          heatmapTooltipLanguage,
           heatmapColors,
         });
         setOriginalWorktreePath(worktreePath);
         setOriginalAutoPrEnabled(autoPrEnabled);
         setOriginalHeatmapModel(heatmapModel);
         setOriginalHeatmapThreshold(heatmapThreshold);
+        setOriginalHeatmapTooltipLanguage(heatmapTooltipLanguage);
         setOriginalHeatmapColors(heatmapColors);
       }
 
@@ -739,10 +776,53 @@ function SettingsComponent() {
 
             {/* Heatmap Review Settings */}
             <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">
-              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
                 <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
                   Diff Heatmap Review
                 </h2>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const config = {
+                        heatmapModel,
+                        heatmapThreshold,
+                        heatmapTooltipLanguage,
+                        heatmapColors,
+                      };
+                      navigator.clipboard.writeText(JSON.stringify(config, null, 2));
+                      toast.success("Config copied to clipboard");
+                    }}
+                    className="px-2 py-1 text-xs rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    Copy Config
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const text = await navigator.clipboard.readText();
+                        const config = JSON.parse(text) as {
+                          heatmapModel?: string;
+                          heatmapThreshold?: number;
+                          heatmapTooltipLanguage?: string;
+                          heatmapColors?: typeof heatmapColors;
+                        };
+                        if (config.heatmapModel) setHeatmapModel(config.heatmapModel);
+                        if (config.heatmapThreshold !== undefined) setHeatmapThreshold(config.heatmapThreshold);
+                        if (config.heatmapTooltipLanguage) setHeatmapTooltipLanguage(config.heatmapTooltipLanguage);
+                        if (config.heatmapColors) setHeatmapColors(config.heatmapColors);
+                        toast.success("Config loaded from clipboard");
+                      } catch (error) {
+                        console.error("Failed to load config:", error);
+                        toast.error("Failed to load config - make sure you copied a valid config");
+                      }
+                    }}
+                    className="px-2 py-1 text-xs rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    Load Config
+                  </button>
+                </div>
               </div>
               <div className="p-4 space-y-6">
                 {/* Model Selector */}
@@ -762,11 +842,41 @@ function SettingsComponent() {
                     onChange={(e) => setHeatmapModel(e.target.value)}
                     className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm"
                   >
-                    <option value="gpt-4o-mini">GPT-4o Mini (Fast, Cost-effective)</option>
-                    <option value="gpt-4o">GPT-4o (Balanced)</option>
-                    <option value="claude-3-5-haiku-latest">Claude 3.5 Haiku (Fast)</option>
-                    <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (Balanced)</option>
-                    <option value="claude-opus-4-20250514">Claude Opus 4 (Most Accurate)</option>
+                    {HEATMAP_MODEL_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {HEATMAP_MODEL_OPTIONS.find((opt) => opt.value === heatmapModel)?.description && (
+                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                      {HEATMAP_MODEL_OPTIONS.find((opt) => opt.value === heatmapModel)?.description}
+                    </p>
+                  )}
+                </div>
+
+                {/* Tooltip Language Selector */}
+                <div>
+                  <label
+                    htmlFor="heatmapTooltipLanguage"
+                    className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2"
+                  >
+                    Tooltip Language
+                  </label>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+                    Language for the review comments shown in heatmap tooltips.
+                  </p>
+                  <select
+                    id="heatmapTooltipLanguage"
+                    value={heatmapTooltipLanguage}
+                    onChange={(e) => setHeatmapTooltipLanguage(e.target.value)}
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm"
+                  >
+                    {TOOLTIP_LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

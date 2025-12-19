@@ -13,10 +13,16 @@ import type { ComparisonJobDetails } from "./comparison";
 import { PR_REVIEW_STRATEGY } from "@/pr-review.config";
 import { runHeatmapReview } from "./run-heatmap-review";
 import type { ModelConfig } from "./run-simple-anthropic-review";
+import { getHeatmapModelConfigForSelection, normalizeHeatmapModelQueryValue, type TooltipLanguageValue, normalizeTooltipLanguage } from "./model-config";
 import { loadOptionsFromEnv } from "@/scripts/pr-review/core/options";
 import type { PrReviewStrategyId } from "@/scripts/pr-review/core/options";
 
 type ComparisonJobPayload = Pick<ComparisonJobDetails, "slug" | "base" | "head">;
+
+interface FileDiff {
+  filePath: string;
+  diffText: string;
+}
 
 type StartCodeReviewPayload = {
   teamSlugOrId?: string;
@@ -28,6 +34,12 @@ type StartCodeReviewPayload = {
   force?: boolean;
   comparison?: ComparisonJobPayload;
   modelConfig?: ModelConfig;
+  /** Pre-fetched diffs from the client to avoid re-fetching from GitHub API */
+  fileDiffs?: FileDiff[];
+  /** Model selection for heatmap review (e.g., "anthropic-opus-4-5", "cmux-heatmap-2") */
+  heatmapModel?: string;
+  /** Language for tooltip text (e.g., "en", "zh-Hant", "ja") */
+  tooltipLanguage?: string;
 };
 
 type StartCodeReviewOptions = {
@@ -291,6 +303,16 @@ export async function startCodeReviewJob({
             }
           : undefined;
 
+        // Derive model config from heatmapModel if provided, otherwise use modelConfig or let runHeatmapReview use default
+        const effectiveModelConfig: ModelConfig | undefined = payload.heatmapModel
+          ? getHeatmapModelConfigForSelection(normalizeHeatmapModelQueryValue(payload.heatmapModel))
+          : payload.modelConfig;
+
+        // Normalize tooltip language
+        const effectiveTooltipLanguage: TooltipLanguageValue | undefined = payload.tooltipLanguage
+          ? normalizeTooltipLanguage(payload.tooltipLanguage)
+          : undefined;
+
         await runHeatmapReview({
           jobId: job.jobId,
           teamId: job.teamId ?? undefined,
@@ -299,8 +321,10 @@ export async function startCodeReviewJob({
           accessToken,
           callbackToken,
           githubAccessToken,
-          modelConfig: payload.modelConfig,
+          modelConfig: effectiveModelConfig,
+          tooltipLanguage: effectiveTooltipLanguage,
           comparison: comparisonConfig,
+          fileDiffs: payload.fileDiffs,
         });
       } else {
         console.info("[code-review] Starting automated PR review (Morph)", {

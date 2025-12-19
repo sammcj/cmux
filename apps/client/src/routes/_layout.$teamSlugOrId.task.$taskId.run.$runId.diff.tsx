@@ -9,7 +9,7 @@ import { gitDiffQueryOptions } from "@/queries/git-diff";
 import { parseReviewHeatmap, type ReviewHeatmapLine } from "@/lib/heatmap";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
-import type { CreateLocalWorkspaceResponse } from "@cmux/shared";
+import type { CreateLocalWorkspaceResponse, ReplaceDiffEntry } from "@cmux/shared";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery as useRQ, useMutation as useRQMutation } from "@tanstack/react-query";
@@ -28,7 +28,18 @@ import z from "zod";
 import { useCombinedWorkflowData, WorkflowRunsSection } from "@/components/WorkflowRunsSection";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { postApiCodeReviewStartMutation } from "@cmux/www-openapi-client/react-query";
-import { Button } from "@/components/ui/button";
+
+/** Convert ReplaceDiffEntry[] to the format expected by heatmap API */
+function convertDiffsToFileDiffs(
+  diffs: ReplaceDiffEntry[]
+): Array<{ filePath: string; diffText: string }> {
+  return diffs
+    .filter((entry) => entry.patch && !entry.isBinary)
+    .map((entry) => ({
+      filePath: entry.filePath,
+      diffText: entry.patch!,
+    }));
+}
 
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
@@ -228,19 +239,21 @@ function RunDiffPage() {
   }, [runId, taskRuns]);
 
   // Heatmap review state - automatically fetched via streaming Convex subscription
-  const [heatmapByFile, setHeatmapByFile] = useState<Map<string, ReviewHeatmapLine[]> | undefined>(undefined);
-  const [heatmapJobStarted, setHeatmapJobStarted] = useState(false);
   const [comparisonSlug, setComparisonSlug] = useState<string | null>(null);
 
-  // Query workspace settings for heatmap threshold
+  // Query workspace settings for heatmap configuration
   const workspaceSettingsQuery = useRQ({
     ...convexQuery(api.workspaceSettings.get, { teamSlugOrId }),
     enabled: Boolean(teamSlugOrId),
   });
   const workspaceSettings = workspaceSettingsQuery.data as {
     heatmapThreshold?: number;
+    heatmapModel?: string;
+    heatmapTooltipLanguage?: string;
   } | null | undefined;
   const heatmapThreshold = workspaceSettings?.heatmapThreshold ?? 0;
+  const heatmapModel = workspaceSettings?.heatmapModel;
+  const heatmapTooltipLanguage = workspaceSettings?.heatmapTooltipLanguage;
 
   // Code review mutation to start the heatmap job
   const codeReviewMutation = useRQMutation({
@@ -250,47 +263,21 @@ function RunDiffPage() {
         jobId: data.job?.jobId,
         state: data.job?.state,
         comparisonSlug: data.job?.comparisonSlug,
-        hasCodeReviewOutput: Boolean(data.job?.codeReviewOutput),
       });
 
-      // Store comparison slug for subscription
+      // Store comparison slug for subscription (if not already set)
       if (data.job?.comparisonSlug) {
         setComparisonSlug(data.job.comparisonSlug);
-      }
-      // Check if we already have output (from a completed deduplicated job)
-      // The codeReviewOutput shape is: { strategy, reviewType, files: Array<{ filePath, lines }>, ... }
-      const reviewOutput = data.job?.codeReviewOutput;
-      if (reviewOutput && typeof reviewOutput === "object") {
-        console.log("[heatmap] Processing codeReviewOutput from completed job", reviewOutput);
-        const heatmapData = new Map<string, ReviewHeatmapLine[]>();
-        const files = (reviewOutput as { files?: unknown }).files;
-        if (Array.isArray(files)) {
-          console.log("[heatmap] Found files array with", files.length, "entries");
-          for (const fileEntry of files) {
-            if (typeof fileEntry === "object" && fileEntry !== null) {
-              const filePath = (fileEntry as { filePath?: unknown }).filePath;
-              if (typeof filePath === "string") {
-                const parsed = parseReviewHeatmap(fileEntry);
-                console.log("[heatmap] Parsed", filePath, "got", parsed.length, "lines");
-                if (parsed.length > 0) {
-                  heatmapData.set(filePath, parsed);
-                }
-              }
-            }
-          }
-        } else {
-          console.log("[heatmap] No files array found in codeReviewOutput");
-        }
-        if (heatmapData.size > 0) {
-          console.log("[heatmap] Setting heatmapByFile with", heatmapData.size, "files");
-          setHeatmapByFile(heatmapData);
-        }
       }
     },
     onError: (error) => {
       console.error("[heatmap] Mutation failed:", error);
     },
   });
+
+  // Use ref to avoid mutation object in dependency arrays (prevents infinite loops)
+  const codeReviewMutationRef = useRef(codeReviewMutation);
+  codeReviewMutationRef.current = codeReviewMutation;
 
   const runDiffContextQuery = useRQ({
     ...convexQuery(api.taskRuns.getRunDiffContext, {
@@ -384,44 +371,76 @@ function RunDiffPage() {
     };
   }, [primaryRepo, baseBranchMetadata]);
 
+  // Fetch diffs for heatmap review (this reuses the cached data from RunDiffSection)
+  const baseRefForHeatmap = normalizeGitRef(task?.baseBranch || "main");
+  const headRefForHeatmap = normalizeGitRef(selectedRun?.newBranch);
+  const diffQueryEnabled = Boolean(primaryRepo) && Boolean(baseRefForHeatmap) && Boolean(headRefForHeatmap);
+  const diffQuery = useRQ({
+    ...gitDiffQueryOptions({
+      repoFullName: primaryRepo ?? "",
+      baseRef: baseRefForHeatmap,
+      headRef: headRefForHeatmap ?? "",
+      lastKnownBaseSha: baseBranchMetadata?.lastKnownBaseSha ?? undefined,
+      lastKnownMergeCommitSha: baseBranchMetadata?.lastKnownMergeCommitSha ?? undefined,
+    }),
+    enabled: diffQueryEnabled,
+  });
+
+  // Convert diffs to the format expected by the heatmap API
+  const fileDiffsForHeatmap = useMemo(() => {
+    if (!diffQuery.data) return undefined;
+    return convertDiffsToFileDiffs(diffQuery.data);
+  }, [diffQuery.data]);
+
   // Subscribe to streaming file outputs from Convex
+  // IMPORTANT: Use useMemo for query args to prevent new object reference on every render
+  // (which would cause Convex to re-subscribe and trigger infinite loops)
+  const fileOutputsQueryArgs = useMemo(
+    () =>
+      comparisonSlug && primaryRepo
+        ? {
+            teamSlugOrId,
+            repoFullName: primaryRepo,
+            comparisonSlug,
+          }
+        : ("skip" as const),
+    [teamSlugOrId, primaryRepo, comparisonSlug]
+  );
   const fileOutputs = useQuery(
     api.codeReview.listFileOutputsForComparison,
-    comparisonSlug && primaryRepo
-      ? {
-          teamSlugOrId,
-          repoFullName: primaryRepo,
-          comparisonSlug,
-        }
-      : "skip"
+    fileOutputsQueryArgs
   );
 
-  // Update heatmap as file outputs stream in
-  // Using a ref to track previous file count to avoid unnecessary re-renders
-  const prevFileOutputsLengthRef = useRef(0);
-  useEffect(() => {
-    const currentLength = fileOutputs?.length ?? 0;
-    // Only process if we have new files
-    if (currentLength === 0 || currentLength === prevFileOutputsLengthRef.current) {
-      return;
+  // Derive heatmapByFile from fileOutputs using useMemo (avoids setState infinite loops)
+  const heatmapByFile = useMemo(() => {
+    if (!fileOutputs || fileOutputs.length === 0) {
+      return undefined;
     }
-    prevFileOutputsLengthRef.current = currentLength;
-
-    console.log("[heatmap] fileOutputs update", { count: currentLength });
-
+    console.log("[heatmap] Processing file outputs", {
+      totalFiles: fileOutputs.length,
+      files: fileOutputs.map((o) => o.filePath),
+      queryArgs: fileOutputsQueryArgs,
+    });
     const heatmapData = new Map<string, ReviewHeatmapLine[]>();
-    if (fileOutputs) {
-      for (const output of fileOutputs) {
-        const parsed = parseReviewHeatmap(output.codexReviewOutput);
-        if (parsed.length > 0) {
-          heatmapData.set(output.filePath, parsed);
-        }
+    for (const output of fileOutputs) {
+      const parsed = parseReviewHeatmap(output.codexReviewOutput);
+      console.log("[heatmap] Parsed file", {
+        filePath: output.filePath,
+        parsedLines: parsed.length,
+        rawLinesCount: Array.isArray((output.codexReviewOutput as {lines?: unknown[]})?.lines)
+          ? (output.codexReviewOutput as {lines: unknown[]}).lines.length
+          : "unknown",
+      });
+      if (parsed.length > 0) {
+        heatmapData.set(output.filePath, parsed);
       }
     }
-    if (heatmapData.size > 0) {
-      setHeatmapByFile(heatmapData);
-    }
-  }, [fileOutputs]);
+    console.log("[heatmap] Final heatmap data", {
+      filesWithSuggestions: heatmapData.size,
+      totalFilesProcessed: fileOutputs.length,
+    });
+    return heatmapData.size > 0 ? heatmapData : undefined;
+  }, [fileOutputs, fileOutputsQueryArgs]);
 
   const taskRunId = selectedRun?._id ?? runId;
 
@@ -481,7 +500,12 @@ function RunDiffPage() {
   }, [socket, teamSlugOrId, primaryRepo, selectedRun?.newBranch, navigate, taskId]);
 
   // Handler to trigger heatmap review
-  const triggerHeatmapReview = useCallback((force = false) => {
+  const triggerHeatmapReview = useCallback((
+    force = false,
+    diffs?: Array<{ filePath: string; diffText: string }>,
+    model?: string,
+    language?: string
+  ) => {
     if (!primaryRepo || !selectedRun?.newBranch) {
       console.warn("[heatmap] Cannot trigger: missing primaryRepo or newBranch", {
         primaryRepo,
@@ -508,13 +532,15 @@ function RunDiffPage() {
       headBranch: selectedRun.newBranch,
       comparisonSlug: comparisonSlugValue,
       force,
+      fileDiffsCount: diffs?.length ?? 0,
+      heatmapModel: model,
+      tooltipLanguage: language,
     });
 
-    setHeatmapJobStarted(true);
     // Set comparisonSlug immediately to start subscription
     setComparisonSlug(comparisonSlugValue);
 
-    codeReviewMutation.mutate({
+    codeReviewMutationRef.current.mutate({
       body: {
         teamSlugOrId,
         githubLink,
@@ -536,9 +562,60 @@ function RunDiffPage() {
             label: `${repoOwner}:${selectedRun.newBranch}`,
           },
         },
+        // Pass pre-fetched diffs to avoid re-fetching from GitHub API
+        fileDiffs: diffs,
+        // Pass heatmap settings from workspace settings
+        heatmapModel: model,
+        tooltipLanguage: language,
       },
     });
-  }, [primaryRepo, selectedRun?.newBranch, task?.baseBranch, teamSlugOrId, codeReviewMutation]);
+  }, [primaryRepo, selectedRun?.newBranch, task?.baseBranch, teamSlugOrId]);
+
+  // Track if we've already auto-triggered the heatmap review
+  const hasAutoTriggeredRef = useRef(false);
+  // Track the last triggered branch/commit to detect changes and re-trigger
+  const lastTriggeredBranchRef = useRef<string | null>(null);
+
+  // Auto-trigger heatmap review when all required data is available (including diffs and settings)
+  // Also re-triggers when the branch changes (e.g., new commits pushed)
+  // The backend handles caching - if results already exist, it returns them immediately
+  useEffect(() => {
+    // Wait for all required data to be ready (including diffs)
+    if (!primaryRepo || !selectedRun?.newBranch) {
+      return;
+    }
+    // Wait for diff query to complete (or fail) before triggering
+    // This ensures we can pass the pre-fetched diffs to the backend
+    if (diffQuery.isLoading) {
+      return;
+    }
+    // Wait for workspace settings to load (to get model and language preferences)
+    if (workspaceSettingsQuery.isLoading) {
+      return;
+    }
+
+    // Build a key that represents the current state (branch + base)
+    const baseBranch = task?.baseBranch || "main";
+    const currentKey = `${primaryRepo}:${baseBranch}...${selectedRun.newBranch}`;
+
+    // Check if we need to re-trigger (first time or branch changed)
+    const shouldTrigger = !hasAutoTriggeredRef.current || lastTriggeredBranchRef.current !== currentKey;
+    if (!shouldTrigger) {
+      return;
+    }
+
+    // Mark as triggered and store the current key
+    hasAutoTriggeredRef.current = true;
+    lastTriggeredBranchRef.current = currentKey;
+
+    // Compute the comparison slug to start the subscription immediately
+    const comparisonSlugValue = `${baseBranch}...${selectedRun.newBranch}`;
+    setComparisonSlug(comparisonSlugValue);
+
+    // Trigger the review with pre-fetched diffs and settings (backend will return cached results if available)
+    // Force re-run if the branch changed (lastTriggeredBranchRef was different)
+    triggerHeatmapReview(false, fileDiffsForHeatmap, heatmapModel, heatmapTooltipLanguage);
+  }, [primaryRepo, selectedRun?.newBranch, task?.baseBranch, triggerHeatmapReview, diffQuery.isLoading, fileDiffsForHeatmap, workspaceSettingsQuery.isLoading, heatmapModel, heatmapTooltipLanguage]);
 
   // 404 if selected run is missing
   if (!selectedRun) {
@@ -584,46 +661,6 @@ function RunDiffPage() {
               </div>
             </div>
           )}
-          {/* Heatmap review status and manual trigger */}
-          <div className="mb-2 px-3.5 flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="!h-7 text-xs"
-              onClick={() => {
-                setHeatmapJobStarted(false);
-                setHeatmapByFile(undefined);
-                setComparisonSlug(null);
-                triggerHeatmapReview(false);
-              }}
-              disabled={codeReviewMutation.isPending || !primaryRepo || !selectedRun?.newBranch}
-            >
-              {codeReviewMutation.isPending ? "Running..." : heatmapByFile ? "Re-run Heatmap" : "Run Heatmap"}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="!h-7 text-xs text-neutral-500"
-              onClick={() => {
-                setHeatmapJobStarted(false);
-                setHeatmapByFile(undefined);
-                setComparisonSlug(null);
-                triggerHeatmapReview(true);
-              }}
-              disabled={codeReviewMutation.isPending || !primaryRepo || !selectedRun?.newBranch}
-            >
-              Force Restart
-            </Button>
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">
-              {heatmapByFile
-                ? `${heatmapByFile.size} files analyzed`
-                : comparisonSlug
-                  ? `Streaming: ${fileOutputs?.length ?? 0} files`
-                  : heatmapJobStarted
-                    ? "Starting..."
-                    : "Not started"}
-            </span>
-          </div>
           <div className="bg-white dark:bg-neutral-900 flex-1 min-h-0 flex flex-col">
             {pullRequests && pullRequests.length > 0 && (
               <Suspense fallback={null}>

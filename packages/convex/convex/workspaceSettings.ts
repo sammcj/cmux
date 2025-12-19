@@ -25,6 +25,7 @@ export const update = authMutation({
     autoPrEnabled: v.optional(v.boolean()),
     heatmapModel: v.optional(v.string()),
     heatmapThreshold: v.optional(v.number()),
+    heatmapTooltipLanguage: v.optional(v.string()),
     heatmapColors: v.optional(
       v.object({
         line: v.object({ start: v.string(), end: v.string() }),
@@ -49,6 +50,7 @@ export const update = authMutation({
         autoPrEnabled?: boolean;
         heatmapModel?: string;
         heatmapThreshold?: number;
+        heatmapTooltipLanguage?: string;
         heatmapColors?: {
           line: { start: string; end: string };
           token: { start: string; end: string };
@@ -68,6 +70,9 @@ export const update = authMutation({
       if (args.heatmapThreshold !== undefined) {
         updates.heatmapThreshold = args.heatmapThreshold;
       }
+      if (args.heatmapTooltipLanguage !== undefined) {
+        updates.heatmapTooltipLanguage = args.heatmapTooltipLanguage;
+      }
       if (args.heatmapColors !== undefined) {
         updates.heatmapColors = args.heatmapColors;
       }
@@ -79,6 +84,7 @@ export const update = authMutation({
         autoPrEnabled: args.autoPrEnabled,
         heatmapModel: args.heatmapModel,
         heatmapThreshold: args.heatmapThreshold,
+        heatmapTooltipLanguage: args.heatmapTooltipLanguage,
         heatmapColors: args.heatmapColors,
         nextLocalWorkspaceSequence: 0,
         createdAt: now,

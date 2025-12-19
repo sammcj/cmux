@@ -399,13 +399,9 @@ function HeatmapTooltipBody({
   reason: string | null;
 }) {
   const theme = getHeatmapTooltipTheme(score);
-  const scorePercent = Math.round(score * 100);
-
+  // Only show the reason/comment - no "Review importance: X%" prefix
   return (
     <div className="text-left text-xs leading-relaxed">
-      <div className={cn("font-medium mb-1", theme.titleClass)}>
-        Review importance: {scorePercent}%
-      </div>
       {reason ? (
         <p className={cn("text-xs", theme.reasonClass)}>{reason}</p>
       ) : null}
@@ -439,6 +435,7 @@ function HeatmapGutterTooltip({
       <TooltipContent
         side="left"
         align="start"
+        showArrow={false}
         className={cn(
           "max-w-xs space-y-1 text-left leading-relaxed border backdrop-blur",
           theme.contentClass
@@ -606,6 +603,7 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
                   side="bottom"
                   align="start"
                   sideOffset={0}
+                  showArrow={false}
                   className={cn(
                     "max-w-xs space-y-1 text-left leading-relaxed border backdrop-blur",
                     getHeatmapTooltipTheme(tooltipMeta.score).contentClass
