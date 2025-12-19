@@ -77,6 +77,11 @@ function SettingsComponent() {
   const [autoPrEnabled, setAutoPrEnabled] = useState<boolean>(false);
   const [originalAutoPrEnabled, setOriginalAutoPrEnabled] =
     useState<boolean>(false);
+  const [crownModel, setCrownModel] = useState<string>("");
+  const [originalCrownModel, setOriginalCrownModel] = useState<string>("");
+  const [crownSystemPrompt, setCrownSystemPrompt] = useState<string>("");
+  const [originalCrownSystemPrompt, setOriginalCrownSystemPrompt] =
+    useState<string>("");
   // const [isSaveButtonVisible, setIsSaveButtonVisible] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const saveButtonRef = useRef<HTMLDivElement>(null);
@@ -171,7 +176,7 @@ function SettingsComponent() {
     return "";
   };
 
-  // Initialize worktree path when data loads
+  // Initialize worktree path and crown settings when data loads
   useEffect(() => {
     if (workspaceSettings !== undefined) {
       setWorktreePath(workspaceSettings?.worktreePath || "");
@@ -182,6 +187,15 @@ function SettingsComponent() {
       const effective = enabled === undefined ? false : Boolean(enabled);
       setAutoPrEnabled(effective);
       setOriginalAutoPrEnabled(effective);
+      // Crown settings
+      const settings = workspaceSettings as unknown as {
+        crownModel?: string;
+        crownSystemPrompt?: string;
+      };
+      setCrownModel(settings?.crownModel || "");
+      setOriginalCrownModel(settings?.crownModel || "");
+      setCrownSystemPrompt(settings?.crownSystemPrompt || "");
+      setOriginalCrownSystemPrompt(settings?.crownSystemPrompt || "");
     }
   }, [workspaceSettings]);
 
@@ -281,11 +295,18 @@ function SettingsComponent() {
     // Auto PR toggle changes
     const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
 
+    // Crown settings changes
+    const crownModelChanged = crownModel !== originalCrownModel;
+    const crownSystemPromptChanged =
+      crownSystemPrompt !== originalCrownSystemPrompt;
+
     return (
       worktreePathChanged ||
       autoPrChanged ||
       apiKeysChanged ||
-      containerSettingsChanged
+      containerSettingsChanged ||
+      crownModelChanged ||
+      crownSystemPromptChanged
     );
   };
 
@@ -296,18 +317,24 @@ function SettingsComponent() {
       let savedCount = 0;
       let deletedCount = 0;
 
-      // Save worktree path / auto PR if changed
+      // Save worktree path / auto PR / crown settings if changed
       if (
         worktreePath !== originalWorktreePath ||
-        autoPrEnabled !== originalAutoPrEnabled
+        autoPrEnabled !== originalAutoPrEnabled ||
+        crownModel !== originalCrownModel ||
+        crownSystemPrompt !== originalCrownSystemPrompt
       ) {
         await convex.mutation(api.workspaceSettings.update, {
           teamSlugOrId,
           worktreePath: worktreePath || undefined,
           autoPrEnabled,
+          crownModel: crownModel || undefined,
+          crownSystemPrompt: crownSystemPrompt || undefined,
         });
         setOriginalWorktreePath(worktreePath);
         setOriginalAutoPrEnabled(autoPrEnabled);
+        setOriginalCrownModel(crownModel);
+        setOriginalCrownSystemPrompt(crownSystemPrompt);
       }
 
       // Save container settings if changed
@@ -657,7 +684,7 @@ function SettingsComponent() {
                   Crown Evaluator
                 </h2>
               </div>
-              <div className="p-4">
+              <div className="p-4 space-y-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
@@ -675,6 +702,66 @@ function SettingsComponent() {
                     isSelected={autoPrEnabled}
                     onValueChange={setAutoPrEnabled}
                   />
+                </div>
+
+                {/* Crown Model Selection */}
+                <div>
+                  <label
+                    htmlFor="crownModel"
+                    className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2"
+                  >
+                    Evaluation Model
+                  </label>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+                    Select which model to use for evaluating and comparing agent outputs.
+                    Leave empty to use the default.
+                  </p>
+                  <select
+                    id="crownModel"
+                    value={crownModel}
+                    onChange={(e) => setCrownModel(e.target.value)}
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                  >
+                    <option value="">Default (gpt-5-mini or claude-3-5-sonnet)</option>
+                    <optgroup label="OpenAI">
+                      <option value="gpt-5-mini">GPT-5 Mini</option>
+                      <option value="gpt-5">GPT-5</option>
+                      <option value="gpt-4.1">GPT-4.1</option>
+                      <option value="o3">O3</option>
+                      <option value="o4-mini">O4 Mini</option>
+                    </optgroup>
+                    <optgroup label="Anthropic">
+                      <option value="claude-opus-4">Claude Opus 4</option>
+                      <option value="claude-sonnet-4">Claude Sonnet 4</option>
+                      <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                      <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
+                    </optgroup>
+                  </select>
+                </div>
+
+                {/* Crown System Prompt */}
+                <div>
+                  <label
+                    htmlFor="crownSystemPrompt"
+                    className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2"
+                  >
+                    Custom System Prompt
+                  </label>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+                    Customize the system prompt used when evaluating agent outputs.
+                    Leave empty to use the default evaluation criteria.
+                  </p>
+                  <textarea
+                    id="crownSystemPrompt"
+                    value={crownSystemPrompt}
+                    onChange={(e) => setCrownSystemPrompt(e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-mono text-xs"
+                    placeholder="You select the best implementation from structured diff inputs and explain briefly why."
+                  />
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
+                    Default: "You select the best implementation from structured diff inputs and explain briefly why."
+                  </p>
                 </div>
               </div>
             </div>

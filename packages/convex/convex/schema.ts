@@ -568,6 +568,9 @@ const convexSchema = defineSchema({
     worktreePath: v.optional(v.string()), // Custom path for git worktrees
     autoPrEnabled: v.optional(v.boolean()), // Auto-create PR for crown winner (default: false)
     nextLocalWorkspaceSequence: v.optional(v.number()), // Counter for local workspace naming
+    // Crown evaluator settings
+    crownModel: v.optional(v.string()), // Model to use for crown evaluation (e.g., "gpt-5-mini", "claude-sonnet-4")
+    crownSystemPrompt: v.optional(v.string()), // Custom system prompt for crown evaluation
     createdAt: v.number(),
     updatedAt: v.number(),
     userId: v.string(),
