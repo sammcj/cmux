@@ -744,19 +744,41 @@ function HeatmapThresholdControl({
 }) {
   const sliderId = useId();
   const descriptionId = `${sliderId}-description`;
-  const percent = Math.round(Math.min(Math.max(value, 0), 1) * 100);
 
+  // Local state for immediate visual feedback during drag
+  const [localPercent, setLocalPercent] = useState<number | null>(null);
+  const isDragging = localPercent !== null;
+  const displayPercent = isDragging
+    ? localPercent
+    : Math.round(Math.min(Math.max(value, 0), 1) * 100);
+
+  // Sync local state when external value changes (and not dragging)
+  useEffect(() => {
+    if (!isDragging) {
+      setLocalPercent(null);
+    }
+  }, [value, isDragging]);
+
+  // Update local state during drag for visual feedback
   const handleSliderChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const numeric = Number.parseInt(event.target.value, 10);
       if (Number.isNaN(numeric)) {
         return;
       }
-      const normalized = Math.min(Math.max(numeric / 100, 0), 1);
-      onChange(normalized);
+      setLocalPercent(Math.min(Math.max(numeric, 0), 100));
     },
-    [onChange]
+    []
   );
+
+  // Commit value to parent only on release
+  const handleSliderCommit = useCallback(() => {
+    if (localPercent !== null) {
+      const normalized = Math.min(Math.max(localPercent / 100, 0), 1);
+      onChange(normalized);
+      setLocalPercent(null);
+    }
+  }, [localPercent, onChange]);
 
   const handleColorChange = useCallback(
     (section: keyof HeatmapColorSettings, stop: keyof HeatmapColorSettings["line"]) =>
@@ -802,7 +824,7 @@ function HeatmapThresholdControl({
           &ldquo;Should review&rdquo; threshold
         </label>
         <span className="flex-shrink-0 text-xs font-semibold text-neutral-600 dark:text-neutral-300">
-          ≥ <span className="tabular-nums">{percent}%</span>
+          ≥ <span className="tabular-nums">{displayPercent}%</span>
         </span>
       </div>
       <input
@@ -811,13 +833,15 @@ function HeatmapThresholdControl({
         min={0}
         max={100}
         step={1}
-        value={percent}
+        value={displayPercent}
         onChange={handleSliderChange}
+        onMouseUp={handleSliderCommit}
+        onTouchEnd={handleSliderCommit}
         className="mt-3 w-full accent-sky-500"
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={percent}
-        aria-valuetext={`"Should review" threshold ${percent} percent`}
+        aria-valuenow={displayPercent}
+        aria-valuetext={`"Should review" threshold ${displayPercent} percent`}
         aria-describedby={descriptionId}
       />
       <p id={descriptionId} className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
@@ -2248,21 +2272,23 @@ export function GitDiffHeatmapReviewViewer({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch lg:gap-0">
         <aside
           id={sidebarPanelId}
-          className="relative w-full lg:sticky lg:top-2 lg:h-[calc(100vh-0.5rem)] lg:flex-none lg:overflow-y-auto lg:overscroll-contain lg:w-[var(--pr-diff-sidebar-width)] lg:min-w-[15rem] lg:max-w-[32.5rem] lg:pl-3"
+          className="relative w-full lg:sticky lg:top-2 lg:h-[calc(100vh-0.5rem)] lg:flex-none lg:flex lg:flex-col lg:w-[var(--pr-diff-sidebar-width)] lg:min-w-[15rem] lg:max-w-[32.5rem] lg:pl-3"
           style={
             {
               "--pr-diff-sidebar-width": `${sidebarWidth}px`,
             } as CSSProperties
           }
         >
-          <div className="flex flex-col gap-3">
-            <div className="lg:sticky lg:top-0 lg:z-10 lg:bg-white dark:lg:bg-neutral-900">
-              <ReviewProgressIndicator
-                totalFileCount={totalFileCount}
-                processedFileCount={processedFileCount}
-                isLoading={isLoadingFileOutputs}
-              />
-            </div>
+          {/* Fixed at top - does not scroll */}
+          <div className="flex-shrink-0">
+            <ReviewProgressIndicator
+              totalFileCount={totalFileCount}
+              processedFileCount={processedFileCount}
+              isLoading={isLoadingFileOutputs}
+            />
+          </div>
+          {/* Scrollable content below */}
+          <div className="flex flex-col gap-3 lg:overflow-y-auto lg:overscroll-contain lg:flex-1 lg:mt-3">
             <HeatmapThresholdControl
               value={heatmapThreshold}
               onChange={(next) => onHeatmapThresholdChange?.(next)}
