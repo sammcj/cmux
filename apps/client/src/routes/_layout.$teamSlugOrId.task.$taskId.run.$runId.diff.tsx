@@ -20,10 +20,11 @@ import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery as useRQ } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import {
   Suspense,
   useCallback,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -269,20 +270,28 @@ function RunDiffPage() {
   const { taskId, teamSlugOrId, runId } = Route.useParams();
   const [diffControls, setDiffControls] = useState<DiffControls | null>(null);
   const { socket } = useSocket();
-  const task = useQuery(api.tasks.getById, {
-    teamSlugOrId,
-    id: taskId,
+  // Use React Query-wrapped Convex queries to avoid real-time subscriptions
+  // that cause excessive re-renders. The data is prefetched in the loader.
+  const taskQuery = useRQ({
+    ...convexQuery(api.tasks.getById, { teamSlugOrId, id: taskId }),
+    enabled: Boolean(teamSlugOrId && taskId),
   });
-  const taskRuns = useQuery(api.taskRuns.getByTask, {
-    teamSlugOrId,
-    taskId,
+  const task = taskQuery.data;
+  const taskRunsQuery = useRQ({
+    ...convexQuery(api.taskRuns.getByTask, { teamSlugOrId, taskId }),
+    enabled: Boolean(teamSlugOrId && taskId),
   });
+  const taskRuns = taskRunsQuery.data;
   const selectedRun = useMemo(() => {
     return taskRuns?.find((run) => run._id === runId);
   }, [runId, taskRuns]);
   const [streamStateByFile, setStreamStateByFile] = useState<
     Map<string, StreamFileState>
   >(() => new Map());
+  // Defer the stream state to batch rapid SSE updates and prevent render thrashing.
+  // This allows React to process multiple line events before triggering expensive
+  // re-computations in the diff viewer component.
+  const deferredStreamStateByFile = useDeferredValue(streamStateByFile);
   const activeReviewControllerRef = useRef<AbortController | null>(null);
   const activeReviewKeyRef = useRef<string | null>(null);
 
@@ -1025,7 +1034,7 @@ function RunDiffPage() {
                     ref1={baseRef}
                     ref2={headRef}
                     onControlsChange={setDiffControls}
-                    streamStateByFile={streamStateByFile}
+                    streamStateByFile={deferredStreamStateByFile}
                     heatmapThreshold={heatmapThreshold}
                     heatmapColors={heatmapColors}
                     heatmapModel={heatmapModel}

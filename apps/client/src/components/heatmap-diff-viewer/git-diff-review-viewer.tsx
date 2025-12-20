@@ -1091,6 +1091,55 @@ type FileDiffCardProps = {
   heatmapColors: HeatmapColorSettings;
 };
 
+function areDiffLineLocationsEqual(
+  a: DiffLineLocation | null,
+  b: DiffLineLocation | null
+): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  return a.side === b.side && a.lineNumber === b.lineNumber;
+}
+
+function areReviewHeatmapLinesEqual(
+  a: ReviewHeatmapLine[],
+  b: ReviewHeatmapLine[]
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const lineA = a[i];
+    const lineB = b[i];
+    if (!lineA || !lineB) return false;
+    if (
+      lineA.lineNumber !== lineB.lineNumber ||
+      lineA.lineText !== lineB.lineText ||
+      lineA.score !== lineB.score ||
+      lineA.reason !== lineB.reason
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function areFileDiffCardPropsEqual(
+  prev: FileDiffCardProps,
+  next: FileDiffCardProps
+): boolean {
+  return (
+    prev.entry === next.entry &&
+    prev.status === next.status &&
+    prev.focusedChangeKey === next.focusedChangeKey &&
+    prev.isLoading === next.isLoading &&
+    prev.isCollapsed === next.isCollapsed &&
+    prev.heatmapThreshold === next.heatmapThreshold &&
+    prev.heatmapColors === next.heatmapColors &&
+    areDiffLineLocationsEqual(prev.focusedLine, next.focusedLine) &&
+    areDiffLineLocationsEqual(prev.autoTooltipLine, next.autoTooltipLine) &&
+    areReviewHeatmapLinesEqual(prev.reviewHeatmap, next.reviewHeatmap)
+  );
+}
+
 const FileDiffCard = memo(function FileDiffCardComponent({
   entry,
   status,
@@ -1160,7 +1209,7 @@ const FileDiffCard = memo(function FileDiffCardComponent({
       />
     </div>
   );
-});
+}, areFileDiffCardPropsEqual);
 
 export function GitDiffHeatmapReviewViewer({
   diffs,
@@ -1178,10 +1227,13 @@ export function GitDiffHeatmapReviewViewer({
   onHeatmapTooltipLanguageChange,
   onControlsChange,
 }: GitDiffHeatmapReviewViewerProps) {
-  const effectiveHeatmapColors = useMemo(
+  // Use useDeferredValue to defer color changes and prevent blocking renders
+  // when color pickers are being used. This matches the 0github implementation.
+  const normalizedHeatmapColors = useMemo(
     () => normalizeHeatmapColors(heatmapColors),
     [heatmapColors]
   );
+  const effectiveHeatmapColors = useDeferredValue(normalizedHeatmapColors);
   const effectiveHeatmapModel = normalizeHeatmapModel(
     heatmapModel ?? DEFAULT_HEATMAP_MODEL
   );
