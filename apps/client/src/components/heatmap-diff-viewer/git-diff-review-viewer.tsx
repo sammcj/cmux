@@ -413,7 +413,7 @@ function buildUnifiedDiffFromContent(entry: ReplaceDiffEntry): string {
   return [...header, ...hunks].join("\n");
 }
 
-export function buildDiffText(entry: ReplaceDiffEntry): string | null {
+function buildDiffText(entry: ReplaceDiffEntry): string | null {
   const patch = entry.patch ?? buildUnifiedDiffFromContent(entry);
   if (!patch) {
     return null;
@@ -1144,7 +1144,8 @@ type FileDiffCardProps = {
   autoTooltipLine: DiffLineLocation | null;
   isLoading: boolean;
   isCollapsed: boolean;
-  onCollapseChange: (collapsed: boolean) => void;
+  filePath: string;
+  onFileCollapseChange: (filePath: string, collapsed: boolean) => void;
   heatmapThreshold: number;
   heatmapColors: HeatmapColorSettings;
 };
@@ -1190,6 +1191,8 @@ function areFileDiffCardPropsEqual(
     prev.focusedChangeKey === next.focusedChangeKey &&
     prev.isLoading === next.isLoading &&
     prev.isCollapsed === next.isCollapsed &&
+    prev.filePath === next.filePath &&
+    prev.onFileCollapseChange === next.onFileCollapseChange &&
     prev.heatmapThreshold === next.heatmapThreshold &&
     prev.heatmapColors === next.heatmapColors &&
     prev.scrollContainer === next.scrollContainer &&
@@ -1211,20 +1214,27 @@ const FileDiffCard = memo(function FileDiffCardComponent({
   autoTooltipLine,
   isLoading,
   isCollapsed,
-  onCollapseChange,
+  filePath,
+  onFileCollapseChange,
   heatmapThreshold,
   heatmapColors,
 }: FileDiffCardProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const onCollapseChangeRef = useRef(onCollapseChange);
-  onCollapseChangeRef.current = onCollapseChange;
+
+  // Memoize the collapse handler for this specific file
+  const handleCollapseChange = useCallback(
+    (collapsed: boolean) => {
+      onFileCollapseChange(filePath, collapsed);
+    },
+    [filePath, onFileCollapseChange]
+  );
 
   useEffect(() => {
     if (!focusedChangeKey) {
       return;
     }
-    onCollapseChangeRef.current(false);
-  }, [focusedChangeKey]);
+    onFileCollapseChange(filePath, false);
+  }, [focusedChangeKey, filePath, onFileCollapseChange]);
 
   useEffect(() => {
     if (!focusedChangeKey) {
@@ -1268,7 +1278,7 @@ const FileDiffCard = memo(function FileDiffCardComponent({
         isLoading={isLoading}
         errorMessage={entry.error ?? null}
         defaultCollapsed={isCollapsed}
-        onCollapseChange={onCollapseChange}
+        onCollapseChange={handleCollapseChange}
         className="border border-neutral-200 dark:border-neutral-700"
       />
     </div>
@@ -2062,6 +2072,18 @@ export function GitDiffHeatmapReviewViewer({
     });
   }, []);
 
+  // Stable callback for file collapse changes - avoids breaking FileDiffCard memoization
+  const handleFileCollapseChange = useCallback(
+    (filePath: string, collapsed: boolean) => {
+      setCollapsedState((prev) => {
+        const next = new Map(prev);
+        next.set(filePath, collapsed);
+        return next;
+      });
+    },
+    []
+  );
+
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -2360,13 +2382,8 @@ export function GitDiffHeatmapReviewViewer({
                 autoTooltipLine={autoTooltipLine}
                 isLoading={isLoading}
                 isCollapsed={isCollapsed}
-                onCollapseChange={(collapsed) => {
-                  setCollapsedState((prev) => {
-                    const next = new Map(prev);
-                    next.set(fileEntry.entry.entry.filePath, collapsed);
-                    return next;
-                  });
-                }}
+                filePath={fileEntry.entry.entry.filePath}
+                onFileCollapseChange={handleFileCollapseChange}
                 heatmapThreshold={heatmapThreshold}
                 heatmapColors={effectiveHeatmapColors}
               />
