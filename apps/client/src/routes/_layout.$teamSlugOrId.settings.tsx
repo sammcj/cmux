@@ -907,9 +907,6 @@ function SettingsComponent() {
                     className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-mono text-xs"
                     placeholder="You select the best implementation from structured diff inputs and explain briefly why."
                   />
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
-                    Default: "You select the best implementation from structured diff inputs and explain briefly why."
-                  </p>
                 </div>
               </div>
             </div>
