@@ -531,23 +531,21 @@ function SettingsComponent() {
       // After successful save, hide all API key inputs
       setShowKeys({});
 
-      if (savedCount > 0 || deletedCount > 0) {
-        const actions = [];
-        if (savedCount > 0) {
-          actions.push(`saved ${savedCount} key${savedCount > 1 ? "s" : ""}`);
-        }
-        if (deletedCount > 0) {
-          actions.push(
-            `removed ${deletedCount} key${deletedCount > 1 ? "s" : ""}`
-          );
-        }
-        toast.success(`Successfully ${actions.join(" and ")}`);
+      // Check if container settings were saved
+      const containerSettingsSaved =
+        containerSettingsData &&
+        originalContainerSettingsData &&
+        JSON.stringify(containerSettingsData) !==
+          JSON.stringify(originalContainerSettingsData);
+
+      if (savedCount > 0 || deletedCount > 0 || workspaceSettingsChanged || containerSettingsSaved) {
+        toast.success("Settings saved");
       } else {
         toast.info("No changes to save");
       }
     } catch (error) {
-      toast.error("Failed to save API keys. Please try again.");
-      console.error("Error saving API keys:", error);
+      toast.error("Failed to save settings. Please try again.");
+      console.error("Error saving settings:", error);
     } finally {
       setIsSaving(false);
     }
