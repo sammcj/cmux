@@ -977,16 +977,6 @@ function RunDiffPage() {
             onOpenLocalWorkspace={isWorkspace ? undefined : handleOpenLocalWorkspace}
             teamSlugOrId={teamSlugOrId}
           />
-          {task?.text && (
-            <div className="mb-2 px-3.5">
-              <div className="text-xs text-neutral-600 dark:text-neutral-300">
-                <span className="text-neutral-500 dark:text-neutral-400 select-none">
-                  Prompt:{" "}
-                </span>
-                <span className="font-medium">{task.text}</span>
-              </div>
-            </div>
-          )}
           <div className="bg-white dark:bg-neutral-900 flex-1 min-h-0 flex flex-col">
             {pullRequests && pullRequests.length > 0 && (
               <Suspense fallback={null}>
@@ -1033,6 +1023,7 @@ function RunDiffPage() {
                     withRepoPrefix={shouldPrefixDiffs}
                     ref1={baseRef}
                     ref2={headRef}
+                    promptText={task?.text}
                     onControlsChange={setDiffControls}
                     streamStateByFile={deferredStreamStateByFile}
                     heatmapThreshold={heatmapThreshold}
