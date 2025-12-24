@@ -19,15 +19,9 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { api } from "@cmux/convex/api";
 import { DEFAULT_MORPH_SNAPSHOT_ID, type MorphSnapshotId } from "@cmux/shared";
 import { isElectron } from "@/lib/electron";
-import {
-  getApiIntegrationsGithubReposOptions,
-  postApiMorphSetupInstanceMutation,
-} from "@cmux/www-openapi-client/react-query";
+import { getApiIntegrationsGithubReposOptions } from "@cmux/www-openapi-client/react-query";
 import * as Popover from "@radix-ui/react-popover";
-import {
-  useQuery as useRQ,
-  useMutation as useRQMutation,
-} from "@tanstack/react-query";
+import { useQuery as useRQ } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { Check, ChevronDown, Loader2, Settings, X } from "lucide-react";
@@ -36,6 +30,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -112,6 +107,13 @@ export interface RepositoryPickerProps {
     snapshotId?: MorphSnapshotId;
   }) => void;
   topAccessory?: ReactNode;
+  /**
+   * Auto-continue to configure step when repos are selected.
+   * If a number, it's the delay in ms before auto-continuing.
+   * If true, uses default delay of 800ms.
+   * If false or undefined, no auto-continue.
+   */
+  autoContinue?: boolean | number;
 }
 
 export function RepositoryPicker({
@@ -129,6 +131,7 @@ export function RepositoryPicker({
   className = "",
   onStartConfigure,
   topAccessory,
+  autoContinue,
 }: RepositoryPickerProps) {
   const router = useRouter();
   const navigate = useNavigate();
@@ -149,12 +152,6 @@ export function RepositoryPicker({
     }
   );
 
-  const setupInstanceMutation = useRQMutation(
-    postApiMorphSetupInstanceMutation()
-  );
-  const setupManualInstanceMutation = useRQMutation(
-    postApiMorphSetupInstanceMutation()
-  );
 
   useEffect(() => {
     if (initialSnapshotId) {
@@ -242,43 +239,17 @@ export function RepositoryPicker({
 
   const handleContinue = useCallback(
     (repos: string[]): void => {
-      const mutation =
-        repos.length > 0 ? setupInstanceMutation : setupManualInstanceMutation;
-      mutation.mutate(
-        {
-          body: {
-            teamSlugOrId,
-            instanceId: instanceId ?? undefined,
-            selectedRepos: repos,
-            snapshotId: selectedSnapshotId,
-          },
-        },
-        {
-          onSuccess: async (data) => {
-            const configuredInstanceId =
-              (await goToConfigure(repos, data.instanceId)) ?? data.instanceId;
-            onStartConfigure?.({
-              selectedRepos: repos,
-              instanceId: configuredInstanceId,
-              snapshotId: selectedSnapshotId,
-            });
-            console.log("Cloned repos:", data.clonedRepos);
-            console.log("Removed repos:", data.removedRepos);
-          },
-          onError: (error) => {
-            console.error("Failed to setup instance:", error);
-          },
-        }
-      );
+      // Navigate immediately - provisioning will happen on the configure page
+      void goToConfigure(repos);
+      onStartConfigure?.({
+        selectedRepos: repos,
+        snapshotId: selectedSnapshotId,
+      });
     },
     [
       goToConfigure,
-      instanceId,
       onStartConfigure,
       selectedSnapshotId,
-      setupInstanceMutation,
-      setupManualInstanceMutation,
-      teamSlugOrId,
     ]
   );
 
@@ -329,8 +300,35 @@ export function RepositoryPicker({
     });
   }, []);
 
-  const isContinueLoading = setupInstanceMutation.isPending;
-  const isManualLoading = setupManualInstanceMutation.isPending;
+  // Auto-continue to configure step when repos are selected
+  const autoContinueTriggeredRef = useRef(false);
+  useEffect(() => {
+    // Skip if auto-continue is disabled
+    if (!autoContinue) {
+      return;
+    }
+
+    // Skip if no repos selected
+    if (selectedRepos.length === 0) {
+      autoContinueTriggeredRef.current = false;
+      return;
+    }
+
+    // Skip if already triggered
+    if (autoContinueTriggeredRef.current) {
+      return;
+    }
+
+    const delay = typeof autoContinue === "number" ? autoContinue : 800;
+    const timeoutId = window.setTimeout(() => {
+      autoContinueTriggeredRef.current = true;
+      handleContinue(selectedRepos);
+    }, delay);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [autoContinue, selectedRepos, handleContinue]);
 
   return (
     <div className={className}>
@@ -395,33 +393,17 @@ export function RepositoryPicker({
             <div className="flex items-center gap-3 pt-2">
               <button
                 type="button"
-                disabled={
-                  selectedRepos.length === 0 ||
-                  isContinueLoading ||
-                  isManualLoading
-                }
                 onClick={() => handleContinue(selectedRepos)}
-                className={`inline-flex items-center gap-2 rounded-md bg-neutral-900 text-white disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed px-3 py-2 text-sm hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-opacity ${
-                  isManualLoading ? "opacity-50" : "opacity-100"
-                }`}
+                className="inline-flex items-center gap-2 rounded-md bg-neutral-900 text-white px-3 py-2 text-sm hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
               >
-                {isContinueLoading && (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                )}
                 {continueButtonText}
               </button>
               {showManualConfigOption && (
                 <button
                   type="button"
-                  disabled={isContinueLoading || isManualLoading}
                   onClick={() => handleContinue([])}
-                  className={`inline-flex items-center gap-2 rounded-md border border-neutral-200 dark:border-neutral-800 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-900 disabled:cursor-not-allowed transition-opacity ${
-                    isContinueLoading ? "opacity-50" : "opacity-100"
-                  }`}
+                  className="inline-flex items-center gap-2 rounded-md border border-neutral-200 dark:border-neutral-800 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-900"
                 >
-                  {isManualLoading && (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  )}
                   {manualConfigButtonText}
                 </button>
               )}

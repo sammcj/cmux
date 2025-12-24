@@ -100,7 +100,8 @@ export const persistEnvironmentDraftMetadata = (
       instanceId: metadata.instanceId ?? prev?.instanceId,
       snapshotId: metadata.snapshotId ?? prev?.snapshotId,
     };
-    const nextStep = options?.step ?? "configure";
+    // Preserve current step if not explicitly specified
+    const nextStep = options?.step ?? prev?.step ?? "configure";
     if (nextStep === "select") {
       return {
         step: "select",
@@ -111,7 +112,14 @@ export const persistEnvironmentDraftMetadata = (
         lastUpdatedAt: now(),
       };
     }
-    return buildDraft(nextMetadata, nextConfig);
+    return {
+      step: "configure",
+      selectedRepos: nextMetadata.selectedRepos,
+      instanceId: nextMetadata.instanceId,
+      snapshotId: nextMetadata.snapshotId,
+      config: nextConfig,
+      lastUpdatedAt: now(),
+    };
   });
 
 export const updateEnvironmentDraftConfig = (

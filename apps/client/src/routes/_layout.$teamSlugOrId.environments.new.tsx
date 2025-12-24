@@ -12,6 +12,8 @@ import {
   MORPH_SNAPSHOT_PRESETS,
   type MorphSnapshotId,
 } from "@cmux/shared";
+import { postApiMorphSetupInstanceMutation } from "@cmux/www-openapi-client/react-query";
+import { useMutation as useRQMutation } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import {
@@ -80,11 +82,103 @@ function EnvironmentsPage() {
   const draft = useEnvironmentDraft(teamSlugOrId);
   const [headerActions, setHeaderActions] = useState<ReactNode | null>(null);
   const skipDraftHydrationRef = useRef(false);
+  const provisioningTriggeredRef = useRef(false);
+  const hasCheckedFreshNavigationRef = useRef(false);
 
-  const activeStep = draft?.step ?? stepFromSearch;
+  // Detect fresh navigation and clear stale drafts
+  // Fresh navigation = URL has step=select (or default), no instanceId, no selectedRepos
+  // If draft exists with step=configure, it's stale and should be cleared
+  const urlSelectedReposLength = urlSelectedRepos.length;
+  useEffect(() => {
+    if (hasCheckedFreshNavigationRef.current) {
+      return;
+    }
+    hasCheckedFreshNavigationRef.current = true;
+
+    const isFreshNavigation =
+      stepFromSearch === "select" &&
+      !urlInstanceId &&
+      urlSelectedReposLength === 0;
+
+    if (isFreshNavigation && draft?.step === "configure") {
+      // Clear stale draft to start fresh
+      clearEnvironmentDraft(teamSlugOrId);
+    }
+  }, [stepFromSearch, urlInstanceId, urlSelectedReposLength, draft, teamSlugOrId]);
+
+  // Use URL step when it's a fresh navigation, otherwise use draft step
+  const isFreshNavigation =
+    stepFromSearch === "select" &&
+    !urlInstanceId &&
+    urlSelectedReposLength === 0;
+  const activeStep = isFreshNavigation ? stepFromSearch : (draft?.step ?? stepFromSearch);
   const activeSelectedRepos = draft?.selectedRepos ?? urlSelectedRepos;
   const activeInstanceId = draft?.instanceId ?? urlInstanceId;
   const activeSnapshotId = draft?.snapshotId ?? searchSnapshotId;
+
+  // Setup instance mutation for background provisioning
+  const setupInstanceMutation = useRQMutation(postApiMorphSetupInstanceMutation());
+
+  // Trigger provisioning when on configure step without instanceId
+  useEffect(() => {
+    if (activeStep !== "configure") {
+      provisioningTriggeredRef.current = false;
+      return;
+    }
+
+    // Skip if already have instanceId or already triggered or mutation is pending
+    if (activeInstanceId || provisioningTriggeredRef.current || setupInstanceMutation.isPending) {
+      return;
+    }
+
+    provisioningTriggeredRef.current = true;
+
+    setupInstanceMutation.mutate(
+      {
+        body: {
+          teamSlugOrId,
+          selectedRepos: activeSelectedRepos,
+          snapshotId: activeSnapshotId,
+        },
+      },
+      {
+        onSuccess: (data) => {
+          // Update URL with instanceId
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              instanceId: data.instanceId,
+            }),
+            replace: true,
+          });
+          // Update draft with instanceId (preserves current step)
+          persistEnvironmentDraftMetadata(
+            teamSlugOrId,
+            {
+              selectedRepos: activeSelectedRepos,
+              instanceId: data.instanceId,
+              snapshotId: activeSnapshotId,
+            },
+            { resetConfig: false },
+          );
+          console.log("Instance provisioned:", data.instanceId);
+          console.log("Cloned repos:", data.clonedRepos);
+        },
+        onError: (error) => {
+          console.error("Failed to provision instance:", error);
+          provisioningTriggeredRef.current = false; // Allow retry
+        },
+      }
+    );
+  }, [
+    activeStep,
+    activeInstanceId,
+    activeSelectedRepos,
+    activeSnapshotId,
+    teamSlugOrId,
+    navigate,
+    setupInstanceMutation,
+  ]);
 
   useEffect(() => {
     if (activeStep !== "configure") {
@@ -141,7 +235,8 @@ function EnvironmentsPage() {
     [draft, teamSlugOrId],
   );
 
-  const handleBackToRepositorySelection = useCallback(() => {
+  const handleBackToRepositorySelection = useCallback(async () => {
+    // Update draft state
     persistEnvironmentDraftMetadata(
       teamSlugOrId,
       {
@@ -151,7 +246,14 @@ function EnvironmentsPage() {
       },
       { resetConfig: false, step: "select" },
     );
-  }, [activeInstanceId, activeSelectedRepos, activeSnapshotId, teamSlugOrId]);
+    // Update URL to match
+    await navigate({
+      search: (prev) => ({
+        ...prev,
+        step: "select",
+      }),
+    });
+  }, [activeInstanceId, activeSelectedRepos, activeSnapshotId, teamSlugOrId, navigate]);
 
   const handleResetDraft = useCallback(() => {
     skipDraftHydrationRef.current = true;
