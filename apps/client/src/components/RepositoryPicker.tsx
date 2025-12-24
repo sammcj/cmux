@@ -838,7 +838,7 @@ function RepositoryListSection({
         ) : null}
       </div>
 
-      <div className="mt-2 rounded-md border border-neutral-200 dark:border-neutral-800 overflow-hidden">
+      <div className="mt-2 rounded-md border border-neutral-200 dark:border-neutral-800 overflow-hidden max-h-[225px] overflow-y-auto">
         {showReposLoading ? (
           <div className="divide-y divide-neutral-200 dark:divide-neutral-900">
             {[...Array(5)].map((_, index) => (
