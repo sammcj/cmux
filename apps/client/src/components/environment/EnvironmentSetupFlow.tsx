@@ -94,6 +94,9 @@ export function EnvironmentSetupFlow({
   // Script detection from framework (only fetch if we have repos)
   const hasUserEditedScriptsRef = useRef(false);
 
+  // Track when environment has been saved to prevent draft re-creation
+  const hasSavedRef = useRef(false);
+
   useEffect(() => {
     if (selectedRepos.length === 0) return;
 
@@ -177,7 +180,9 @@ export function EnvironmentSetupFlow({
   }, [applySandboxEnvMutation, envVars, instanceId, teamSlugOrId]);
 
   // Persist config changes to draft store immediately (localStorage is fast)
+  // Skip if environment has been saved to prevent re-creating the draft
   useEffect(() => {
+    if (hasSavedRef.current) return;
     updateEnvironmentDraftConfig(
       teamSlugOrId,
       {
@@ -277,6 +282,8 @@ export function EnvironmentSetupFlow({
       },
       {
         onSuccess: async () => {
+          // Mark as saved to prevent draft re-creation from useEffect
+          hasSavedRef.current = true;
           toast.success("Environment saved");
           onEnvironmentSaved?.();
           await navigate({
