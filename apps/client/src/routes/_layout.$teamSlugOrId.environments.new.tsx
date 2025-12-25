@@ -83,35 +83,10 @@ function EnvironmentsPage() {
   const [headerActions, setHeaderActions] = useState<ReactNode | null>(null);
   const skipDraftHydrationRef = useRef(false);
   const provisioningTriggeredRef = useRef(false);
-  const hasCheckedFreshNavigationRef = useRef(false);
 
-  // Detect fresh navigation and clear stale drafts
-  // Fresh navigation = URL has step=select (or default), no instanceId, no selectedRepos
-  // If draft exists with step=configure, it's stale and should be cleared
-  const urlSelectedReposLength = urlSelectedRepos.length;
-  useEffect(() => {
-    if (hasCheckedFreshNavigationRef.current) {
-      return;
-    }
-    hasCheckedFreshNavigationRef.current = true;
-
-    const isFreshNavigation =
-      stepFromSearch === "select" &&
-      !urlInstanceId &&
-      urlSelectedReposLength === 0;
-
-    if (isFreshNavigation && draft?.step === "configure") {
-      // Clear stale draft to start fresh
-      clearEnvironmentDraft(teamSlugOrId);
-    }
-  }, [stepFromSearch, urlInstanceId, urlSelectedReposLength, draft, teamSlugOrId]);
-
-  // Use URL step when it's a fresh navigation, otherwise use draft step
-  const isFreshNavigation =
-    stepFromSearch === "select" &&
-    !urlInstanceId &&
-    urlSelectedReposLength === 0;
-  const activeStep = isFreshNavigation ? stepFromSearch : (draft?.step ?? stepFromSearch);
+  // If we have a draft, use it - don't clear on navigation
+  // Only clear via explicit discard (handleDiscardAndExit or handleResetDraft)
+  const activeStep = draft?.step ?? stepFromSearch;
   const activeSelectedRepos = draft?.selectedRepos ?? urlSelectedRepos;
   const activeInstanceId = draft?.instanceId ?? urlInstanceId;
   const activeSnapshotId = draft?.snapshotId ?? searchSnapshotId;
@@ -277,24 +252,26 @@ function EnvironmentsPage() {
     });
   }, [handleResetDraft, navigate, teamSlugOrId]);
 
-  // For configure step, show the new EnvironmentSetupFlow without the floating pane
-  // The new flow has its own full-screen layout
+  // For configure step, wrap in FloatingPane like the select step
+  // Note: EnvironmentSetupFlow handles its own layout - initial-setup is centered, workspace-config is full-width
   if (activeStep === "configure") {
     return (
-      <div className="h-full w-full overflow-auto">
-        <EnvironmentSetupFlow
-          teamSlugOrId={teamSlugOrId}
-          selectedRepos={activeSelectedRepos}
-          instanceId={activeInstanceId}
-          initialEnvName={draft?.config?.envName}
-          initialMaintenanceScript={draft?.config?.maintenanceScript}
-          initialDevScript={draft?.config?.devScript}
-          initialExposedPorts={draft?.config?.exposedPorts}
-          initialEnvVars={draft?.config?.envVars}
-          onEnvironmentSaved={handleResetDraft}
-          onBack={handleBackToRepositorySelection}
-        />
-      </div>
+      <FloatingPane header={<TitleBar title="Environments" actions={headerActions} />}>
+        <div className="flex flex-col grow select-none relative h-full overflow-hidden">
+          <EnvironmentSetupFlow
+            teamSlugOrId={teamSlugOrId}
+            selectedRepos={activeSelectedRepos}
+            instanceId={activeInstanceId}
+            initialEnvName={draft?.config?.envName}
+            initialMaintenanceScript={draft?.config?.maintenanceScript}
+            initialDevScript={draft?.config?.devScript}
+            initialExposedPorts={draft?.config?.exposedPorts}
+            initialEnvVars={draft?.config?.envVars}
+            onEnvironmentSaved={handleResetDraft}
+            onBack={handleBackToRepositorySelection}
+          />
+        </div>
+      </FloatingPane>
     );
   }
 

@@ -37,6 +37,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { updateEnvironmentDraftConfig } from "@/state/environment-draft-store";
 import { toast } from "sonner";
 import { EnvironmentInitialSetup } from "./EnvironmentInitialSetup";
 import { EnvironmentWorkspaceConfig } from "./EnvironmentWorkspaceConfig";
@@ -73,8 +74,8 @@ export function EnvironmentSetupFlow({
   // Layout phase state
   const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>("initial-setup");
 
-  // Configuration state
-  const [envName] = useState(initialEnvName);
+  // Configuration state - blank by default, placeholder shows the default pattern
+  const [envName, setEnvName] = useState(initialEnvName);
   const [envVars, setEnvVars] = useState<EnvVar[]>(() =>
     ensureInitialEnvVars(initialEnvVars)
   );
@@ -191,7 +192,26 @@ export function EnvironmentSetupFlow({
     };
   }, [applySandboxEnvMutation, envVars, instanceId, teamSlugOrId]);
 
+  // Persist config changes to draft store immediately (localStorage is fast)
+  useEffect(() => {
+    updateEnvironmentDraftConfig(
+      teamSlugOrId,
+      {
+        envName,
+        envVars,
+        maintenanceScript,
+        devScript,
+        exposedPorts,
+      },
+      { selectedRepos, instanceId }
+    );
+  }, [teamSlugOrId, envName, envVars, maintenanceScript, devScript, exposedPorts, selectedRepos, instanceId]);
+
   // Handlers
+  const handleEnvNameChange = useCallback((value: string) => {
+    setEnvName(value);
+  }, []);
+
   const handleMaintenanceScriptChange = useCallback((value: string) => {
     setMaintenanceScript(value);
     hasUserEditedScriptsRef.current = true;
@@ -233,15 +253,10 @@ export function EnvironmentSetupFlow({
       return;
     }
 
-    // Generate env name if not set
+    // Use env name or generate default: repo-YYYY-MM-DD
     const finalEnvName =
       envName.trim() ||
-      (() => {
-        const now = new Date();
-        const dateTime = now.toISOString().replace(/[:.]/g, "-").slice(0, -5);
-        const repoName = selectedRepos[0]?.split("/").pop() || "environment";
-        return `${repoName}-${dateTime}`;
-      })();
+      `${selectedRepos[0]?.split("/").pop() || "environment"}-${new Date().toISOString().slice(0, 10)}`;
 
     const envVarsContent = formatEnvVarsContent(
       envVars
@@ -326,29 +341,33 @@ export function EnvironmentSetupFlow({
     teamSlugOrId,
   ]);
 
-  // Initial Setup Phase
+  // Initial Setup Phase - centered form with max-width
   if (layoutPhase === "initial-setup") {
     return (
-      <EnvironmentInitialSetup
-        selectedRepos={selectedRepos}
-        maintenanceScript={maintenanceScript}
-        devScript={devScript}
-        envVars={envVars}
-        frameworkPreset={frameworkPreset}
-        detectedPackageManager={detectedPackageManager}
-        isDetectingFramework={isDetectingFramework}
-        onMaintenanceScriptChange={handleMaintenanceScriptChange}
-        onDevScriptChange={handleDevScriptChange}
-        onEnvVarsChange={handleEnvVarsChange}
-        onFrameworkPresetChange={handleFrameworkPresetChange}
-        onContinue={handleContinueToWorkspaceConfig}
-        onBack={onBack}
-        backLabel="Back to repository selection"
-      />
+      <div className="p-6 max-w-3xl w-full mx-auto overflow-auto h-full">
+        <EnvironmentInitialSetup
+          selectedRepos={selectedRepos}
+          envName={envName}
+          maintenanceScript={maintenanceScript}
+          devScript={devScript}
+          envVars={envVars}
+          frameworkPreset={frameworkPreset}
+          detectedPackageManager={detectedPackageManager}
+          isDetectingFramework={isDetectingFramework}
+          onEnvNameChange={handleEnvNameChange}
+          onMaintenanceScriptChange={handleMaintenanceScriptChange}
+          onDevScriptChange={handleDevScriptChange}
+          onEnvVarsChange={handleEnvVarsChange}
+          onFrameworkPresetChange={handleFrameworkPresetChange}
+          onContinue={handleContinueToWorkspaceConfig}
+          onBack={onBack}
+          backLabel="Back to repository selection"
+        />
+      </div>
     );
   }
 
-  // Workspace Configuration Phase
+  // Workspace Configuration Phase - full-width split view
   return (
     <EnvironmentWorkspaceConfig
       selectedRepos={selectedRepos}

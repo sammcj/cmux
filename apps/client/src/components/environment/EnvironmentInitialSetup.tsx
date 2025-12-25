@@ -52,12 +52,14 @@ import {
 
 interface EnvironmentInitialSetupProps {
   selectedRepos: string[];
+  envName: string;
   maintenanceScript: string;
   devScript: string;
   envVars: EnvVar[];
   frameworkPreset: FrameworkPreset;
   detectedPackageManager: PackageManager;
   isDetectingFramework: boolean;
+  onEnvNameChange: (value: string) => void;
   onMaintenanceScriptChange: (value: string) => void;
   onDevScriptChange: (value: string) => void;
   onEnvVarsChange: (updater: (prev: EnvVar[]) => EnvVar[]) => void;
@@ -69,12 +71,14 @@ interface EnvironmentInitialSetupProps {
 
 export function EnvironmentInitialSetup({
   selectedRepos,
+  envName,
   maintenanceScript,
   devScript,
   envVars,
   frameworkPreset,
   detectedPackageManager,
   isDetectingFramework,
+  onEnvNameChange,
   onMaintenanceScriptChange,
   onDevScriptChange,
   onEnvVarsChange,
@@ -176,41 +180,56 @@ export function EnvironmentInitialSetup({
   );
 
   return (
-    <div className="min-h-full bg-white dark:bg-black font-sans">
-      <div className="max-w-2xl mx-auto px-6 py-10">
-        {/* Back button */}
-        {onBack && (
-          <div className="mb-3">
-            <button
-              type="button"
-              onClick={onBack}
-              className="inline-flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
-            >
-              <ArrowLeft className="h-3 w-3" />
-              {backLabel}
-            </button>
-          </div>
-        )}
-
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
-            Configure workspace
-          </h1>
-          {selectedRepos.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 pt-2">
-              {selectedRepos.map((repo) => (
-                <span key={repo} className="inline-flex items-center gap-1.5">
-                  <GitHubIcon className="h-4 w-4 shrink-0" />
-                  <span className="font-sans">{repo}</span>
-                </span>
-              ))}
-            </div>
-          )}
+    <div>
+      {/* Back button */}
+      {onBack && (
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            {backLabel}
+          </button>
         </div>
+      )}
 
-        {/* Content */}
-        <div className="space-y-6">
+      {/* Header */}
+      <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+        Configure workspace
+      </h1>
+      {selectedRepos.length > 0 && (
+        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+          {selectedRepos.map((repo, i) => (
+            <span key={repo} className="inline-flex items-center gap-1.5">
+              {i > 0 && ", "}
+              <GitHubIcon className="h-3.5 w-3.5 shrink-0 inline" />
+              <span>{repo}</span>
+            </span>
+          ))}
+        </p>
+      )}
+
+      {/* Content */}
+      <div className="space-y-6 mt-6">
+          {/* Environment Name */}
+          <div>
+            <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">
+              Environment Name
+            </label>
+            <input
+              type="text"
+              value={envName}
+              onChange={(e) => onEnvNameChange(e.target.value)}
+              placeholder={`${selectedRepos[0]?.split("/").pop() || "environment"}-${new Date().toISOString().slice(0, 10)}`}
+              className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700"
+            />
+            <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+              A unique name for this environment configuration
+            </p>
+          </div>
+
           {/* Framework Preset */}
           <FrameworkPresetSelect
             value={frameworkPreset}
@@ -243,20 +262,16 @@ export function EnvironmentInitialSetup({
           />
         </div>
 
-        {/* Footer Button */}
-        <div className="mt-8 pt-6 border-t border-neutral-200 dark:border-neutral-800">
-          <button
-            type="button"
-            onClick={onContinue}
-            className={clsx(
-              "w-full inline-flex items-center justify-center gap-2 rounded-md px-5 py-2.5 text-sm font-semibold transition",
-              "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-200 cursor-pointer"
-            )}
-          >
-            Continue
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
+      {/* Footer Button */}
+      <div className="flex items-center gap-3 pt-6">
+        <button
+          type="button"
+          onClick={onContinue}
+          className="inline-flex items-center gap-2 rounded-md bg-neutral-900 text-white px-3 py-2 text-sm hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
+        >
+          Continue
+          <ArrowRight className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );
