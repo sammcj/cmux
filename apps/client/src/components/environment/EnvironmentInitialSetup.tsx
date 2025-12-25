@@ -433,7 +433,7 @@ function ScriptsSection({
           <textarea
             value={devScript ?? ""}
             onChange={(e) => onDevScriptChange(e.target.value)}
-            placeholder="(cd [repo] && ./scripts/dev.sh)"
+            placeholder="(cd [repo] && bun run dev)"
             rows={2}
             className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none"
           />

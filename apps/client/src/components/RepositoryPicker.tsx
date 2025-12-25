@@ -15,13 +15,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { api } from "@cmux/convex/api";
 import { DEFAULT_MORPH_SNAPSHOT_ID, type MorphSnapshotId } from "@cmux/shared";
 import { isElectron } from "@/lib/electron";
-import { getApiIntegrationsGithubReposOptions } from "@cmux/www-openapi-client/react-query";
 import * as Popover from "@radix-ui/react-popover";
-import { useQuery as useRQ } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { Check, ChevronDown, Loader2, Settings, X } from "lucide-react";
@@ -762,26 +759,22 @@ function RepositoryListSection({
   hasConnections,
 }: RepositoryListSectionProps) {
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebouncedValue(search, 300);
   const deferredSearch = useDeferredValue(search);
 
-  const githubReposQuery = useRQ({
-    ...getApiIntegrationsGithubReposOptions({
-      query: {
-        team: teamSlugOrId,
-        installationId: installationId ?? undefined,
-        search: debouncedSearch.trim() || undefined,
-      },
-    }),
-    enabled: installationId != null,
-  });
+  // Use Convex to fetch synced repos (same as dashboard) for consistent experience
+  const allReposQuery = useQuery(api.github.getAllRepos, { teamSlugOrId });
 
   const filteredRepos = useMemo(() => {
-    const repos = githubReposQuery.data?.repos ?? [];
+    const repos = allReposQuery ?? [];
     const q = deferredSearch.trim().toLowerCase();
+    // Map to the expected format and add timestamp for sorting
     const withTs = repos.map((r) => ({
-      ...r,
-      _ts: Date.parse(r.pushed_at ?? r.updated_at ?? "") || 0,
+      name: r.name,
+      full_name: r.fullName,
+      private: r.visibility === "private",
+      updated_at: r.lastSyncedAt ? new Date(r.lastSyncedAt).toISOString() : null,
+      pushed_at: r.lastPushedAt ? new Date(r.lastPushedAt).toISOString() : null,
+      _ts: r.lastPushedAt ?? r.lastSyncedAt ?? 0,
     }));
     let list = withTs.sort((a, b) => b._ts - a._ts);
     if (q) {
@@ -792,15 +785,10 @@ function RepositoryListSection({
       );
     }
     return list;
-  }, [deferredSearch, githubReposQuery.data]);
+  }, [deferredSearch, allReposQuery]);
 
-  const isSearchStale = search.trim() !== debouncedSearch.trim();
-  const showReposLoading =
-    !!installationId &&
-    (githubReposQuery.isPending ||
-      isSearchStale ||
-      (githubReposQuery.isFetching && filteredRepos.length === 0));
-  const showSpinner = isSearchStale || githubReposQuery.isFetching;
+  const showReposLoading = allReposQuery === undefined;
+  const showSpinner = false; // No need for spinner with Convex reactive queries
   const selectedSet = useMemo(() => new Set(selectedRepos), [selectedRepos]);
 
   if (!hasConnections) {
