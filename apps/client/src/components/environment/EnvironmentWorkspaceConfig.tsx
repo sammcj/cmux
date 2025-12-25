@@ -45,6 +45,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 
 interface EnvironmentWorkspaceConfigProps {
@@ -111,6 +112,58 @@ export function EnvironmentWorkspaceConfig({
 
   // VNC connection status
   const [_vncStatus, setVncStatus] = useState<VncConnectionStatus>("disconnected");
+
+  // Resizable sidebar state
+  const MIN_SIDEBAR_WIDTH = 320;
+  const MAX_SIDEBAR_WIDTH = 600;
+  const DEFAULT_SIDEBAR_WIDTH = 420;
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_SIDEBAR_WIDTH;
+    const stored = localStorage.getItem("cmux:env-workspace-sidebar-width");
+    if (stored) {
+      const parsed = Number.parseInt(stored, 10);
+      if (!Number.isNaN(parsed) && parsed >= MIN_SIDEBAR_WIDTH && parsed <= MAX_SIDEBAR_WIDTH) {
+        return parsed;
+      }
+    }
+    return DEFAULT_SIDEBAR_WIDTH;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+
+  // Handle resize
+  const handleResizeStart = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: globalThis.MouseEvent) => {
+      if (!sidebarRef.current) return;
+      const containerRect = sidebarRef.current.parentElement?.getBoundingClientRect();
+      if (!containerRect) return;
+
+      const newWidth = e.clientX - containerRect.left;
+      const clampedWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, newWidth));
+      setSidebarWidth(clampedWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      // Persist to localStorage
+      localStorage.setItem("cmux:env-workspace-sidebar-width", String(sidebarWidth));
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing, sidebarWidth]);
 
   // Clean up copy timeout
   useEffect(() => {
@@ -747,9 +800,18 @@ export function EnvironmentWorkspaceConfig({
   };
 
   return (
-    <div className="flex h-full overflow-hidden bg-neutral-50 dark:bg-neutral-950 font-sans text-[15px] leading-6">
+    <div
+      className={clsx(
+        "flex h-full overflow-hidden font-sans text-[15px] leading-6",
+        isResizing && "cursor-col-resize select-none"
+      )}
+    >
       {/* Left: Configuration Sidebar */}
-      <div className="w-[420px] h-full flex flex-col overflow-hidden border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
+      <div
+        ref={sidebarRef}
+        className="h-full flex flex-col overflow-hidden bg-white dark:bg-black relative"
+        style={{ width: sidebarWidth, minWidth: sidebarWidth, maxWidth: sidebarWidth }}
+      >
         <div className="flex-shrink-0 px-5 pt-4 pb-2">
           <button
             type="button"
@@ -795,6 +857,18 @@ export function EnvironmentWorkspaceConfig({
               <p className="text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
             </div>
           )}
+        </div>
+
+        {/* Resize Handle */}
+        <div
+          className={clsx(
+            "absolute top-0 right-0 w-1 h-full cursor-col-resize z-10 group",
+            "hover:bg-neutral-300 dark:hover:bg-neutral-600",
+            isResizing && "bg-neutral-400 dark:bg-neutral-500"
+          )}
+          onMouseDown={handleResizeStart}
+        >
+          <div className="absolute top-0 right-0 w-4 h-full -translate-x-1/2" />
         </div>
       </div>
 
