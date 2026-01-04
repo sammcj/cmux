@@ -73,21 +73,27 @@ export const getArchivedPaginated = authQuery({
   args: {
     teamSlugOrId: v.string(),
     paginationOpts: paginationOptsValidator,
+    excludeLocalWorkspaces: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
     // Query archived tasks with pagination
-    const paginatedResult = await ctx.db
+    let q = ctx.db
       .query("tasks")
       .withIndex("by_team_user", (idx) =>
         idx.eq("teamId", teamId).eq("userId", userId),
       )
       .filter((qq) => qq.eq(qq.field("isArchived"), true))
-      .filter((qq) => qq.neq(qq.field("isPreview"), true))
-      .order("desc")
-      .paginate(args.paginationOpts);
+      .filter((qq) => qq.neq(qq.field("isPreview"), true));
+
+    // Exclude local workspaces when in web mode
+    if (args.excludeLocalWorkspaces) {
+      q = q.filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true));
+    }
+
+    const paginatedResult = await q.order("desc").paginate(args.paginationOpts);
 
     // Get unread task runs for this user in this team
     const unreadRuns = await ctx.db

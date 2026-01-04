@@ -180,6 +180,7 @@ const createCollapsedPreviewCategoryState = (
 });
 
 const ARCHIVED_PAGE_SIZE = 20;
+const PREVIEW_PAGE_SIZE = 20;
 
 export const TaskList = memo(function TaskList({
   teamSlugOrId,
@@ -196,17 +197,27 @@ export const TaskList = memo(function TaskList({
     loadMore: loadMoreArchived,
   } = usePaginatedQuery(
     api.tasks.getArchivedPaginated,
-    { teamSlugOrId },
+    { teamSlugOrId, excludeLocalWorkspaces },
     { initialNumItems: ARCHIVED_PAGE_SIZE },
-    excludeLocalWorkspaces,
   );
   const pinnedData = useQuery(api.tasks.getPinned, { teamSlugOrId, excludeLocalWorkspaces });
-  const previewRuns = useQuery(api.previewRuns.listByTeam, { teamSlugOrId });
+  const {
+    results: previewRuns,
+    status: previewRunsStatus,
+    loadMore: loadMorePreviewRuns,
+  } = usePaginatedQuery(
+    api.previewRuns.listByTeamPaginated,
+    { teamSlugOrId },
+    { initialNumItems: PREVIEW_PAGE_SIZE },
+  );
   const [tab, setTab] = useState<"all" | "archived" | "previews">("all");
 
   // Infinite scroll for archived tasks
   const archivedScrollRef = useRef<HTMLDivElement>(null);
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+  // Infinite scroll for preview runs
+  const previewScrollRef = useRef<HTMLDivElement>(null);
+  const previewLoadMoreTriggerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (tab !== "archived" || archivedStatus !== "CanLoadMore") return;
@@ -231,6 +242,30 @@ export const TaskList = memo(function TaskList({
       }
     };
   }, [tab, archivedStatus, loadMoreArchived]);
+
+  useEffect(() => {
+    if (tab !== "previews" || previewRunsStatus !== "CanLoadMore") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMorePreviewRuns(PREVIEW_PAGE_SIZE);
+        }
+      },
+      { threshold: 0.1 },
+    );
+
+    const trigger = previewLoadMoreTriggerRef.current;
+    if (trigger) {
+      observer.observe(trigger);
+    }
+
+    return () => {
+      if (trigger) {
+        observer.unobserve(trigger);
+      }
+    };
+  }, [tab, previewRunsStatus, loadMorePreviewRuns]);
 
   const categorizedTasks = useMemo(() => {
     const categorized = categorizeTasks(allTasks);
@@ -379,7 +414,7 @@ export const TaskList = memo(function TaskList({
             </div>
           )
         ) : tab === "previews" ? (
-          previewRuns === undefined ? (
+          previewRunsStatus === "LoadingFirstPage" ? (
             <div className="text-sm text-neutral-500 dark:text-neutral-400 py-2 pl-4 select-none">
               Loading...
             </div>
@@ -388,17 +423,31 @@ export const TaskList = memo(function TaskList({
               No preview runs
             </div>
           ) : (
-            <div className="mt-1 w-full flex flex-col space-y-[-1px] transform -translate-y-px">
-              {PREVIEW_CATEGORY_ORDER.map((categoryKey) => (
-                <PreviewCategorySection
-                  key={categoryKey}
-                  categoryKey={categoryKey}
-                  previewRuns={previewCategoryBuckets[categoryKey]}
-                  teamSlugOrId={teamSlugOrId}
-                  collapsed={Boolean(collapsedPreviewCategories[categoryKey])}
-                  onToggle={togglePreviewCategoryCollapse}
-                />
-              ))}
+            <div ref={previewScrollRef} className="flex flex-col w-full">
+              <div className="mt-1 w-full flex flex-col space-y-[-1px] transform -translate-y-px">
+                {PREVIEW_CATEGORY_ORDER.map((categoryKey) => (
+                  <PreviewCategorySection
+                    key={categoryKey}
+                    categoryKey={categoryKey}
+                    previewRuns={previewCategoryBuckets[categoryKey]}
+                    teamSlugOrId={teamSlugOrId}
+                    collapsed={Boolean(collapsedPreviewCategories[categoryKey])}
+                    onToggle={togglePreviewCategoryCollapse}
+                  />
+                ))}
+              </div>
+              {/* Infinite scroll trigger */}
+              <div ref={previewLoadMoreTriggerRef} className="w-full py-2">
+                {previewRunsStatus === "LoadingMore" && (
+                  <div className="flex items-center justify-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Loading more...</span>
+                  </div>
+                )}
+                {previewRunsStatus === "CanLoadMore" && (
+                  <div className="h-1" />
+                )}
+              </div>
             </div>
           )
         ) : allTasks === undefined ? (
