@@ -97,25 +97,28 @@ export const createTestRun = authMutation({
       );
     }
 
-    // Verify the GitHub installation is still active
-    const installation = await ctx.db
-      .query("providerConnections")
-      .withIndex("by_installationId", (q) =>
-        q.eq("installationId", config.repoInstallationId)
-      )
-      .first();
+    // Verify the GitHub installation is still active (if we have an installation ID)
+    const installationId = config.repoInstallationId;
+    if (installationId) {
+      const installation = await ctx.db
+        .query("providerConnections")
+        .withIndex("by_installationId", (q) =>
+          q.eq("installationId", installationId)
+        )
+        .first();
 
-    if (!installation) {
-      throw new Error(
-        `GitHub App installation not found. Please reconnect your GitHub App in Team Settings.`
-      );
-    }
+      if (!installation) {
+        throw new Error(
+          `GitHub App installation not found. Please reconnect your GitHub App in Team Settings.`
+        );
+      }
 
-    if (installation.isActive === false) {
-      throw new Error(
-        `GitHub App installation for ${installation.accountLogin ?? "this account"} is no longer active. ` +
-          `Please reconnect the GitHub App in your GitHub settings or Team Settings.`
-      );
+      if (installation.isActive === false) {
+        throw new Error(
+          `GitHub App installation for ${installation.accountLogin ?? "this account"} is no longer active. ` +
+            `Please reconnect the GitHub App in your GitHub settings or Team Settings.`
+        );
+      }
     }
 
     // Use real PR metadata if provided, otherwise fall back to placeholder values
@@ -651,11 +654,24 @@ export const checkRepoAccess = authQuery({
       };
     }
 
-    // Config exists - check if the installation is active
+    // Config exists - check if the installation is active (if we have an installation ID)
+    const configInstallationId = config.repoInstallationId;
+    if (!configInstallationId) {
+      return {
+        hasAccess: false,
+        hasConfig: true,
+        hasActiveInstallation: false,
+        repoFullName,
+        errorCode: "no_installation",
+        errorMessage: "Preview configuration missing GitHub installation ID",
+        suggestedAction: "Re-configure the preview for this repository with a GitHub App installation",
+      };
+    }
+
     const installation = await ctx.db
       .query("providerConnections")
       .withIndex("by_installationId", (q) =>
-        q.eq("installationId", config.repoInstallationId)
+        q.eq("installationId", configInstallationId)
       )
       .first();
 
