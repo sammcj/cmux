@@ -3,7 +3,6 @@
 import { useCallback, useState } from "react";
 import {
   ChevronDown,
-  ExternalLink,
   Loader2,
   Play,
   Plus,
@@ -28,13 +27,22 @@ import {
 } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   getApiPreviewTestJobs,
   postApiPreviewTestJobs,
   postApiPreviewTestJobsByPreviewRunIdDispatch,
   postApiPreviewTestJobsByPreviewRunIdRetry,
   deleteApiPreviewTestJobsByPreviewRunId,
   getApiPreviewTestCheckAccess,
-  getApiPreviewConfigs,
 } from "@cmux/www-openapi-client";
 
 type TeamOption = {
@@ -80,18 +88,6 @@ type TestJob = {
   taskId?: string | null;
 };
 
-type PreviewConfig = {
-  id: string;
-  repoFullName: string;
-  environmentId?: string | null;
-  repoInstallationId: number;
-  repoDefaultBranch?: string | null;
-  status: "active" | "paused" | "disabled";
-  lastRunAt?: number | null;
-  createdAt: number;
-  updatedAt: number;
-};
-
 type AccessCheckResult = {
   hasAccess: boolean;
   hasConfig: boolean;
@@ -125,7 +121,7 @@ function PreviewTestDashboardInner({
   const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [accessWarning, setAccessWarning] = useState<AccessCheckResult | null>(null);
-  const [showConfiguredRepos, setShowConfiguredRepos] = useState(false);
+  const [jobPendingDelete, setJobPendingDelete] = useState<TestJob | null>(null);
   const qc = useQueryClient();
 
   // Get the team slug for URL construction (prefer slug over ID)
@@ -156,24 +152,7 @@ function PreviewTestDashboardInner({
     enabled: Boolean(selectedTeam),
   });
 
-  // Fetch configured preview repos for this team
-  const { data: configsData, isLoading: isLoadingConfigs } = useQuery({
-    queryKey: ["preview-configs", selectedTeam],
-    queryFn: async () => {
-      const response = await getApiPreviewConfigs({
-        query: { teamSlugOrId: selectedTeam },
-      });
-      if (response.error) {
-        throw new Error("Failed to fetch preview configs");
-      }
-      return response.data;
-    },
-    enabled: Boolean(selectedTeam),
-  });
-
   const jobs = (jobsData?.jobs ?? []) as TestJob[];
-  const configs = (configsData?.configs ?? []) as PreviewConfig[];
-  const activeConfigs = configs.filter((c) => c.status === "active");
 
   // Create test job mutation
   const createJobMutation = useMutation({
@@ -285,10 +264,6 @@ function PreviewTestDashboardInner({
           const result = accessCheck.data as AccessCheckResult | undefined;
           if (result) {
             setAccessWarning(result);
-            // Show configured repos if the issue is no config
-            if (result.errorCode === "no_config") {
-              setShowConfiguredRepos(true);
-            }
           } else {
             setError("Failed to validate repository access");
           }
@@ -426,8 +401,7 @@ function PreviewTestDashboardInner({
       )}
 
       {/* PR URL input */}
-      <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-4">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3">
           <input
             type="text"
             value={prUrls}
@@ -453,7 +427,6 @@ function PreviewTestDashboardInner({
             )}
             Add
           </Button>
-        </div>
       </div>
 
       {/* Error display */}
@@ -483,14 +456,6 @@ function PreviewTestDashboardInner({
                 <p className="mt-1 text-amber-400/80">
                   {accessWarning.suggestedAction}
                 </p>
-              )}
-              {accessWarning.errorCode === "no_config" && activeConfigs.length > 0 && (
-                <button
-                  onClick={() => setShowConfiguredRepos(!showConfiguredRepos)}
-                  className="mt-2 text-amber-300 underline hover:text-amber-200"
-                >
-                  {showConfiguredRepos ? "Hide" : "Show"} configured repositories
-                </button>
               )}
               {accessWarning.errorCode === "no_installation" ||
               accessWarning.errorCode === "installation_inactive" ? (
@@ -635,11 +600,7 @@ function PreviewTestDashboardInner({
                       </Button>
                     )}
                     <button
-                      onClick={() => {
-                        if (window.confirm("Are you sure you want to delete this test job?")) {
-                          handleDeleteJob(job._id);
-                        }
-                      }}
+                      onClick={() => setJobPendingDelete(job)}
                       disabled={deleteJobMutation.isPending}
                       className="rounded p-1.5 text-neutral-400 hover:bg-red-900/50 hover:text-red-300"
                     >
@@ -794,6 +755,65 @@ function PreviewTestDashboardInner({
           </div>
         )}
       </div>
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog
+        open={jobPendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setJobPendingDelete(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-red-500/10 p-2 text-red-400">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <AlertDialogTitle>Delete test job?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete the test job for{" "}
+                  <span className="text-white">
+                    {jobPendingDelete?.repoFullName} #{jobPendingDelete?.prNumber}
+                  </span>
+                  ? This action cannot be undone.
+                </AlertDialogDescription>
+              </div>
+            </div>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel asChild>
+              <Button
+                disabled={deleteJobMutation.isPending}
+                variant="secondary"
+              >
+                Cancel
+              </Button>
+            </AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button
+                onClick={() => {
+                  if (jobPendingDelete) {
+                    handleDeleteJob(jobPendingDelete._id).then(() => {
+                      setJobPendingDelete(null);
+                    });
+                  }
+                }}
+                disabled={deleteJobMutation.isPending}
+                variant="destructive"
+              >
+                {deleteJobMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "Delete"
+                )}
+              </Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
