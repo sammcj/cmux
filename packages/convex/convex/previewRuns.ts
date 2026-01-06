@@ -231,9 +231,28 @@ export const enqueueFromTaskRun = internalMutation({
       return { created: false, reason: `Preview config is ${previewConfig.status}` };
     }
 
-    // Extract headSha from newBranch or use a placeholder
-    // In crown worker flow, we may not have the exact commit SHA
-    const headSha = taskRun.newBranch ?? `taskrun-${args.taskRunId}`;
+    // Try to get PR info from pullRequests table (has the actual commit SHA from GitHub)
+    const prRecord = await ctx.db
+      .query("pullRequests")
+      .withIndex("by_team_repo_number", (q) =>
+        q.eq("teamId", taskRun.teamId).eq("repoFullName", repoFullName).eq("number", prNumber),
+      )
+      .first();
+
+    // Extract headSha from PR record (preferred), taskRun.newBranch, or use placeholder
+    // The PR record's headSha is the actual commit SHA from GitHub webhook, which is what
+    // we want for proper commit-aware deduplication with webhook-initiated preview runs.
+    // Using the branch name (taskRun.newBranch) would cause mismatches because webhooks use SHA.
+    const headSha = prRecord?.headSha ?? taskRun.newBranch ?? `taskrun-${args.taskRunId}`;
+    const baseSha = prRecord?.baseSha;
+
+    console.log("[previewRuns] Resolved headSha for taskRun", {
+      taskRunId: args.taskRunId,
+      prNumber,
+      headSha,
+      source: prRecord?.headSha ? "pr_record" : taskRun.newBranch ? "task_run_branch" : "fallback",
+      hasPrRecord: Boolean(prRecord),
+    });
 
     // Check if there's already a preview run for this exact PR + commit combination
     // This prevents duplicate jobs for the SAME commit
@@ -286,14 +305,8 @@ export const enqueueFromTaskRun = internalMutation({
         (run.status === "pending" || run.status === "running"),
     );
 
-    // Try to get PR title from pullRequests table or task
+    // Get PR title from the already-fetched prRecord or task
     let prTitle: string | undefined;
-    const prRecord = await ctx.db
-      .query("pullRequests")
-      .withIndex("by_team_repo_number", (q) =>
-        q.eq("teamId", taskRun.teamId).eq("repoFullName", repoFullName).eq("number", prNumber),
-      )
-      .first();
     if (prRecord?.title) {
       prTitle = prRecord.title;
     } else if (task.pullRequestTitle) {
@@ -314,7 +327,7 @@ export const enqueueFromTaskRun = internalMutation({
       prTitle,
       prDescription,
       headSha,
-      baseSha: undefined,
+      baseSha,
       headRef: taskRun.newBranch ?? undefined,
       headRepoFullName: undefined,
       headRepoCloneUrl: undefined,
@@ -489,6 +502,33 @@ export const getActiveByConfigAndPr = internalQuery({
       return run;
     }
     return null;
+  },
+});
+
+/**
+ * Check if a preview run has been superseded by a newer commit.
+ * Used by the worker to detect mid-execution supersession and abort early.
+ * Returns true if the run is superseded or no longer exists.
+ */
+export const checkIfSuperseded = internalQuery({
+  args: {
+    previewRunId: v.id("previewRuns"),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.previewRunId);
+    if (!run) {
+      // Run doesn't exist - treat as superseded to stop processing
+      return { superseded: true, reason: "run_not_found" };
+    }
+    if (run.status === "superseded") {
+      return {
+        superseded: true,
+        reason: "superseded_by_newer_commit",
+        supersededBy: run.supersededBy,
+        stateReason: run.stateReason,
+      };
+    }
+    return { superseded: false };
   },
 });
 

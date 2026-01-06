@@ -41,6 +41,55 @@ const resolveConvexUrl = (): string | null => {
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Custom error thrown when a preview run has been superseded by a newer commit.
+ * This is used to signal graceful early termination (not a failure).
+ */
+class SupersededError extends Error {
+  constructor(
+    public readonly previewRunId: Id<"previewRuns">,
+    public readonly supersededBy?: Id<"previewRuns">,
+    public readonly reason?: string,
+  ) {
+    super(`Preview run ${previewRunId} was superseded`);
+    this.name = "SupersededError";
+  }
+}
+
+/**
+ * Check if the preview run has been superseded by a newer commit.
+ * If superseded, throws SupersededError to trigger graceful cleanup.
+ * This should be called at key checkpoints during the preview job execution.
+ */
+async function checkSupersessionCheckpoint(
+  ctx: ActionCtx,
+  previewRunId: Id<"previewRuns">,
+  checkpoint: string,
+): Promise<void> {
+  const result = await ctx.runQuery(internal.previewRuns.checkIfSuperseded, {
+    previewRunId,
+  });
+
+  if (result.superseded) {
+    console.log("[preview-jobs] Supersession detected at checkpoint", {
+      previewRunId,
+      checkpoint,
+      reason: result.reason,
+      supersededBy: result.supersededBy,
+    });
+    throw new SupersededError(
+      previewRunId,
+      result.supersededBy,
+      result.stateReason ?? result.reason,
+    );
+  }
+
+  console.log("[preview-jobs] Checkpoint passed - not superseded", {
+    previewRunId,
+    checkpoint,
+  });
+}
+
+/**
  * Fetch the screenshot collector release URL from Convex
  */
 async function fetchScreenshotCollectorRelease({
@@ -1265,6 +1314,7 @@ export async function runPreviewJob(
   const snapshotId = environment.morphSnapshotId;
   let instance: InstanceModel | null = null;
   let taskId: Id<"tasks"> | null = null;
+  let wasSuperseded = false; // Track if the run was superseded for cleanup
 
   if (!taskRunId) {
     console.log("[preview-jobs] No taskRun linked to preview run, creating one now", {
@@ -1438,6 +1488,10 @@ export async function runPreviewJob(
       workerUrl: workerService.url,
       workerHealthUrl: `${workerService.url}/health`,
     });
+
+    // CHECKPOINT 1: After Morph instance is ready, before git operations
+    // This is the first expensive resource we've acquired, check before proceeding
+    await checkSupersessionCheckpoint(ctx, previewRunId, "after_instance_ready");
 
     if (taskRunId) {
       const networking = instance.networking?.http_services?.map((s) => ({
@@ -1786,6 +1840,10 @@ export async function runPreviewJob(
       stdout: checkoutResult.stdout?.slice(0, 200),
     });
 
+    // CHECKPOINT 2: After git checkout, before expensive screenshot operations
+    // A newer commit may have arrived during the git fetch/checkout process
+    await checkSupersessionCheckpoint(ctx, previewRunId, "after_checkout");
+
     // Step 4: Apply environment variables and trigger screenshot collection
     await ctx.runMutation(internal.previewRuns.updateStatus, {
       previewRunId,
@@ -1942,6 +2000,10 @@ export async function runPreviewJob(
           previewRunId,
         });
       } else {
+        // CHECKPOINT 3: Before running the screenshot collector
+        // This is the most expensive operation - check one more time before proceeding
+        await checkSupersessionCheckpoint(ctx, previewRunId, "before_screenshot_collection");
+
         // Build screenshot collector options
         const screenshotOptions: ScreenshotCollectorOptions = {
           workspaceDir: repoDir,
@@ -1974,6 +2036,10 @@ export async function runPreviewJob(
           hasUiChanges: collectorResult.hasUiChanges,
           error: collectorResult.error,
         });
+
+        // CHECKPOINT 4: After screenshot collection, before uploading
+        // If superseded, don't bother uploading stale screenshots
+        await checkSupersessionCheckpoint(ctx, previewRunId, "after_screenshot_collection");
 
         // Upload screenshots to Convex storage and create screenshot set
         const uploadedImages: Array<{
@@ -2157,6 +2223,20 @@ export async function runPreviewJob(
       hasTaskRunId: Boolean(taskRunId),
     });
   } catch (error) {
+    // Handle SupersededError specially - this is graceful termination, not a failure
+    if (error instanceof SupersededError) {
+      console.log("[preview-jobs] Preview job terminated due to supersession", {
+        previewRunId,
+        supersededBy: error.supersededBy,
+        reason: error.reason,
+      });
+      // Set flag to ensure Morph instance is cleaned up in finally block
+      wasSuperseded = true;
+      // Don't mark as failed - the run is already marked as superseded
+      // The finally block will clean up the Morph instance
+      return;
+    }
+
     const message =
       error instanceof Error ? error.message : String(error ?? "Unknown error");
     console.error("[preview-jobs] Preview job failed", {
@@ -2198,13 +2278,21 @@ export async function runPreviewJob(
 
     throw error;
   } finally {
-    if (instance && !keepInstanceForTaskRun) {
+    // Always stop instance if run was superseded - the work is stale
+    // Also stop if not keeping for task run
+    if (instance && (wasSuperseded || !keepInstanceForTaskRun)) {
+      const instanceId = instance.id;
       try {
-        await stopMorphInstance(morphClient, instance.id);
+        console.log("[preview-jobs] Stopping Morph instance", {
+          previewRunId,
+          instanceId,
+          reason: wasSuperseded ? "superseded" : "not_kept_for_task",
+        });
+        await stopMorphInstance(morphClient, instanceId);
       } catch (stopError) {
         console.warn("[preview-jobs] Failed to stop Morph instance", {
           previewRunId,
-          instanceId: instance.id,
+          instanceId,
           error: stopError,
         });
       }
