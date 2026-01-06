@@ -26,27 +26,97 @@
 
 set -e
 
+hash_path() {
+    local input=$1
+    if command -v md5sum >/dev/null 2>&1; then
+        printf '%s' "$input" | md5sum | awk '{print $1}' | cut -c1-8
+    elif command -v md5 >/dev/null 2>&1; then
+        printf '%s' "$input" | md5 | awk '{print $NF}' | cut -c1-8
+    elif command -v shasum >/dev/null 2>&1; then
+        printf '%s' "$input" | shasum -a 256 | awk '{print $1}' | cut -c1-8
+    else
+        printf '%s' "nohash"
+    fi
+}
+
+is_dev_script_pid() {
+    local pid=$1
+    if [ -z "$pid" ]; then
+        return 1
+    fi
+    local cmd
+    cmd=$(ps -p "$pid" -o command= 2>/dev/null || true)
+    case "$cmd" in
+        *"scripts/dev.sh"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # Prevent multiple dev.sh instances from running (per-project lockfile)
 # Use a hash of APP_DIR to create a unique lockfile per project
 SCRIPT_DIR_TMP="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 APP_DIR_TMP="$(dirname "$SCRIPT_DIR_TMP")"
-PROJECT_HASH=$(echo "$APP_DIR_TMP" | md5sum | cut -c1-8)
+PROJECT_HASH=$(hash_path "$APP_DIR_TMP")
 LOCKFILE="/tmp/dev-server-${PROJECT_HASH}.lock"
+LOCKDIR="/tmp/dev-server-${PROJECT_HASH}.lockdir"
 PIDFILE="/tmp/dev-server-${PROJECT_HASH}.pid"
+PATHFILE="/tmp/dev-server-${PROJECT_HASH}.path"
+LOCK_METHOD="mkdir"
 
-exec 200>"$LOCKFILE"
-if ! flock -n 200; then
-    echo -e "\033[0;31mAnother dev.sh instance is already running for this project!\033[0m"
-    if [ -f "$PIDFILE" ]; then
-        echo "PID: $(cat "$PIDFILE")"
+if command -v flock >/dev/null 2>&1; then
+    LOCK_METHOD="flock"
+fi
+
+acquire_lock() {
+    if [ "$LOCK_METHOD" = "flock" ]; then
+        exec 200>"$LOCKFILE"
+        flock -n 200 2>/dev/null || return 1
+    else
+        mkdir "$LOCKDIR" 2>/dev/null || return 1
     fi
-    echo "Run 'scripts/cleanup-dev.sh' to kill it, or wait for it to finish."
-    exit 1
+}
+
+release_lock() {
+    if [ "$LOCK_METHOD" = "flock" ]; then
+        flock -u 200 2>/dev/null || true
+        rm -f "$LOCKFILE" 2>/dev/null || true
+    fi
+    rm -rf "$LOCKDIR" 2>/dev/null || true
+}
+
+if ! acquire_lock; then
+    lock_failed=true
+    if [ "$LOCK_METHOD" = "mkdir" ]; then
+        stale_pid=""
+        if [ -f "$PIDFILE" ]; then
+            stale_pid=$(cat "$PIDFILE" 2>/dev/null || true)
+        fi
+        if [ -z "$stale_pid" ] || ! is_dev_script_pid "$stale_pid"; then
+            echo "Stale dev.sh lock detected. Cleaning up..."
+            rm -rf "$LOCKDIR" 2>/dev/null || true
+            rm -f "$PIDFILE" "$PATHFILE" 2>/dev/null || true
+            if acquire_lock; then
+                lock_failed=false
+            fi
+        fi
+    fi
+
+    if [ "$lock_failed" = "true" ]; then
+        echo -e "\033[0;31mAnother dev.sh instance is already running for this project!\033[0m"
+        if [ -f "$PIDFILE" ]; then
+            echo "PID: $(cat "$PIDFILE")"
+        fi
+        echo "Run 'scripts/cleanup-dev.sh' to kill it, or wait for it to finish."
+        exit 1
+    fi
 fi
 
 # Store our PID and project path for cleanup script
 echo $$ > "$PIDFILE"
-echo "$APP_DIR_TMP" > "/tmp/dev-server-${PROJECT_HASH}.path"
+echo "$APP_DIR_TMP" > "$PATHFILE"
+
+# Ensure the lock is released if we exit before the full cleanup trap is set.
+trap 'release_lock; rm -f "$PIDFILE" "$PATHFILE" 2>/dev/null || true' EXIT
 
 # Enable job control for process group management
 set -m
@@ -247,28 +317,60 @@ cd "$APP_DIR"
 kill_descendants() {
     local pid=$1
     local signal=${2:-TERM}
+    local skip_pid=${3:-}
+    if [ -z "$pid" ]; then
+        return
+    fi
     # Get all children of this process
     local children
     children=$(pgrep -P "$pid" 2>/dev/null || true)
     for child in $children; do
-        kill_descendants "$child" "$signal"
+        kill_descendants "$child" "$signal" "$skip_pid"
     done
+    if [ -n "$skip_pid" ] && [ "$pid" -eq "$skip_pid" ]; then
+        return
+    fi
     kill -"$signal" "$pid" 2>/dev/null || true
+}
+
+kill_process_group() {
+    local pid=$1
+    local signal=${2:-TERM}
+    if [ -z "$pid" ]; then
+        return
+    fi
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -"$signal" -- "-$pid" 2>/dev/null || true
+    fi
 }
 
 # Function to cleanup on exit - kills entire process tree
 cleanup() {
+    if [ "${CLEANUP_STARTED:-false}" = "true" ]; then
+        return
+    fi
+    CLEANUP_STARTED=true
+    trap - EXIT INT TERM HUP QUIT
+
     echo -e "\n${BLUE}Shutting down...${NC}"
 
+    for pid in "$DOCKER_BUILD_PID" "$DOCKER_COMPOSE_PID" "$CONVEX_DEV_PID" "$SERVER_PID" "$CLIENT_PID" "$WWW_PID" "$OPENAPI_CLIENT_PID" "$ELECTRON_PID" "$SERVER_GLOBAL_PID"; do
+        kill_process_group "$pid" TERM
+    done
+
     # Kill all descendants of this script (covers all spawned processes)
-    # This is generalizable - no need to track individual PIDs
-    kill_descendants $$ TERM
+    # Skip killing this script to avoid re-entrant traps.
+    kill_descendants $$ TERM "$$"
 
     # Give processes 2 seconds to cleanup gracefully
     sleep 2
 
+    for pid in "$DOCKER_BUILD_PID" "$DOCKER_COMPOSE_PID" "$CONVEX_DEV_PID" "$SERVER_PID" "$CLIENT_PID" "$WWW_PID" "$OPENAPI_CLIENT_PID" "$ELECTRON_PID" "$SERVER_GLOBAL_PID"; do
+        kill_process_group "$pid" 9
+    done
+
     # Force kill any remaining descendants
-    kill_descendants $$ 9
+    kill_descendants $$ 9 "$$"
 
     # Clean up any docker compose in this project's .devcontainer (if exists)
     if [ -d "$APP_DIR/.devcontainer" ]; then
@@ -278,8 +380,8 @@ cleanup() {
     fi
 
     # Release the lock and clean up temp files
-    flock -u 200 2>/dev/null || true
-    rm -f "$LOCKFILE" "$PIDFILE" "/tmp/dev-server-${PROJECT_HASH}.path" 2>/dev/null || true
+    release_lock
+    rm -f "$PIDFILE" "$PATHFILE" 2>/dev/null || true
 
     echo -e "${GREEN}Cleanup complete${NC}"
     exit

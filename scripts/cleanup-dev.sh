@@ -5,6 +5,32 @@
 #   ./scripts/cleanup-dev.sh --all  # Clean up all dev-server instances
 set -euo pipefail
 
+hash_path() {
+    local input=$1
+    if command -v md5sum >/dev/null 2>&1; then
+        printf '%s' "$input" | md5sum | awk '{print $1}' | cut -c1-8
+    elif command -v md5 >/dev/null 2>&1; then
+        printf '%s' "$input" | md5 | awk '{print $NF}' | cut -c1-8
+    elif command -v shasum >/dev/null 2>&1; then
+        printf '%s' "$input" | shasum -a 256 | awk '{print $1}' | cut -c1-8
+    else
+        printf '%s' "nohash"
+    fi
+}
+
+is_dev_script_pid() {
+    local pid=$1
+    if [ -z "$pid" ]; then
+        return 1
+    fi
+    local cmd
+    cmd=$(ps -p "$pid" -o command= 2>/dev/null || true)
+    case "$cmd" in
+        *"scripts/dev.sh"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 APP_DIR="$(dirname "$SCRIPT_DIR")"
 
@@ -20,12 +46,25 @@ kill_descendants() {
     kill -"$signal" "$pid" 2>/dev/null || true
 }
 
+kill_process_group() {
+    local pid=$1
+    local signal=${2:-TERM}
+    if [ -z "$pid" ]; then
+        return
+    fi
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -"$signal" -- "-$pid" 2>/dev/null || true
+    fi
+}
+
 # Clean up a single dev server instance by its hash
 cleanup_instance() {
     local hash=$1
     local lockfile="/tmp/dev-server-${hash}.lock"
+    local lockdir="/tmp/dev-server-${hash}.lockdir"
     local pidfile="/tmp/dev-server-${hash}.pid"
     local pathfile="/tmp/dev-server-${hash}.path"
+    local should_clear=true
 
     local project_path="unknown"
     [ -f "$pathfile" ] && project_path=$(cat "$pathfile")
@@ -34,10 +73,21 @@ cleanup_instance() {
         local pid
         pid=$(cat "$pidfile")
         if kill -0 "$pid" 2>/dev/null; then
-            echo "Killing dev server (PID: $pid) for: $project_path"
-            kill_descendants "$pid" TERM
-            sleep 1
-            kill_descendants "$pid" 9
+            if ! is_dev_script_pid "$pid"; then
+                echo "Skipping PID $pid (does not look like dev.sh) for: $project_path"
+                should_clear=false
+            else
+                echo "Killing dev server (PID: $pid) for: $project_path"
+                kill_process_group "$pid" TERM
+                kill_descendants "$pid" TERM
+                sleep 2
+                kill_process_group "$pid" 9
+                kill_descendants "$pid" 9
+                if kill -0 "$pid" 2>/dev/null; then
+                    echo "PID $pid is still running; leaving lock files in place."
+                    should_clear=false
+                fi
+            fi
         else
             echo "Stale pidfile for: $project_path (process not running)"
         fi
@@ -54,7 +104,9 @@ cleanup_instance() {
     fi
 
     # Remove temp files
-    rm -f "$lockfile" "$pidfile" "$pathfile" 2>/dev/null || true
+    if [ "$should_clear" = "true" ]; then
+        rm -rf "$lockfile" "$lockdir" "$pidfile" "$pathfile" 2>/dev/null || true
+    fi
 }
 
 echo "Cleaning up dev server processes..."
@@ -69,7 +121,7 @@ if [ "${1:-}" = "--all" ]; then
     done
 else
     # Clean up only this project
-    PROJECT_HASH=$(echo "$APP_DIR" | md5sum | cut -c1-8)
+    PROJECT_HASH=$(hash_path "$APP_DIR")
     cleanup_instance "$PROJECT_HASH"
 fi
 
@@ -86,7 +138,7 @@ for pidfile in /tmp/dev-server-*.pid; do
     pathfile="/tmp/dev-server-${hash}.path"
     path="unknown"
     [ -f "$pathfile" ] && path=$(cat "$pathfile")
-    if kill -0 "$pid" 2>/dev/null; then
+    if kill -0 "$pid" 2>/dev/null && is_dev_script_pid "$pid"; then
         echo "  PID $pid: $path"
         found_any=true
     fi
