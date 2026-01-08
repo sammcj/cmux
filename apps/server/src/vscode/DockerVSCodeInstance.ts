@@ -90,7 +90,25 @@ export class DockerVSCodeInstance extends VSCodeInstance {
       await docker.getImage(this.imageName).inspect();
       dockerLogger.info(`Image ${this.imageName} found locally`);
     } catch (_error) {
-      // Image doesn't exist locally, try to pull it
+      // Image doesn't exist locally
+      // For local development images (cmux-worker), don't try to pull from remote registry
+      // These images must be built locally using ./scripts/dev.sh or docker build
+      const isLocalDevImage =
+        this.imageName.startsWith("cmux-worker") ||
+        !this.imageName.includes("/");
+
+      if (isLocalDevImage) {
+        dockerLogger.error(
+          `Image ${this.imageName} not found locally. This is a local development image that must be built first.`
+        );
+        throw new Error(
+          `Docker image '${this.imageName}' not found locally. ` +
+            `This is a local development image that must be built before use. ` +
+            `Please run './scripts/dev.sh' or 'docker build -t ${this.imageName} .' to build it.`
+        );
+      }
+
+      // Only try to pull images that look like they come from a registry (contain '/')
       dockerLogger.info(
         `Image ${this.imageName} not found locally, pulling...`
       );
