@@ -382,7 +382,20 @@ export async function spawnAgent(
       return arg;
     });
 
-    const agentCommand = `${agent.command} ${processedArgs.join(" ")}`;
+    const shouldStripDangerousPermissions =
+      !options.isCloudMode &&
+      processedArgs.includes("--dangerously-skip-permissions");
+    const sanitizedArgs = shouldStripDangerousPermissions
+      ? processedArgs.filter((arg) => arg !== "--dangerously-skip-permissions")
+      : processedArgs;
+
+    if (shouldStripDangerousPermissions) {
+      serverLogger.info(
+        `[AgentSpawner] Removing --dangerously-skip-permissions for ${agent.name} in local Docker mode (root restrictions)`
+      );
+    }
+
+    const agentCommand = `${agent.command} ${sanitizedArgs.join(" ")}`;
 
     // Build the tmux session command that will be sent via socket.io
     const tmuxSessionName = sanitizeTmuxSessionName("cmux");
@@ -782,7 +795,7 @@ chmod +x ${maintenanceScriptPath}`;
     }
 
     const actualCommand = agent.command;
-    const actualArgs = processedArgs;
+    const actualArgs = sanitizedArgs;
 
     // Build a shell command string so CMUX env vars expand inside tmux session
     const shellEscaped = (s: string) => {

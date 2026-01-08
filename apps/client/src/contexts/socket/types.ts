@@ -1,11 +1,7 @@
-import type {
-  AvailableEditors,
-  ClientToServerEvents,
-  ServerToClientEvents,
-} from "@cmux/shared";
-import type { Socket } from "socket.io-client";
+import type { AvailableEditors } from "@cmux/shared";
+import type { MainServerSocket } from "@cmux/shared/socket";
 
-export type CmuxSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+export type CmuxSocket = MainServerSocket;
 export interface SocketContextType {
   socket: CmuxSocket | null;
   isConnected: boolean;
