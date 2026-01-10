@@ -5,6 +5,11 @@ import {
   type AgentConfig,
   type EnvironmentResult,
 } from "@cmux/shared/agentConfig";
+import {
+  ANTHROPIC_MODEL_HAIKU_45_ENV,
+  ANTHROPIC_MODEL_OPUS_45_ENV,
+  ANTHROPIC_MODEL_SONNET_45_ENV,
+} from "@cmux/shared/utils/anthropic";
 import type {
   WorkerCreateTerminal,
   WorkerTerminalFailed,
@@ -402,21 +407,25 @@ export async function spawnAgent(
 
     // Replace $PROMPT placeholders in args with $CMUX_PROMPT token for shell-time expansion
     // Also substitute $ANTHROPIC_MODEL_* env vars with actual values from server environment
+    const modelEnvVars: Record<string, string | undefined> = {
+      [`$${ANTHROPIC_MODEL_OPUS_45_ENV}`]: process.env[ANTHROPIC_MODEL_OPUS_45_ENV],
+      [`$${ANTHROPIC_MODEL_SONNET_45_ENV}`]: process.env[ANTHROPIC_MODEL_SONNET_45_ENV],
+      [`$${ANTHROPIC_MODEL_HAIKU_45_ENV}`]: process.env[ANTHROPIC_MODEL_HAIKU_45_ENV],
+    };
+
     const processedArgs = agent.args.map((arg) => {
       let result = arg;
       if (result.includes("$PROMPT")) {
         result = result.replace(/\$PROMPT/g, "$CMUX_PROMPT");
       }
-      // Substitute ANTHROPIC_MODEL_* env vars with their actual values
-      const modelEnvMatch = result.match(/\$ANTHROPIC_MODEL_\w+/);
-      if (modelEnvMatch) {
-        const envVarName = modelEnvMatch[0].slice(1); // Remove leading $
-        const envValue = process.env[envVarName];
-        if (envValue) {
-          result = result.replace(modelEnvMatch[0], envValue);
+      // Direct env var substitution for model IDs
+      if (result in modelEnvVars) {
+        const value = modelEnvVars[result];
+        if (value) {
+          result = value;
         } else {
           serverLogger.warn(
-            `[AgentSpawner] Environment variable ${envVarName} is not set`
+            `[AgentSpawner] Environment variable ${result.slice(1)} is not set`
           );
         }
       }
