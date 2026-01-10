@@ -11,7 +11,7 @@ export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
 ];
 
 export async function getClaudeEnvironment(
-  ctx: EnvironmentContext,
+  _ctx: EnvironmentContext,
 ): Promise<EnvironmentResult> {
   // These must be lazy since configs are imported into the browser
   // const { exec } = await import("node:child_process");
