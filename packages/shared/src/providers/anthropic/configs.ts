@@ -1,10 +1,5 @@
 import type { AgentConfig } from "../../agentConfig";
-import {
-  AWS_ACCESS_KEY_ID,
-  AWS_REGION,
-  AWS_SECRET_ACCESS_KEY,
-  AWS_SESSION_TOKEN,
-} from "../../apiKeys";
+import { AWS_BEARER_TOKEN_BEDROCK, AWS_REGION } from "../../apiKeys";
 import {
   ANTHROPIC_MODEL_HAIKU_45_ENV,
   ANTHROPIC_MODEL_OPUS_45_ENV,
@@ -20,8 +15,8 @@ import {
 /**
  * Apply API keys for Claude agents using AWS Bedrock.
  *
- * Sets up AWS credentials for Claude Code to use AWS Bedrock instead of
- * Anthropic API directly.
+ * Sets up AWS Bedrock bearer token authentication for Claude Code.
+ * This is the simpler auth method - just a bearer token, no IAM credentials needed.
  */
 const applyClaudeApiKeys: NonNullable<AgentConfig["applyApiKeys"]> = async (
   keys,
@@ -34,22 +29,15 @@ const applyClaudeApiKeys: NonNullable<AgentConfig["applyApiKeys"]> = async (
     CLAUDE_CODE_USE_BEDROCK: "1",
   };
 
-  // Set AWS credentials if provided
-  if (keys.AWS_ACCESS_KEY_ID && keys.AWS_ACCESS_KEY_ID.trim().length > 0) {
-    env.AWS_ACCESS_KEY_ID = keys.AWS_ACCESS_KEY_ID;
-  }
-
+  // Set AWS Bedrock bearer token if provided
   if (
-    keys.AWS_SECRET_ACCESS_KEY &&
-    keys.AWS_SECRET_ACCESS_KEY.trim().length > 0
+    keys.AWS_BEARER_TOKEN_BEDROCK &&
+    keys.AWS_BEARER_TOKEN_BEDROCK.trim().length > 0
   ) {
-    env.AWS_SECRET_ACCESS_KEY = keys.AWS_SECRET_ACCESS_KEY;
+    env.AWS_BEARER_TOKEN_BEDROCK = keys.AWS_BEARER_TOKEN_BEDROCK;
   }
 
-  if (keys.AWS_SESSION_TOKEN && keys.AWS_SESSION_TOKEN.trim().length > 0) {
-    env.AWS_SESSION_TOKEN = keys.AWS_SESSION_TOKEN;
-  }
-
+  // Set AWS region if provided
   if (keys.AWS_REGION && keys.AWS_REGION.trim().length > 0) {
     env.AWS_REGION = keys.AWS_REGION;
   }
@@ -74,7 +62,7 @@ export const CLAUDE_OPUS_4_5_CONFIG: AgentConfig = {
   ],
   environment: getClaudeEnvironment,
   checkRequirements: checkClaudeRequirements,
-  apiKeys: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_REGION],
+  apiKeys: [AWS_BEARER_TOKEN_BEDROCK, AWS_REGION],
   applyApiKeys: applyClaudeApiKeys,
   completionDetector: startClaudeCompletionDetector,
 };
@@ -93,7 +81,7 @@ export const CLAUDE_SONNET_4_5_CONFIG: AgentConfig = {
   ],
   environment: getClaudeEnvironment,
   checkRequirements: checkClaudeRequirements,
-  apiKeys: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_REGION],
+  apiKeys: [AWS_BEARER_TOKEN_BEDROCK, AWS_REGION],
   applyApiKeys: applyClaudeApiKeys,
   completionDetector: startClaudeCompletionDetector,
 };
@@ -112,7 +100,7 @@ export const CLAUDE_HAIKU_4_5_CONFIG: AgentConfig = {
   ],
   environment: getClaudeEnvironment,
   checkRequirements: checkClaudeRequirements,
-  apiKeys: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_REGION],
+  apiKeys: [AWS_BEARER_TOKEN_BEDROCK, AWS_REGION],
   applyApiKeys: applyClaudeApiKeys,
   completionDetector: startClaudeCompletionDetector,
 };
