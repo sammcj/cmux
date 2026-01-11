@@ -214,9 +214,15 @@ function createFineTunedDenseV2OpenAiConfig(): ModelConfig {
 }
 
 function createAnthropicOpus45Config(): ModelConfig {
+  const modelId = env.ANTHROPIC_MODEL_OPUS_45;
+  if (!modelId) {
+    throw new Error(
+      "ANTHROPIC_MODEL_OPUS_45 environment variable is not configured"
+    );
+  }
   return {
     provider: "anthropic",
-    model: env.ANTHROPIC_MODEL_OPUS_45,
+    model: modelId,
   };
 }
 
