@@ -321,6 +321,13 @@ export async function spawnAgent(
     if (process.env.AWS_REGION) {
       apiKeys.AWS_REGION = process.env.AWS_REGION;
     }
+    // Inject AWS Bedrock model IDs for Claude agents
+    if (process.env.ANTHROPIC_MODEL_OPUS_45) {
+      apiKeys.ANTHROPIC_MODEL_OPUS_45 = process.env.ANTHROPIC_MODEL_OPUS_45;
+    }
+    if (process.env.ANTHROPIC_MODEL_HAIKU_45) {
+      apiKeys.ANTHROPIC_MODEL_HAIKU_45 = process.env.ANTHROPIC_MODEL_HAIKU_45;
+    }
 
     // Use environment property if available
     if (agent.environment) {

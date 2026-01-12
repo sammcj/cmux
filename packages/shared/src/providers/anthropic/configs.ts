@@ -6,14 +6,21 @@ import {
   getClaudeEnvironment,
 } from "./environment";
 
-// Bedrock model IDs from environment variables (required at runtime, not load time)
+// Bedrock model IDs from environment variables or keys parameter (required at runtime, not load time)
 // These are read lazily to avoid breaking Convex module analysis
-function getBedrockModelId(envVar: string): string {
-  const value = process.env[envVar];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${envVar}`);
+// Accepts optional keys parameter to allow passing model IDs through the apiKeys mechanism
+function getBedrockModelId(envVar: string, keys?: Record<string, string>): string {
+  // First check the keys parameter (passed from agentSpawner)
+  const valueFromKeys = keys?.[envVar];
+  if (valueFromKeys) {
+    return valueFromKeys;
   }
-  return value;
+  // Fall back to process.env (for local development)
+  const valueFromEnv = process.env[envVar];
+  if (valueFromEnv) {
+    return valueFromEnv;
+  }
+  throw new Error(`Missing required environment variable: ${envVar}`);
 }
 
 /**
@@ -28,7 +35,8 @@ function createApplyClaudeApiKeys(
 ): NonNullable<AgentConfig["applyApiKeys"]> {
   return async (keys) => {
     // Read model ID lazily at runtime (not at module load time)
-    const bedrockModelId = getBedrockModelId(bedrockModelEnvVar);
+    // Pass keys to allow model ID to come from apiKeys mechanism (for web mode)
+    const bedrockModelId = getBedrockModelId(bedrockModelEnvVar, keys);
     // Base env vars to unset (prevent conflicts)
     const unsetEnv = [...CLAUDE_KEY_ENV_VARS_TO_UNSET];
 
