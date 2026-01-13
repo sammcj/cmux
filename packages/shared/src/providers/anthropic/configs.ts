@@ -32,7 +32,7 @@ function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKeys"]> {
       return {
         env: {
           CLAUDE_CODE_OAUTH_TOKEN: oauthToken,
-        } as Record<string, string>,
+        },
         unsetEnv,
       };
     }
@@ -42,7 +42,7 @@ function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKeys"]> {
       return {
         env: {
           ANTHROPIC_API_KEY: anthropicKey,
-        } as Record<string, string>,
+        },
         unsetEnv,
       };
     }
@@ -54,7 +54,7 @@ function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKeys"]> {
       env: {
         ANTHROPIC_BASE_URL: keys.ANTHROPIC_BASE_URL || "",
         ANTHROPIC_API_KEY: "sk_placeholder_cmux_anthropic_api_key",
-      } as Record<string, string>,
+      },
       unsetEnv,
     };
   };
