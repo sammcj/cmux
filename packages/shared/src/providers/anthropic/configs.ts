@@ -52,7 +52,7 @@ function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKeys"]> {
     // API key never leaves the server - we use a placeholder so Claude Code doesn't complain
     return {
       env: {
-        ANTHROPIC_BASE_URL: keys.ANTHROPIC_BASE_URL || "",
+        ANTHROPIC_BASE_URL: keys.ANTHROPIC_BASE_URL,
         ANTHROPIC_API_KEY: "sk_placeholder_cmux_anthropic_api_key",
       },
       unsetEnv,

@@ -94,7 +94,7 @@ type BranchBaseOptions = {
   /** Command to start the dev server (e.g., "bun run dev", "npm run dev") */
   devCommand?: string;
   /** Callback URL for the Anthropic proxy (e.g., "https://www.cmux.dev" or Convex site URL) */
-  callbackUrl?: string;
+  convexSiteUrl?: string;
 };
 
 type BranchCaptureOptions =
@@ -153,7 +153,7 @@ export async function captureScreenshotsForBranch(
     auth,
     installCommand,
     devCommand,
-    callbackUrl,
+    convexSiteUrl,
   } = options;
   const outputDir = normalizeScreenshotOutputDir(requestedOutputDir);
   const useTaskRunJwt = isTaskRunJwtAuth(auth);
@@ -308,7 +308,7 @@ INCOMPLETE CAPTURE: Missing important UI elements. Ensure full components are vi
   const screenshotPaths: string[] = [];
   let structuredOutput: ScreenshotStructuredOutput | null = null;
 
-  const anthropicBaseUrl = `${callbackUrl}/api/anthropic`;
+  const anthropicBaseUrl = `${convexSiteUrl}/api/anthropic`;
 
   try {
     const hadOriginalApiKey = Object.prototype.hasOwnProperty.call(
@@ -381,10 +381,10 @@ INCOMPLETE CAPTURE: Missing important UI elements. Ensure full components are vi
             CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
             ...(useTaskRunJwt
               ? {
-                  ANTHROPIC_API_KEY: "sk_placeholder_cmux_anthropic_api_key",
-                  ANTHROPIC_BASE_URL: anthropicBaseUrl,
-                  ANTHROPIC_CUSTOM_HEADERS: `x-cmux-token:${auth.taskRunJwt}`,
-                }
+                ANTHROPIC_API_KEY: "sk_placeholder_cmux_anthropic_api_key",
+                ANTHROPIC_BASE_URL: anthropicBaseUrl,
+                ANTHROPIC_CUSTOM_HEADERS: `x-cmux-token:${auth.taskRunJwt}`,
+              }
               : {}),
           },
           stderr: (data) =>
@@ -565,29 +565,29 @@ export async function claudeCodeCapturePRScreenshots(
       const beforeScreenshots = await captureScreenshotsForBranch(
         isTaskRunJwtAuth(auth)
           ? {
-              workspaceDir,
-              changedFiles,
-              prTitle,
-              prDescription,
-              branch: baseBranch,
-              outputDir,
-              auth: { taskRunJwt: auth.taskRunJwt },
-              pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
-              installCommand: options.installCommand,
-              devCommand: options.devCommand,
-            }
+            workspaceDir,
+            changedFiles,
+            prTitle,
+            prDescription,
+            branch: baseBranch,
+            outputDir,
+            auth: { taskRunJwt: auth.taskRunJwt },
+            pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
+            installCommand: options.installCommand,
+            devCommand: options.devCommand,
+          }
           : {
-              workspaceDir,
-              changedFiles,
-              prTitle,
-              prDescription,
-              branch: baseBranch,
-              outputDir,
-              auth: { anthropicApiKey: auth.anthropicApiKey },
-              pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
-              installCommand: options.installCommand,
-              devCommand: options.devCommand,
-            }
+            workspaceDir,
+            changedFiles,
+            prTitle,
+            prDescription,
+            branch: baseBranch,
+            outputDir,
+            auth: { anthropicApiKey: auth.anthropicApiKey },
+            pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
+            installCommand: options.installCommand,
+            devCommand: options.devCommand,
+          }
       );
       allScreenshots.push(...beforeScreenshots.screenshots);
       if (beforeScreenshots.hasUiChanges !== undefined) {
@@ -605,29 +605,29 @@ export async function claudeCodeCapturePRScreenshots(
     const afterScreenshots = await captureScreenshotsForBranch(
       isTaskRunJwtAuth(auth)
         ? {
-            workspaceDir,
-            changedFiles,
-            prTitle,
-            prDescription,
-            branch: headBranch,
-            outputDir,
-            auth: { taskRunJwt: auth.taskRunJwt },
-            pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
-            installCommand: options.installCommand,
-            devCommand: options.devCommand,
-          }
+          workspaceDir,
+          changedFiles,
+          prTitle,
+          prDescription,
+          branch: headBranch,
+          outputDir,
+          auth: { taskRunJwt: auth.taskRunJwt },
+          pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
+          installCommand: options.installCommand,
+          devCommand: options.devCommand,
+        }
         : {
-            workspaceDir,
-            changedFiles,
-            prTitle,
-            prDescription,
-            branch: headBranch,
-            outputDir,
-            auth: { anthropicApiKey: auth.anthropicApiKey },
-            pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
-            installCommand: options.installCommand,
-            devCommand: options.devCommand,
-          }
+          workspaceDir,
+          changedFiles,
+          prTitle,
+          prDescription,
+          branch: headBranch,
+          outputDir,
+          auth: { anthropicApiKey: auth.anthropicApiKey },
+          pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
+          installCommand: options.installCommand,
+          devCommand: options.devCommand,
+        }
     );
     allScreenshots.push(...afterScreenshots.screenshots);
     if (afterScreenshots.hasUiChanges !== undefined) {
@@ -680,7 +680,7 @@ const cliOptionsSchema = z.object({
   pathToClaudeCodeExecutable: z.string().optional(),
   installCommand: z.string().optional(),
   devCommand: z.string().optional(),
-  callbackUrl: z.string().optional(),
+  convexSiteUrl: z.string().optional(),
   auth: z.union([
     z.object({ taskRunJwt: z.string() }),
     z.object({ anthropicApiKey: z.string() }),
