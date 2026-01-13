@@ -575,6 +575,7 @@ export async function claudeCodeCapturePRScreenshots(
             pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
             installCommand: options.installCommand,
             devCommand: options.devCommand,
+            convexSiteUrl: options.convexSiteUrl,
           }
           : {
             workspaceDir,
@@ -587,6 +588,7 @@ export async function claudeCodeCapturePRScreenshots(
             pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
             installCommand: options.installCommand,
             devCommand: options.devCommand,
+            convexSiteUrl: options.convexSiteUrl,
           }
       );
       allScreenshots.push(...beforeScreenshots.screenshots);
@@ -615,6 +617,7 @@ export async function claudeCodeCapturePRScreenshots(
           pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
           installCommand: options.installCommand,
           devCommand: options.devCommand,
+          convexSiteUrl: options.convexSiteUrl,
         }
         : {
           workspaceDir,
@@ -627,6 +630,7 @@ export async function claudeCodeCapturePRScreenshots(
           pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
           installCommand: options.installCommand,
           devCommand: options.devCommand,
+          convexSiteUrl: options.convexSiteUrl,
         }
     );
     allScreenshots.push(...afterScreenshots.screenshots);
