@@ -127,19 +127,7 @@ export const anthropicProxy = httpAction(async (_ctx, req) => {
     const body = await req.json();
     const requestedModel = body.model;
 
-    // Debug: log key prefix to see what we're receiving
-    console.log("[anthropic-proxy] Received key prefix:", {
-      keyPrefix: xApiKey?.substring(0, 15) ?? "null",
-      isPlaceholder: xApiKey === hardCodedApiKey,
-      useUserApiKey,
-    });
-
     if (useUserApiKey) {
-      // User provided their own API key → pass through all original headers to Anthropic
-      console.log("[anthropic-proxy] Routing to ANTHROPIC DIRECT (user API key)", {
-        model: requestedModel,
-      });
-
       // Pass through all original headers like WWW does
       const headers: Record<string, string> = {};
       req.headers.forEach((value, key) => {
@@ -173,11 +161,6 @@ export const anthropicProxy = httpAction(async (_ctx, req) => {
       const vertexModelId = toVertexModelId(requestedModel);
       const streamSuffix = body.stream ? ":streamRawPredict" : ":rawPredict";
       const cloudflareUrl = `${CLOUDFLARE_VERTEX_BASE_URL}/${vertexModelId}${streamSuffix}`;
-
-      console.log("[anthropic-proxy] Routing to VERTEX AI (platform credits)", {
-        model: requestedModel,
-        vertexModelId,
-      });
 
       // Build service account JSON for Cloudflare authentication
       const serviceAccountJson = buildServiceAccountJson();
