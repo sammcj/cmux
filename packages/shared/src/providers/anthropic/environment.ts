@@ -240,13 +240,11 @@ exit 0`;
       CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: 1,
       ...(hasOAuthToken
         ? {}
-        : (() => {
-          const anthropicBaseUrl = `${ctx.callbackUrl}/api/anthropic`;
-          return {
-            ANTHROPIC_BASE_URL: anthropicBaseUrl,
-            ANTHROPIC_CUSTOM_HEADERS: `x-cmux-token:${ctx.taskRunJwt}`,
-          };
-        })()),
+        : {
+          ANTHROPIC_BASE_URL: `${ctx.callbackUrl}/api/anthropic`,
+          ANTHROPIC_CUSTOM_HEADERS: `x-cmux-token:${ctx.taskRunJwt}`,
+        }
+      ),
     },
   };
 
