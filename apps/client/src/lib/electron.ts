@@ -27,5 +27,6 @@ export const isElectron = getIsElectron();
  */
 export function getElectronBridge(): CmuxAPI | undefined {
   if (typeof window === "undefined") return undefined;
-  return (window as { cmux?: CmuxAPI }).cmux;
+  if (!("cmux" in window)) return undefined;
+  return window.cmux;
 }
