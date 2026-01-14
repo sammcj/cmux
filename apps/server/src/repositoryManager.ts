@@ -365,7 +365,7 @@ export class RepositoryManager {
         }
       }
     } catch (err) {
-      console.error("Failed to get authenticated origin URL:", err);
+      serverLogger.error("Failed to get authenticated origin URL:", err);
     }
 
     return "origin";

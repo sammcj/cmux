@@ -142,7 +142,7 @@ export function RepositoryPicker({
   }, [initialSnapshotId]);
 
   const handleConnectionsInvalidated = useCallback((): void => {
-    router.options.context.queryClient?.invalidateQueries();
+    router.options.context?.queryClient?.invalidateQueries();
     window.focus?.();
   }, [router]);
 
@@ -810,8 +810,8 @@ function RepositoryListSection({
                     <div className="text-sm flex items-center gap-2 min-w-0 flex-1">
                       <div
                         className={`mr-1 h-4 w-4 rounded-sm border grid place-items-center shrink-0 ${isSelected
-                            ? "border-neutral-700 bg-neutral-800"
-                            : "border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950"
+                          ? "border-neutral-700 bg-neutral-800"
+                          : "border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950"
                           }`}
                       >
                         <Check

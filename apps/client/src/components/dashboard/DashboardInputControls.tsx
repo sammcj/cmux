@@ -68,11 +68,8 @@ function watchPopupClosed(win: Window | null, onClose: () => void): void {
         window.clearInterval(timer);
         onClose();
       }
-    } catch {
-      // Cross-origin security error means we can't track the window anymore
-      // Treat as closed since we can't determine its state
-      window.clearInterval(timer);
-      onClose();
+    } catch (_error) {
+      void 0;
     }
   }, 600);
 }
@@ -378,12 +375,12 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type === "cmux/github-install-complete") {
-        router.options.context.queryClient?.invalidateQueries();
+        router.options.context?.queryClient?.invalidateQueries();
       }
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [router.options.context.queryClient]);
+  }, [router.options.context?.queryClient]);
 
   const handleImageClick = useCallback(() => {
     // Trigger the file select from ImagePlugin
@@ -550,11 +547,11 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       url,
       { name: "github-install" },
       () => {
-        router.options.context.queryClient?.invalidateQueries();
+        router.options.context?.queryClient?.invalidateQueries();
       },
     );
     win?.focus?.();
-  }, [mintState, router.options.context.queryClient, teamSlugOrId]);
+  }, [mintState, router.options.context?.queryClient, teamSlugOrId]);
 
   // Check for pending GitHub App install intent on mount (after OAuth redirect)
   useEffect(() => {
