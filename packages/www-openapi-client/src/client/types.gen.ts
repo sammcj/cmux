@@ -375,6 +375,7 @@ export type GithubDefaultBranchResponse = {
 export type GithubBranch = {
     name: string;
     lastCommitSha?: string;
+    lastCommitDate?: string;
     isDefault?: boolean;
 };
 
@@ -382,6 +383,8 @@ export type GithubBranchesResponse = {
     branches: Array<GithubBranch>;
     defaultBranch: string | null;
     error: string | null;
+    nextCursor: string | null;
+    hasMore: boolean;
 };
 
 export type ResumeTaskRunResponse = {
@@ -1857,6 +1860,10 @@ export type GetApiIntegrationsGithubBranchesData = {
          * Max branches to return (default 30, max 100)
          */
         limit?: number;
+        /**
+         * Cursor for pagination (from previous response)
+         */
+        cursor?: string;
     };
     url: '/api/integrations/github/branches';
 };

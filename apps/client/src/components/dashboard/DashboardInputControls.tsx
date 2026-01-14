@@ -20,7 +20,7 @@ import { parseGithubRepoUrl } from "@cmux/shared";
 import { Link, useRouter } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useAction, useMutation } from "convex/react";
-import { Check, GitBranch, Image, Link2, Mic, Server, X } from "lucide-react";
+import { Check, GitBranch, Image, Link2, Loader2, Mic, Server, X } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AgentCommandItem, MAX_AGENT_COMMAND_COUNT } from "./AgentCommandItem";
@@ -35,6 +35,9 @@ interface DashboardInputControlsProps {
   onBranchChange: (branches: string[]) => void;
   onBranchSearchChange?: (search: string) => void;
   isBranchSearchLoading?: boolean;
+  onBranchLoadMore?: () => void;
+  canLoadMoreBranches?: boolean;
+  isLoadingMoreBranches?: boolean;
   selectedAgents: string[];
   onAgentChange: (agents: string[]) => void;
   isCloudMode: boolean;
@@ -64,6 +67,9 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   onBranchChange,
   onBranchSearchChange,
   isBranchSearchLoading = false,
+  onBranchLoadMore,
+  canLoadMoreBranches = false,
+  isLoadingMoreBranches = false,
   selectedAgents,
   onAgentChange,
   isCloudMode,
@@ -180,6 +186,13 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     }
     return map;
   }, [agentOptions]);
+
+  const branchFooter = isLoadingMoreBranches ? (
+    <div className="flex items-center gap-2 px-3 py-2 text-[11px] text-neutral-500 dark:text-neutral-400">
+      <Loader2 className="h-3 w-3 animate-spin" />
+      Loading more branches...
+    </div>
+  ) : null;
 
   const generateInstanceId = () => crypto.randomUUID();
 
@@ -682,6 +695,10 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                   onSearchChange={onBranchSearchChange}
                   searchLoading={isBranchSearchLoading}
                   disableClientFilter
+                  onLoadMore={onBranchLoadMore}
+                  canLoadMore={canLoadMoreBranches}
+                  isLoadingMore={isLoadingMoreBranches}
+                  footer={branchFooter}
                   placeholder="Branch"
                   singleSelect={true}
                   className="rounded-2xl"

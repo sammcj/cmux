@@ -105,6 +105,12 @@ export interface SearchableSelectProps {
   searchLoading?: boolean;
   // Disable client-side filtering (use when server handles filtering)
   disableClientFilter?: boolean;
+  // Callback when the list is near the end to load more options
+  onLoadMore?: () => void;
+  // Whether more options are available
+  canLoadMore?: boolean;
+  // Whether more options are currently loading
+  isLoadingMore?: boolean;
 }
 
 interface WarningIndicatorProps {
@@ -263,6 +269,9 @@ const SearchableSelect = forwardRef<
     onSearchChange,
     searchLoading = false,
     disableClientFilter = false,
+    onLoadMore,
+    canLoadMore = false,
+    isLoadingMore = false,
   },
   ref
 ) {
@@ -448,6 +457,7 @@ const SearchableSelect = forwardRef<
   }, [normOptions, search, disableClientFilter]);
 
   const listRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreLockRef = useRef(false);
   const rowVirtualizer = useVirtualizer({
     count: filteredOptions.length,
     getScrollElement: () => listRef.current,
@@ -457,6 +467,43 @@ const SearchableSelect = forwardRef<
     // even before ResizeObserver kicks in.
     initialRect: { width: 300, height: 300 },
   });
+
+  const triggerLoadMore = useCallback(() => {
+    if (!onLoadMore || !canLoadMore || isLoadingMore || loadMoreLockRef.current) {
+      return;
+    }
+    const el = listRef.current;
+    if (!el) return;
+    const threshold = 120;
+    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (remaining > threshold && el.scrollHeight > el.clientHeight + 2) {
+      return;
+    }
+    loadMoreLockRef.current = true;
+    onLoadMore();
+  }, [canLoadMore, isLoadingMore, onLoadMore]);
+
+  useEffect(() => {
+    if (!open) return;
+    const el = listRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      triggerLoadMore();
+    };
+    el.addEventListener("scroll", onScroll);
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [open, triggerLoadMore]);
+
+  useEffect(() => {
+    if (!open) return;
+    triggerLoadMore();
+  }, [open, filteredOptions.length, triggerLoadMore]);
+
+  useEffect(() => {
+    if (!isLoadingMore) {
+      loadMoreLockRef.current = false;
+    }
+  }, [canLoadMore, isLoadingMore, filteredOptions.length]);
 
   useEffect(() => {
     if (open) {
