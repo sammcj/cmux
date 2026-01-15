@@ -20,6 +20,7 @@ import {
   deriveVscodeUrl,
   ensureInitialEnvVars,
 } from "@cmux/shared/components/environment";
+import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { formatEnvVarsContent } from "@cmux/shared/utils/format-env-vars-content";
 import { validateExposedPorts } from "@cmux/shared/utils/validate-exposed-ports";
 import {
@@ -44,7 +45,6 @@ import {
 import { toast } from "sonner";
 import { EnvironmentInitialSetup } from "./EnvironmentInitialSetup";
 import { EnvironmentWorkspaceConfig } from "./EnvironmentWorkspaceConfig";
-import type { Id } from "@cmux/convex/dataModel";
 
 interface EnvironmentSetupFlowProps {
   teamSlugOrId: string;
@@ -391,7 +391,7 @@ export function EnvironmentSetupFlow({
             to: "/$teamSlugOrId/environments/$environmentId",
             params: {
               teamSlugOrId,
-              environmentId: data.id as Id<"environments">,
+              environmentId: typedZid("environments").parse(data.id),
             },
             search: {
               step: undefined,

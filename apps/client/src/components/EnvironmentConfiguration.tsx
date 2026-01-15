@@ -19,6 +19,7 @@ import {
 } from "@/types/environment";
 import { formatEnvVarsContent } from "@cmux/shared/utils/format-env-vars-content";
 import type { MorphSnapshotId } from "@cmux/shared";
+import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { validateExposedPorts } from "@cmux/shared/utils/validate-exposed-ports";
 import {
   postApiEnvironmentsMutation,
@@ -580,7 +581,7 @@ export function EnvironmentConfiguration({
               to: "/$teamSlugOrId/environments/$environmentId",
               params: {
                 teamSlugOrId,
-                environmentId: data.id as Id<"environments">,
+                environmentId: typedZid("environments").parse(data.id),
               },
               search: {
                 step: undefined,
