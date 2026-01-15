@@ -21,7 +21,7 @@ import {
   GitCompare as GitCompareIcon,
   Github,
   Home,
-  Link2,
+  // Link2, // commented out: quick setup input is disabled
   Loader2,
   Monitor,
   MoreVertical,
@@ -3702,8 +3702,8 @@ function PreviewDashboardInner({
   // OAuth sign-in with popup
   const { signInWithPopup, signingInProvider } = useOAuthPopup();
 
-  // Public URL input state
-  const [repoUrlInput, setRepoUrlInput] = useState("");
+  // Public URL input state (commented out: quick setup input is disabled)
+  // const [repoUrlInput, setRepoUrlInput] = useState("");
 
   const currentProviderConnections = useMemo(
     () => providerConnectionsByTeam[selectedTeamSlugOrIdState] ?? [],
@@ -3772,29 +3772,29 @@ function PreviewDashboardInner({
     setConfigs(previewConfigs);
   }, [previewConfigs]);
 
-  // Parse GitHub URL to extract owner/repo
-  const parseGithubUrl = useCallback((input: string): string | null => {
-    const trimmed = input.trim();
-    // Try to parse as URL
-    try {
-      const url = new URL(trimmed);
-      if (url.hostname === "github.com" || url.hostname === "www.github.com") {
-        const parts = url.pathname.split("/").filter(Boolean);
-        if (parts.length >= 2) {
-          return `${parts[0]}/${parts[1]}`;
-        }
-      }
-    } catch {
-      // Not a valid URL, check if it's owner/repo format
-      const ownerRepoMatch = trimmed.match(
-        /^([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)$/
-      );
-      if (ownerRepoMatch) {
-        return trimmed;
-      }
-    }
-    return null;
-  }, []);
+  // Parse GitHub URL to extract owner/repo (commented out: quick setup input is disabled)
+  // const parseGithubUrl = useCallback((input: string): string | null => {
+  //   const trimmed = input.trim();
+  //   // Try to parse as URL
+  //   try {
+  //     const url = new URL(trimmed);
+  //     if (url.hostname === "github.com" || url.hostname === "www.github.com") {
+  //       const parts = url.pathname.split("/").filter(Boolean);
+  //       if (parts.length >= 2) {
+  //         return `${parts[0]}/${parts[1]}`;
+  //       }
+  //     }
+  //   } catch {
+  //     // Not a valid URL, check if it's owner/repo format
+  //     const ownerRepoMatch = trimmed.match(
+  //       /^([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)$/
+  //     );
+  //     if (ownerRepoMatch) {
+  //       return trimmed;
+  //     }
+  //   }
+  //   return null;
+  // }, []);
 
   const handleOpenConfig = useCallback((config: PreviewConfigListItem) => {
     setOpeningConfigId(config.id);
@@ -3864,96 +3864,97 @@ function PreviewDashboardInner({
     setErrorMessage(null);
   }, []);
 
-  const handleStartPreview = useCallback(async () => {
-    const repoName = parseGithubUrl(repoUrlInput);
-    if (!repoName) {
-      setErrorMessage("Please enter a valid GitHub URL or owner/repo");
-      return;
-    }
-
-    // For unauthenticated users, redirect to sign-in without requiring team selection
-    if (!isAuthenticated) {
-      const params = new URLSearchParams({ repo: repoName });
-      // Include team if available, otherwise the configure page will handle it after sign-in
-      if (selectedTeamSlugOrIdState) {
-        params.set("team", selectedTeamSlugOrIdState);
-      }
-      const configurePath = `/preview/configure?${params.toString()}`;
-      setErrorMessage(null);
-      setNavigatingRepo("__url_input__");
-      window.location.href = `/handler/sign-in?after_auth_return_to=${encodeURIComponent(configurePath)}`;
-      return;
-    }
-
-    if (!selectedTeamSlugOrIdState) {
-      setErrorMessage("Select a team before continuing.");
-      return;
-    }
-
-    const params = new URLSearchParams({ repo: repoName });
-    params.set("team", selectedTeamSlugOrIdState);
-    const configurePath = `/preview/configure?${params.toString()}`;
-
-    if (!hasGithubAppInstallation) {
-      setErrorMessage(null);
-      setIsInstallingApp(true);
-      setNavigatingRepo("__url_input__");
-
-      try {
-        const response = await fetch("/api/integrations/github/install-state", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            teamSlugOrId: selectedTeamSlugOrIdState,
-            returnUrl: new URL(
-              configurePath,
-              window.location.origin
-            ).toString(),
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(await response.text());
-        }
-
-        const payload = (await response.json()) as { state: string };
-        const githubAppSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG;
-        if (!githubAppSlug) {
-          throw new Error("GitHub App slug is not configured");
-        }
-
-        const url = new URL(
-          `https://github.com/apps/${githubAppSlug}/installations/new`
-        );
-        url.searchParams.set("state", payload.state);
-        window.location.href = url.toString();
-        return;
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Failed to start GitHub App install";
-        console.error(
-          "[PreviewDashboard] Failed to start GitHub App install",
-          error
-        );
-        setErrorMessage(message);
-        setIsInstallingApp(false);
-        setNavigatingRepo(null);
-        return;
-      }
-    }
-
-    setErrorMessage(null);
-    setNavigatingRepo("__url_input__");
-    window.location.href = configurePath;
-  }, [
-    repoUrlInput,
-    parseGithubUrl,
-    selectedTeamSlugOrIdState,
-    hasGithubAppInstallation,
-    isAuthenticated,
-  ]);
+  // handleStartPreview commented out: quick setup input is disabled
+  // const handleStartPreview = useCallback(async () => {
+  //   const repoName = parseGithubUrl(repoUrlInput);
+  //   if (!repoName) {
+  //     setErrorMessage("Please enter a valid GitHub URL or owner/repo");
+  //     return;
+  //   }
+  //
+  //   // For unauthenticated users, redirect to sign-in without requiring team selection
+  //   if (!isAuthenticated) {
+  //     const params = new URLSearchParams({ repo: repoName });
+  //     // Include team if available, otherwise the configure page will handle it after sign-in
+  //     if (selectedTeamSlugOrIdState) {
+  //       params.set("team", selectedTeamSlugOrIdState);
+  //     }
+  //     const configurePath = `/preview/configure?${params.toString()}`;
+  //     setErrorMessage(null);
+  //     setNavigatingRepo("__url_input__");
+  //     window.location.href = `/handler/sign-in?after_auth_return_to=${encodeURIComponent(configurePath)}`;
+  //     return;
+  //   }
+  //
+  //   if (!selectedTeamSlugOrIdState) {
+  //     setErrorMessage("Select a team before continuing.");
+  //     return;
+  //   }
+  //
+  //   const params = new URLSearchParams({ repo: repoName });
+  //   params.set("team", selectedTeamSlugOrIdState);
+  //   const configurePath = `/preview/configure?${params.toString()}`;
+  //
+  //   if (!hasGithubAppInstallation) {
+  //     setErrorMessage(null);
+  //     setIsInstallingApp(true);
+  //     setNavigatingRepo("__url_input__");
+  //
+  //     try {
+  //       const response = await fetch("/api/integrations/github/install-state", {
+  //         method: "POST",
+  //         headers: { "Content-Type": "application/json" },
+  //         body: JSON.stringify({
+  //           teamSlugOrId: selectedTeamSlugOrIdState,
+  //           returnUrl: new URL(
+  //             configurePath,
+  //             window.location.origin
+  //           ).toString(),
+  //         }),
+  //       });
+  //
+  //       if (!response.ok) {
+  //         throw new Error(await response.text());
+  //       }
+  //
+  //       const payload = (await response.json()) as { state: string };
+  //       const githubAppSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG;
+  //       if (!githubAppSlug) {
+  //         throw new Error("GitHub App slug is not configured");
+  //       }
+  //
+  //       const url = new URL(
+  //         `https://github.com/apps/${githubAppSlug}/installations/new`
+  //       );
+  //       url.searchParams.set("state", payload.state);
+  //       window.location.href = url.toString();
+  //       return;
+  //     } catch (error) {
+  //       const message =
+  //         error instanceof Error
+  //           ? error.message
+  //           : "Failed to start GitHub App install";
+  //       console.error(
+  //         "[PreviewDashboard] Failed to start GitHub App install",
+  //         error
+  //       );
+  //       setErrorMessage(message);
+  //       setIsInstallingApp(false);
+  //       setNavigatingRepo(null);
+  //       return;
+  //     }
+  //   }
+  //
+  //   setErrorMessage(null);
+  //   setNavigatingRepo("__url_input__");
+  //   window.location.href = configurePath;
+  // }, [
+  //   repoUrlInput,
+  //   parseGithubUrl,
+  //   selectedTeamSlugOrIdState,
+  //   hasGithubAppInstallation,
+  //   isAuthenticated,
+  // ]);
 
   // Auto-select first connection for the team, but keep user choice if still valid
   useEffect(() => {
