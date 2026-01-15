@@ -252,7 +252,6 @@ function DashboardComponent() {
       return data;
     },
     getNextPageParam: (lastPage) => {
-      console.log("[branches] getNextPageParam", { hasMore: lastPage.hasMore, nextOffset: lastPage.nextOffset });
       if (!lastPage.hasMore) {
         return undefined;
       }

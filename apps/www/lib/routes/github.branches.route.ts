@@ -197,12 +197,10 @@ githubBranchesRouter.openapi(
                   cursor: z.string(),
                   node: z.object({
                     name: z.string(),
-                    target: z
-                      .object({
-                        oid: z.string(),
-                        committedDate: z.string().optional(),
-                      })
-                      .passthrough(),
+                    target: z.object({
+                      oid: z.string(),
+                      committedDate: z.string().optional(),
+                    }),
                   }),
                 })
               ),
@@ -325,16 +323,6 @@ githubBranchesRouter.openapi(
 
       const hasMore = allBranches.length > offset + limit || githubHasMore;
       const nextOffset = hasMore ? offset + limit : null;
-
-      console.log("[github.branches]", {
-        offset,
-        limit,
-        allBranchesCount: allBranches.length,
-        returnedCount: branches.length,
-        hasMore,
-        nextOffset,
-        githubHasMore,
-      });
 
       return c.json({
         branches,
