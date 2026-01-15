@@ -323,7 +323,6 @@ githubBranchesRouter.openapi(
       // Return the requested slice (offset to offset+limit)
       const branches = allBranches.slice(offset, offset + limit);
 
-      // Determine if there are more branches to load
       const hasMore = allBranches.length > offset + limit || githubHasMore;
       const nextOffset = hasMore ? offset + limit : null;
 
