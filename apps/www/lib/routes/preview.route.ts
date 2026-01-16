@@ -1,13 +1,7 @@
-import { getAccessTokenFromRequest, getUserFromRequest } from "@/lib/utils/auth";
+import { getAccessTokenFromRequest } from "@/lib/utils/auth";
 import { getConvex } from "@/lib/utils/get-convex";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { fetchPullRequest } from "@/lib/github/fetch-pull-request";
-import {
-  trackPreviewRepoConfigured,
-  trackPreviewTestJobCreated,
-  trackPreviewTestJobDispatched,
-  trackPreviewRepoDeleted,
-} from "@/lib/analytics/track-preview";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
@@ -209,7 +203,6 @@ previewRouter.openapi(
     const body = c.req.valid("json");
     await verifyTeamAccess({ req: c.req.raw, teamSlugOrId: body.teamSlugOrId });
     const convex = getConvex({ accessToken });
-    const user = await getUserFromRequest(c.req.raw);
 
     const previewConfigId = await convex.mutation(api.previewConfigs.upsert, {
       teamSlugOrId: body.teamSlugOrId,
@@ -229,20 +222,6 @@ previewRouter.openapi(
     if (!saved) {
       throw new HTTPException(500, { message: "Failed to load saved configuration" });
     }
-
-    // Track configuration created/updated
-    void trackPreviewRepoConfigured({
-      userId: user?.id,
-      teamSlugOrId: body.teamSlugOrId,
-      repoFullName: body.repoFullName,
-      frameworkPreset: "unknown", // Not available at API level
-      machinePreset: "unknown", // Not available at API level
-      hasEnvVars: Boolean(body.environmentId),
-      envVarCount: 0, // Not available at API level
-      hasMaintenanceScript: false, // Not available at API level
-      hasDevScript: false, // Not available at API level
-    });
-
     return c.json(formatPreviewConfig(saved));
   },
 );
@@ -281,21 +260,11 @@ previewRouter.openapi(
     const query = c.req.valid("query");
     await verifyTeamAccess({ req: c.req.raw, teamSlugOrId: query.teamSlugOrId });
     const convex = getConvex({ accessToken });
-    const user = await getUserFromRequest(c.req.raw);
     try {
       const result = await convex.mutation(api.previewConfigs.remove, {
         teamSlugOrId: query.teamSlugOrId,
         previewConfigId: typedZid("previewConfigs").parse(params.previewConfigId),
       });
-
-      // Track configuration deleted
-      void trackPreviewRepoDeleted({
-        userId: user?.id,
-        teamSlugOrId: query.teamSlugOrId,
-        repoFullName: "unknown", // Not available after deletion
-        previewConfigId: params.previewConfigId,
-      });
-
       return c.json(result);
     } catch (error) {
       console.error("Failed to delete preview config", error);
@@ -537,8 +506,6 @@ previewRouter.openapi(
       }, 404);
     }
 
-    const user = await getUserFromRequest(c.req.raw);
-
     try {
       const result = await convex.mutation(api.previewTestJobs.createTestRun, {
         teamSlugOrId: body.teamSlugOrId,
@@ -554,16 +521,6 @@ previewRouter.openapi(
           headRepoCloneUrl: prData.headRepoCloneUrl,
         },
       });
-
-      // Track test job created
-      void trackPreviewTestJobCreated({
-        userId: user?.id,
-        teamSlugOrId: body.teamSlugOrId,
-        repoFullName: parsed.repoFullName,
-        prNumber: parsed.prNumber,
-        prUrl: body.prUrl,
-      });
-
       return c.json(result);
     } catch (error) {
       if (error instanceof Error) {
@@ -615,23 +572,12 @@ previewRouter.openapi(
     const query = c.req.valid("query");
     await verifyTeamAccess({ req: c.req.raw, teamSlugOrId: query.teamSlugOrId });
     const convex = getConvex({ accessToken });
-    const user = await getUserFromRequest(c.req.raw);
 
     try {
       const result = await convex.action(api.previewTestJobs.dispatchTestJob, {
         teamSlugOrId: query.teamSlugOrId,
         previewRunId: typedZid("previewRuns").parse(params.previewRunId),
       });
-
-      // Track test job dispatched
-      void trackPreviewTestJobDispatched({
-        userId: user?.id,
-        teamSlugOrId: query.teamSlugOrId,
-        repoFullName: "unknown", // Would need to fetch from run details
-        prNumber: 0, // Would need to fetch from run details
-        previewRunId: params.previewRunId,
-      });
-
       return c.json(result);
     } catch (error) {
       if (error instanceof Error && error.message.includes("not found")) {

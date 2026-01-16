@@ -63,7 +63,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { LucideIcon } from "lucide-react";
 import { useOAuthPopup } from "@/hooks/use-oauth-popup";
-import { usePreviewAnalytics } from "@/hooks/use-preview-analytics";
 import { PreviewItemButton } from "./preview-item-button";
 import { BlinkingCursor } from "./blinking-cursor";
 import { UseDifferentAccountButton } from "./use-different-account-button";
@@ -3686,27 +3685,6 @@ function PreviewDashboardInner({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
 
-  // Analytics tracking
-  const analytics = usePreviewAnalytics({
-    teamSlugOrId: selectedTeamSlugOrIdState,
-  });
-
-  // Track dashboard viewed on mount
-  const hasTrackedPageView = useRef(false);
-  useEffect(() => {
-    if (!hasTrackedPageView.current) {
-      hasTrackedPageView.current = true;
-      const hasGitHub = Object.values(providerConnectionsByTeam).some(
-        (connections) => connections.some((c) => c.isActive)
-      );
-      analytics.trackPageView("dashboard", {
-        config_count: previewConfigs.length,
-        has_github_connected: hasGitHub,
-        is_authenticated: isAuthenticated,
-      });
-    }
-  }, [analytics, isAuthenticated, previewConfigs.length, providerConnectionsByTeam]);
-
   // Repository selection state
   const [selectedInstallationId, setSelectedInstallationId] = useState<
     number | null
@@ -3788,19 +3766,6 @@ function PreviewDashboardInner({
       : reposQuery.data.repos.slice(0, 5);
   }, [reposQuery.data?.repos, debouncedRepoSearch]);
 
-  // Track repo search when results are returned
-  const lastTrackedSearch = useRef<string | null>(null);
-  useEffect(() => {
-    if (
-      debouncedRepoSearch &&
-      debouncedRepoSearch !== lastTrackedSearch.current &&
-      reposQuery.data?.repos
-    ) {
-      lastTrackedSearch.current = debouncedRepoSearch;
-      analytics.trackRepoSearched(debouncedRepoSearch, reposQuery.data.repos.length);
-    }
-  }, [analytics, debouncedRepoSearch, reposQuery.data?.repos]);
-
   const isLoadingRepos = reposQuery.isLoading || reposQuery.isFetching;
 
   useEffect(() => {
@@ -3869,8 +3834,6 @@ function PreviewDashboardInner({
       if (!response.ok) {
         throw new Error(await response.text());
       }
-      // Track configuration deleted
-      analytics.trackConfigurationDeleted(configPendingDelete.id);
       setConfigs((previous) =>
         previous.filter((item) => item.id !== configPendingDelete.id)
       );
@@ -3885,12 +3848,10 @@ function PreviewDashboardInner({
         error
       );
       setConfigError(message);
-      // Track error
-      analytics.trackError("config_delete_failed", message, "handleDeleteConfig");
     } finally {
       setUpdatingConfigId(null);
     }
-  }, [analytics, configPendingDelete]);
+  }, [configPendingDelete]);
 
   const handleCancelDelete = useCallback(() => {
     setConfigPendingDelete(null);
@@ -4113,16 +4074,12 @@ function PreviewDashboardInner({
       );
       setErrorMessage(message);
       setIsInstallingApp(false);
-      // Track error
-      analytics.trackError("github_install_failed", message, "handleInstallGithubApp");
     }
   };
 
   const handleContinue = useCallback(
-    (repoName: string, isPrivate: boolean = false) => {
+    (repoName: string) => {
       if (!repoName.trim()) return;
-      // Track repo selected
-      analytics.trackRepoSelected(repoName, isPrivate);
       setNavigatingRepo(repoName);
       const params = new URLSearchParams({
         repo: repoName,
@@ -4131,7 +4088,7 @@ function PreviewDashboardInner({
       });
       window.location.href = `/preview/configure?${params.toString()}`;
     },
-    [analytics, selectedInstallationId, selectedTeamSlugOrIdState]
+    [selectedInstallationId, selectedTeamSlugOrIdState]
   );
 
   useEffect(() => {

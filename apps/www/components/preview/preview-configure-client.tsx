@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import posthog from "posthog-js";
 import {
   Loader2,
   ArrowLeft,
@@ -38,7 +39,6 @@ import {
   VncViewer,
   type VncConnectionStatus,
 } from "@cmux/shared/components/vnc-viewer";
-import { usePreviewAnalytics } from "@/hooks/use-preview-analytics";
 
 const MASKED_ENV_VALUE = "••••••••••••••••";
 
@@ -500,22 +500,14 @@ export function PreviewConfigureClient({
 
   const [isSaving, setIsSaving] = useState(false);
 
-  // Analytics tracking
-  const analytics = usePreviewAnalytics({
-    teamSlugOrId: selectedTeamSlugOrId,
-    repoFullName: repo,
-  });
-
-  // Track page view on mount
-  const hasTrackedPageView = useRef(false);
+  // Track config funnel - which step users start at and reach
   useEffect(() => {
-    if (!hasTrackedPageView.current) {
-      hasTrackedPageView.current = true;
-      analytics.trackPageView("configure", {
-        has_existing_config: startAtConfigureEnvironment,
-      });
-    }
-  }, [analytics, startAtConfigureEnvironment]);
+    posthog.capture("preview_config_step", {
+      repo_full_name: repo,
+      step: "initial-setup",
+      team_slug_or_id: selectedTeamSlugOrId,
+    });
+  }, [repo, selectedTeamSlugOrId]);
 
   useEffect(() => {
     if (initialHasEnvValues) {
@@ -553,9 +545,6 @@ export function PreviewConfigureClient({
 
         setDetectedPackageManager(data.packageManager);
 
-        // Track framework auto-detected
-        analytics.trackFrameworkSelected(data.framework, true);
-
         // Only update UI state if user hasn't edited scripts yet
         if (!hasUserEditedScriptsRef.current) {
           setFrameworkPreset(data.framework);
@@ -579,7 +568,7 @@ export function PreviewConfigureClient({
     };
 
     void detectFramework();
-  }, [analytics, repo]);
+  }, [repo]);
 
   const persistentIframeManager = iframeManager;
 
@@ -717,9 +706,6 @@ export function PreviewConfigureClient({
     [instance?.instanceId, resolvedVncWebsocketUrl]
   );
 
-  // Track provisioning start time
-  const provisionStartTime = useRef<number | null>(null);
-
   const provisionVM = useCallback(async () => {
     if (!resolvedTeamSlugOrId) {
       setErrorMessage("Select a team to start provisioning.");
@@ -728,10 +714,6 @@ export function PreviewConfigureClient({
 
     setIsProvisioning(true);
     setErrorMessage(null);
-    provisionStartTime.current = Date.now();
-
-    // Track workspace started
-    analytics.trackWorkspaceStarted(selectedSnapshotId);
 
     try {
       const response = await fetch("/api/sandboxes/start", {
@@ -762,12 +744,6 @@ export function PreviewConfigureClient({
         return;
       }
 
-      // Track workspace ready with duration
-      const duration = provisionStartTime.current
-        ? Date.now() - provisionStartTime.current
-        : 0;
-      analytics.trackWorkspaceReady(selectedSnapshotId, duration);
-
       setInstance({
         ...data,
         vncUrl: derived ?? undefined,
@@ -779,18 +755,12 @@ export function PreviewConfigureClient({
           : "Failed to provision workspace";
       if (selectedTeamSlugOrIdRef.current === resolvedTeamSlugOrId) {
         setErrorMessage(message);
-        // Track error
-        analytics.trackError(
-          "workspace_provision_failed",
-          message,
-          "provisionVM"
-        );
       }
       console.error("Failed to provision workspace:", error);
     } finally {
       setIsProvisioning(false);
     }
-  }, [analytics, repo, resolvedTeamSlugOrId, selectedSnapshotId]);
+  }, [repo, resolvedTeamSlugOrId, selectedSnapshotId]);
 
   useEffect(() => {
     if (!resolvedTeamSlugOrId) {
@@ -876,8 +846,6 @@ export function PreviewConfigureClient({
   const handleFrameworkPresetChange = useCallback(
     (preset: FrameworkPreset) => {
       setFrameworkPreset(preset);
-      // Track framework selection (not auto-detected since user changed it)
-      analytics.trackFrameworkSelected(preset, false);
       // Only auto-fill if user hasn't manually edited the scripts
       if (!hasUserEditedScripts) {
         const presetConfig = getFrameworkPresetConfig(
@@ -888,7 +856,7 @@ export function PreviewConfigureClient({
         setDevScript(presetConfig.devScript);
       }
     },
-    [analytics, hasUserEditedScripts, detectedPackageManager]
+    [hasUserEditedScripts, detectedPackageManager]
   );
 
   const handleMaintenanceScriptChange = useCallback((value: string) => {
@@ -912,8 +880,6 @@ export function PreviewConfigureClient({
     try {
       await navigator.clipboard.writeText(combined);
       setCommandsCopied(true);
-      // Track commands copied
-      analytics.trackCommandsCopied();
       if (copyResetTimeoutRef.current !== null) {
         window.clearTimeout(copyResetTimeoutRef.current);
       }
@@ -923,7 +889,7 @@ export function PreviewConfigureClient({
     } catch (error) {
       console.error("Failed to copy commands:", error);
     }
-  }, [analytics, devScript, maintenanceScript]);
+  }, [devScript, maintenanceScript]);
 
   const handleSaveConfiguration = async () => {
     if (!resolvedTeamSlugOrId) {
@@ -1002,14 +968,11 @@ export function PreviewConfigureClient({
         throw new Error(await previewResponse.text());
       }
 
-      // Track configuration saved successfully
-      const envVarCount = envVars.filter((r) => r.name.trim().length > 0).length;
-      analytics.trackConfigurationSaved({
-        frameworkPreset,
-        machinePreset: selectedSnapshotId,
-        envVarCount,
-        hasMaintenanceScript: normalizedMaintenanceScript.length > 0,
-        hasDevScript: normalizedDevScript.length > 0,
+      // Track configuration completed
+      posthog.capture("preview_config_step", {
+        repo_full_name: repo,
+        step: "completed",
+        team_slug_or_id: selectedTeamSlugOrId,
       });
 
       window.location.href = "/preview";
@@ -1017,8 +980,6 @@ export function PreviewConfigureClient({
       const message =
         error instanceof Error ? error.message : "Failed to save configuration";
       setErrorMessage(message);
-      // Track error
-      analytics.trackError("configuration_save_failed", message, "handleSaveConfiguration");
       console.error("Failed to save preview configuration:", error);
     } finally {
       setIsSaving(false);
@@ -1027,16 +988,13 @@ export function PreviewConfigureClient({
 
   // Handle transitioning from initial setup to workspace configuration
   const handleStartWorkspaceConfig = useCallback(() => {
+    // Track entering workspace config (first step is run-scripts)
+    posthog.capture("preview_config_step", {
+      repo_full_name: repo,
+      step: "run-scripts",
+      team_slug_or_id: selectedTeamSlugOrId,
+    });
     setLayoutPhase("transitioning");
-    // Track layout phase change
-    analytics.trackLayoutPhaseChanged("transitioning");
-    // Track scripts and env vars configured (completing initial setup)
-    analytics.trackScriptsConfigured(
-      maintenanceScript.trim().length > 0,
-      devScript.trim().length > 0
-    );
-    const envVarCount = envVars.filter((r) => r.name.trim().length > 0).length;
-    analytics.trackEnvVarsConfigured(envVarCount, envVarCount > 0);
     // Add search param to track that we're in workspace config phase
     const url = new URL(window.location.href);
     url.searchParams.set("step", "workspace");
@@ -1044,9 +1002,8 @@ export function PreviewConfigureClient({
     // After animation completes, set to workspace-config
     setTimeout(() => {
       setLayoutPhase("workspace-config");
-      analytics.trackLayoutPhaseChanged("workspace-config");
     }, 650); // Match CSS transition duration (600ms + buffer)
-  }, [analytics, devScript, envVars, maintenanceScript]);
+  }, [repo, selectedTeamSlugOrId]);
 
   // Handle going back to initial setup from workspace config
   const handleBackToInitialSetup = useCallback(() => {
@@ -1056,16 +1013,12 @@ export function PreviewConfigureClient({
     window.history.pushState({}, "", url.toString());
     // Transition back to initial setup
     setLayoutPhase("initial-setup");
-    analytics.trackLayoutPhaseChanged("initial-setup");
     setCurrentConfigStep("run-scripts");
-  }, [analytics]);
+  }, []);
 
   // Handle next step within workspace configuration
   const handleNextConfigStep = useCallback(() => {
     const currentIndex = ALL_CONFIG_STEPS.indexOf(currentConfigStep);
-
-    // Track step completed
-    analytics.trackSetupStepCompleted(currentConfigStep, currentIndex + 1);
 
     // Mark current step as completed
     setCompletedSteps((prev) => new Set([...prev, currentConfigStep]));
@@ -1073,11 +1026,15 @@ export function PreviewConfigureClient({
     // Move to next step if not at end
     if (currentIndex < ALL_CONFIG_STEPS.length - 1) {
       const nextStep = ALL_CONFIG_STEPS[currentIndex + 1];
+      // Track entering the next step
+      posthog.capture("preview_config_step", {
+        repo_full_name: repo,
+        step: nextStep,
+        team_slug_or_id: selectedTeamSlugOrId,
+      });
       setCurrentConfigStep(nextStep);
-      // Track step entered
-      analytics.trackSetupStepEntered(nextStep);
     }
-  }, [analytics, currentConfigStep]);
+  }, [currentConfigStep, repo, selectedTeamSlugOrId]);
 
   // Helper to check if a step is visible (completed or current)
   const isStepVisible = useCallback(
@@ -1421,8 +1378,6 @@ export function PreviewConfigureClient({
               e.preventDefault();
               const items = parseEnvBlock(text);
               if (items.length > 0) {
-                // Track env paste used
-                analytics.trackEnvPasteUsed(items.length);
                 setEnvNone(false);
                 updateEnvVars((prev) => {
                   const map = new Map(
