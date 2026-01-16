@@ -278,11 +278,21 @@ export default async function PreviewLandingPage({ searchParams }: PageProps) {
     Promise.all(
       teams.map(async (team) => {
         const teamSlugOrId = getTeamSlugOrId(team);
-        const connections = await convex.query(api.github.listProviderConnections, {
-          teamSlugOrId,
-        });
-        const serialized = serializeProviderConnections(connections);
-        return [teamSlugOrId, serialized];
+        try {
+          const connections = await convex.query(api.github.listProviderConnections, {
+            teamSlugOrId,
+          });
+          const serialized = serializeProviderConnections(connections);
+          return [teamSlugOrId, serialized];
+        } catch (error) {
+          // This can happen for new users before webhook syncs membership to Convex.
+          // Return empty connections for this team - it will populate on next page load.
+          console.error("[PreviewLandingPage] Failed to load provider connections", {
+            teamSlugOrId,
+            error,
+          });
+          return [teamSlugOrId, []];
+        }
       }),
     ),
     Promise.all(
@@ -306,6 +316,8 @@ export default async function PreviewLandingPage({ searchParams }: PageProps) {
             })
           );
         } catch (error) {
+          // This can happen for new users before webhook syncs membership to Convex.
+          // Return empty configs for this team - it will populate on next page load.
           console.error("[PreviewLandingPage] Failed to load preview configs", {
             teamSlugOrId,
             error,
