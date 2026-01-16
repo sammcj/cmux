@@ -12,6 +12,7 @@ import type {
 } from "@octokit/webhooks-types";
 import { env } from "../_shared/convex-env";
 import { hmacSha256, safeEqualHex, sha256Hex } from "../_shared/crypto";
+import { capturePosthogEvent } from "../_shared/posthog";
 import { bytesToHex } from "../_shared/encoding";
 import { streamInstallationRepositories } from "../_shared/githubApp";
 import { internal } from "./_generated/api";
@@ -592,6 +593,19 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
                     repoFullName,
                     prNumber,
                     prUrl,
+                  });
+
+                  // Track webhook event
+                  void capturePosthogEvent(env.POSTHOG_API_KEY, {
+                    distinctId: previewConfig.teamId,
+                    event: "preview_webhook_received",
+                    properties: {
+                      repo_full_name: repoFullName,
+                      pr_number: prNumber,
+                      action,
+                      preview_run_id: runId,
+                      preview_config_id: previewConfig._id,
+                    },
                   });
 
                   if (existingRun?.taskRunId) {

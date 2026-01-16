@@ -1,4 +1,5 @@
 import { env } from "../_shared/convex-env";
+import { capturePosthogEvent } from "../_shared/posthog";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { httpAction, type ActionCtx } from "./_generated/server";
@@ -401,6 +402,20 @@ export const completePreviewJob = httpAction(async (ctx, req) => {
             commentId: commentIdToUpdate,
           });
 
+          // Track comment updated
+          void capturePosthogEvent(env.POSTHOG_API_KEY, {
+            distinctId: taskRun.teamId,
+            event: "preview_comment_posted",
+            properties: {
+              repo_full_name: previewRun.repoFullName,
+              pr_number: previewRun.prNumber,
+              preview_run_id: previewRun._id,
+              comment_type: "update",
+              has_screenshots: taskScreenshotSet.images.length > 0,
+              screenshot_count: taskScreenshotSet.images.length,
+            },
+          });
+
           const taskCompletion = await markPreviewTaskCompleted(ctx, taskRun, task);
 
           return jsonResponse({
@@ -446,6 +461,20 @@ export const completePreviewJob = httpAction(async (ctx, req) => {
             taskRunId,
             previewRunId: previewRun._id,
             commentUrl: commentResult.commentUrl,
+          });
+
+          // Track comment posted
+          void capturePosthogEvent(env.POSTHOG_API_KEY, {
+            distinctId: taskRun.teamId,
+            event: "preview_comment_posted",
+            properties: {
+              repo_full_name: previewRun.repoFullName,
+              pr_number: previewRun.prNumber,
+              preview_run_id: previewRun._id,
+              comment_type: "new",
+              has_screenshots: taskScreenshotSet.images.length > 0,
+              screenshot_count: taskScreenshotSet.images.length,
+            },
           });
 
           const taskCompletion = await markPreviewTaskCompleted(ctx, taskRun, task);
