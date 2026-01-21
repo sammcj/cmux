@@ -30,6 +30,16 @@ export const createScreenshotSet = internalMutation({
         description: v.optional(v.string()),
       })
     ),
+    videos: v.optional(
+      v.array(
+        v.object({
+          storageId: v.id("_storage"),
+          mimeType: v.string(),
+          fileName: v.optional(v.string()),
+          description: v.optional(v.string()),
+        })
+      )
+    ),
   },
   handler: async (ctx, args): Promise<Id<"taskRunScreenshotSets">> => {
     const previewRun = await ctx.db.get(args.previewRunId);
@@ -59,6 +69,13 @@ export const createScreenshotSet = internalMutation({
       description: image.description,
     }));
 
+    const videos = (args.videos ?? []).map((video) => ({
+      storageId: video.storageId,
+      mimeType: video.mimeType,
+      fileName: video.fileName,
+      description: video.description,
+    }));
+
     const screenshotSetId: Id<"taskRunScreenshotSets"> = await ctx.runMutation(
       internal.tasks.recordScreenshotResult,
       {
@@ -68,6 +85,7 @@ export const createScreenshotSet = internalMutation({
         commitSha: args.commitSha,
         hasUiChanges: args.hasUiChanges,
         screenshots,
+        videos,
         error: args.error,
       }
     );
@@ -281,6 +299,16 @@ export const uploadAndComment = action({
         })
       )
     ),
+    videos: v.optional(
+      v.array(
+        v.object({
+          storageId: v.string(),
+          mimeType: v.string(),
+          fileName: v.optional(v.string()),
+          description: v.optional(v.string()),
+        })
+      )
+    ),
   },
   returns: v.object({
     ok: v.boolean(),
@@ -337,6 +365,18 @@ export const uploadAndComment = action({
       description: img.description,
     }));
 
+    const typedVideos: Array<{
+      storageId: Id<"_storage">;
+      mimeType: string;
+      fileName?: string;
+      description?: string;
+    }> = (args.videos ?? []).map((vid) => ({
+      storageId: vid.storageId as Id<"_storage">,
+      mimeType: vid.mimeType,
+      fileName: vid.fileName,
+      description: vid.description,
+    }));
+
     const screenshotSetId = await ctx.runMutation(
       internal.previewScreenshots.createScreenshotSet,
       {
@@ -346,6 +386,7 @@ export const uploadAndComment = action({
         error: args.error,
         hasUiChanges: args.hasUiChanges,
         images: typedImages,
+        videos: typedVideos,
       }
     );
 
