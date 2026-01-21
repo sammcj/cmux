@@ -132,26 +132,42 @@ export const upsertWorkflowRunFromWebhook = internalMutation({
     };
 
 
-    // Upsert the workflow run - fetch all matching records to handle duplicates
-    const existingRecords = await ctx.db
+    // Upsert the workflow run - use .first() to minimize read set for OCC
+    const existing = await ctx.db
       .query("githubWorkflowRuns")
       .withIndex("by_runId", (q) => q.eq("runId", runId))
-      .collect();
+      .first();
 
-    if (existingRecords.length > 0) {
-      // Update the first record
-      await ctx.db.patch(existingRecords[0]._id, workflowRunDoc);
+    const action = existing ? "update" : "insert";
+    console.log("[occ-debug:workflow_runs]", {
+      runId,
+      workflowName,
+      repoFullName,
+      teamId,
+      action,
+      status: workflowRunDoc.status,
+      conclusion: workflowRunDoc.conclusion,
+    });
 
-      // Delete any duplicates
-      if (existingRecords.length > 1) {
-        console.warn("[upsertWorkflowRun] Found duplicates, cleaning up", {
-          runId,
-          count: existingRecords.length,
-          duplicateIds: existingRecords.slice(1).map(r => r._id),
-        });
-        for (const duplicate of existingRecords.slice(1)) {
-          await ctx.db.delete(duplicate._id);
-        }
+    if (existing) {
+      // Skip stale updates - if existing record is newer, don't overwrite
+      if (existing.updatedAt && workflowRunDoc.updatedAt && existing.updatedAt >= workflowRunDoc.updatedAt) {
+        console.log("[occ-debug:workflow_runs] skipped-stale", { runId, existingUpdatedAt: existing.updatedAt, newUpdatedAt: workflowRunDoc.updatedAt });
+        return;
+      }
+
+      // Skip no-op updates - only patch if something actually changed
+      const needsUpdate =
+        existing.status !== workflowRunDoc.status ||
+        existing.conclusion !== workflowRunDoc.conclusion ||
+        existing.updatedAt !== workflowRunDoc.updatedAt ||
+        existing.runCompletedAt !== workflowRunDoc.runCompletedAt ||
+        existing.htmlUrl !== workflowRunDoc.htmlUrl;
+
+      if (needsUpdate) {
+        await ctx.db.patch(existing._id, workflowRunDoc);
+      } else {
+        console.log("[occ-debug:workflow_runs] skipped-noop", { runId });
       }
     } else {
       // Insert new run
