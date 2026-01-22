@@ -404,6 +404,11 @@ The user did not provide installation or dev commands. You will need to discover
 
   const prompt = `You are a screenshot collector for pull request reviews. Your job is to determine if a PR contains UI changes and, if so, capture screenshots of those changes.
 
+⚠️ CRITICAL: IF UI CHANGES EXIST, YOU MUST CAPTURE THEM ⚠️
+If you determine the PR has UI changes, you MUST capture at least one screenshot or video before ending.
+Do NOT say "let me capture X" and then end - actually capture it.
+Do NOT end after just analyzing files - if there are UI changes, continue to capture them.
+
 <PR_CONTEXT>
 Title: ${prTitle}
 Description: ${prDescription || "No description provided"}
@@ -821,9 +826,19 @@ DO NOT:
 - Skip any step - the video will be corrupted
 </VIDEO_RECORDING>
 
+<COMPLETION_REQUIREMENTS>
+If you determined the PR has NO UI changes:
+- You may end after stating "No UI changes detected" - no screenshots needed.
+
+If you determined the PR HAS UI changes:
+- You MUST capture at least one screenshot or video before ending.
+- DO NOT just plan what to do - EXECUTE the plan.
+- DO NOT say "let me do X" and then stop - actually DO X.
+- If you're about to end without capturing anything, STOP and capture first.
+</COMPLETION_REQUIREMENTS>
+
 <OUTPUT>
-When you are finished, leave the browser open and briefly state what you captured.
-Do not create summary documents.
+After capturing screenshots/videos, briefly state what you captured and leave the browser open.
 </OUTPUT>`;
 
   await logToScreenshotCollector(
