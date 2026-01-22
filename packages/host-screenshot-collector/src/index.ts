@@ -774,9 +774,13 @@ else:
     # No clicks - still draw cursor at center, then speed up
     print("No clicks found, drawing cursor at center and speeding up 2x", file=sys.stderr)
     cx, cy = 960, 540  # screen center
-    yo_x, yo_y = -14, -20  # yellow offset
-    bo_x, bo_y = -6, -12   # black offset
-    cursor_filter = f"drawtext=text='●':x={cx+yo_x}:y={cy+yo_y}:fontsize=36:fontcolor=yellow@0.5,drawtext=text='●':x={cx+bo_x}:y={cy+bo_y}:fontsize=12:fontcolor=black"
+    cursor_char = "⬆"
+    shadow_offset = 2
+    cursor_size = 28
+    tip_offset_x = -4
+    tip_offset_y = -2
+    # ScreenStudio-style cursor: white with black shadow
+    cursor_filter = f"drawtext=text='{cursor_char}':x={cx+tip_offset_x+shadow_offset}:y={cy+tip_offset_y+shadow_offset}:fontsize={cursor_size}:fontcolor=black@0.6,drawtext=text='{cursor_char}':x={cx+tip_offset_x}:y={cy+tip_offset_y}:fontsize={cursor_size}:fontcolor=white"
     # Draw cursor then speed up
     result = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -vf "{cursor_filter},setpts=0.5*PTS" -movflags +faststart "{outdir}/workflow.mp4"', shell=True, capture_output=True, text=True)
     if result.returncode == 0:
