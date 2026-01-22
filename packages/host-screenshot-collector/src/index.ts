@@ -9,19 +9,20 @@ import { formatClaudeMessage } from "./claudeMessageFormatter";
 export const SCREENSHOT_STORAGE_ROOT = "/root/screenshots";
 export const EVENTS_LOG_FILENAME = "events.log";
 
-// Chrome DevTools Protocol port (same as chrome-devtools-mcp)
+// Chrome DevTools Protocol port
 const CDP_PORT = 39382;
 
+// Active click listener WebSocket connection (kept open during recording)
+let clickListenerWs: WebSocket | null = null;
+let clickListenerCallback: ((x: number, y: number) => void) | null = null;
+
 /**
- * Get bounding rect for an element via Chrome DevTools Protocol.
- * The uid from chrome-devtools-mcp is assumed to be "contextId_nodeId" or similar format.
- * We extract the nodeId and call DOM.getBoxModel.
+ * Start listening for clicks via CDP console events.
+ * This injects a click tracker that logs to console, and we listen for those logs.
+ * Returns a cleanup function to stop listening.
  */
-async function getBoundingRectFromCDP(
-  uid: string
-): Promise<{ x: number; y: number; width: number; height: number } | null> {
+async function startClickListener(onClick: (x: number, y: number) => void): Promise<(() => void) | null> {
   try {
-    // Get CDP WebSocket URL
     const targetsResponse = await fetch(`http://0.0.0.0:${CDP_PORT}/json`);
     const targets = (await targetsResponse.json()) as Array<{
       type?: string;
@@ -32,94 +33,123 @@ async function getBoundingRectFromCDP(
     );
 
     if (!pageTarget?.webSocketDebuggerUrl) {
-      return null;
-    }
-
-    // Parse uid to extract nodeId (assume format "contextId_nodeId" or just nodeId)
-    const parts = uid.split("_");
-    const nodeIdStr = parts[parts.length - 1] ?? "";
-    const nodeId = parseInt(nodeIdStr, 10);
-
-    if (isNaN(nodeId)) {
+      console.error("[startClickListener] No page target found");
       return null;
     }
 
     const wsUrl = pageTarget.webSocketDebuggerUrl;
-    if (!wsUrl) {
-      return null;
-    }
 
-    // Connect to CDP via WebSocket and get box model
+    // Click tracking script - logs clicks to console with special prefix
+    const clickTrackerScript = `
+      if (!window.__clickTrackerV2) {
+        window.__clickTrackerV2 = true;
+        ['mousedown'].forEach(eventType => {
+          document.addEventListener(eventType, (e) => {
+            console.log('__CLICK_EVENT__', e.clientX, e.clientY, Date.now());
+          }, true);
+        });
+      }
+    `;
+
     return new Promise((resolve) => {
       const ws = new WebSocket(wsUrl);
-      let resolved = false;
+      let msgId = 1;
+      let setupComplete = false;
+
+      clickListenerWs = ws;
+      clickListenerCallback = onClick;
 
       const cleanup = () => {
-        if (!resolved) {
-          resolved = true;
-          resolve(null);
-        }
-        try {
-          ws.close();
-        } catch {
-          // ignore
-        }
+        clickListenerWs = null;
+        clickListenerCallback = null;
+        try { ws.close(); } catch { /* ignore */ }
       };
 
-      // Timeout after 3 seconds
-      const timeout = setTimeout(cleanup, 3000);
-
       ws.addEventListener("open", () => {
-        // Call DOM.getBoxModel to get element bounds
-        ws.send(
-          JSON.stringify({
-            id: 1,
-            method: "DOM.getBoxModel",
-            params: { nodeId },
-          })
-        );
+        // Enable Runtime domain to receive console events
+        ws.send(JSON.stringify({ id: msgId++, method: "Runtime.enable", params: {} }));
       });
 
       ws.addEventListener("message", (event) => {
         try {
-          const response = JSON.parse(String(event.data)) as {
+          const msg = JSON.parse(String(event.data)) as {
             id?: number;
-            result?: {
-              model?: {
-                content?: number[];
-              };
+            method?: string;
+            params?: {
+              type?: string;
+              args?: Array<{ type?: string; value?: unknown }>;
             };
           };
 
-          if (response.id === 1) {
-            clearTimeout(timeout);
-            resolved = true;
-            ws.close();
+          // Setup sequence
+          if (msg.id === 1) {
+            // Runtime enabled, now enable Page
+            ws.send(JSON.stringify({ id: msgId++, method: "Page.enable", params: {} }));
+          } else if (msg.id === 2) {
+            // Page enabled, add script for new documents
+            ws.send(JSON.stringify({
+              id: msgId++,
+              method: "Page.addScriptToEvaluateOnNewDocument",
+              params: { source: clickTrackerScript },
+            }));
+          } else if (msg.id === 3) {
+            // Script added, run on current page too
+            ws.send(JSON.stringify({
+              id: msgId++,
+              method: "Runtime.evaluate",
+              params: { expression: clickTrackerScript },
+            }));
+          } else if (msg.id === 4) {
+            // Setup complete
+            setupComplete = true;
+            console.log("[startClickListener] Click listener active");
+            resolve(cleanup);
+          }
 
-            const c = response.result?.model?.content;
-            if (c && c.length >= 6) {
-              // content is quad: [x1,y1, x2,y2, x3,y3, x4,y4]
-              resolve({
-                x: c[0] ?? 0,
-                y: c[1] ?? 0,
-                width: (c[2] ?? 0) - (c[0] ?? 0),
-                height: (c[5] ?? 0) - (c[1] ?? 0),
-              });
-            } else {
-              resolve(null);
+          // Listen for console events (Runtime.consoleAPICalled)
+          if (msg.method === "Runtime.consoleAPICalled" && msg.params?.type === "log") {
+            const args = msg.params.args ?? [];
+            // Check if this is our click event: __CLICK_EVENT__ x y timestamp
+            if (args.length >= 3 && args[0]?.value === "__CLICK_EVENT__") {
+              const x = typeof args[1]?.value === "number" ? args[1].value : 0;
+              const y = typeof args[2]?.value === "number" ? args[2].value : 0;
+              console.log(`[startClickListener] Received click at viewport (${x}, ${y})`);
+              if (clickListenerCallback) {
+                clickListenerCallback(x, y);
+              }
             }
           }
-        } catch {
-          cleanup();
+        } catch (e) {
+          console.error("[startClickListener] Error:", e);
         }
       });
 
-      ws.addEventListener("error", cleanup);
+      ws.addEventListener("error", (e) => {
+        console.error("[startClickListener] WebSocket error:", e);
+        if (!setupComplete) resolve(null);
+      });
+
+      ws.addEventListener("close", () => {
+        console.log("[startClickListener] WebSocket closed");
+        clickListenerWs = null;
+      });
+
+      // Timeout for setup
+      setTimeout(() => {
+        if (!setupComplete) {
+          console.error("[startClickListener] Setup timeout");
+          resolve(null);
+        }
+      }, 5000);
     });
-  } catch {
+  } catch (e) {
+    console.error("[startClickListener] Exception:", e);
     return null;
   }
 }
+
+// Export startClickListener for use in prompt's post-processing script
+export { startClickListener };
 
 // Placeholder API key that signals to the proxy to use platform credits (Bedrock)
 const CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY = "sk_placeholder_cmux_anthropic_api_key";
@@ -503,22 +533,24 @@ Screenshots alone are NOT enough for interactive changes - you MUST record a vid
 
 SKIP VIDEO ONLY FOR: pure styling changes (colors, fonts, spacing), static text-only changes
 
-STEP 1 - START RECORDING:
+STEP 1 - TAKE FRESH SNAPSHOT:
+ALWAYS take a fresh snapshot immediately before starting the recording. Old snapshots go stale (uids become invalid). Do this right before ffmpeg:
+\`\`\`
+take_snapshot
+\`\`\`
+
+STEP 2 - START RECORDING:
 \`\`\`bash
 DISPLAY=:1 ffmpeg -y -f x11grab -draw_mouse 0 -framerate 24 -video_size 1920x1080 -i :1+0,0 -c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p "${outputDir}/raw.mp4" &
 FFMPEG_PID=$!
 sleep 0.3
 \`\`\`
 
-STEP 2 - CLICK ELEMENTS:
-For each click, you MUST:
-1. First, get the element's bounding rect via Chrome MCP evaluate: \`element.getBoundingClientRect()\`
-2. Then click the element
+STEP 3 - CLICK ELEMENTS:
+Just click elements normally using their uid from the fresh snapshot. The cursor position is captured automatically.
+The cursor overlay starts at screen center and animates to each click position.
 
-This ensures the cursor position is captured in the trajectory for the video overlay.
-The cursor starts at screen center and animates to your first click, then follows subsequent clicks.
-
-STEP 3 - STOP RECORDING:
+STEP 4 - STOP RECORDING:
 \`\`\`bash
 kill -INT $FFMPEG_PID
 wait $FFMPEG_PID 2>/dev/null || true
@@ -531,7 +563,7 @@ The video records the X11 SCREEN directly. When you click:
 - Do NOT call list_pages or select_page - just click → kill ffmpeg → done
 This is NON-NEGOTIABLE.
 
-STEP 4 - POST-PROCESS (adds cursor overlay automatically):
+STEP 5 - POST-PROCESS (adds cursor overlay automatically):
 \`\`\`bash
 python3 << PYSCRIPT
 import subprocess, os, sys, json
@@ -539,11 +571,10 @@ import subprocess, os, sys, json
 outdir = "${outputDir}"
 events_log_path = f"{outdir}/events.log"
 
-# Parse events.log for bounding_rect and pretool events
-# The pretool hook calls CDP to get bounding rect when it sees a tool with uid
+# Parse events.log for click events
+# Click events are captured via CDP and have screen coordinates (with browser chrome offset already applied)
 clicks = []  # list of (timestamp_ms, x, y)
 recording_start_ms = None
-last_bounding_rect = None  # (x, y) screen coordinates from most recent bounding_rect event
 
 print(f"Reading events from {events_log_path}", file=sys.stderr)
 
@@ -560,34 +591,18 @@ try:
             ts = event.get("timestamp", 0)
             event_type = event.get("event", "")
 
-            # Detect recording start (logged when ffmpeg starts)
+            # Detect recording start
             if event_type == "recording_start":
                 if recording_start_ms is None:
                     recording_start_ms = ts
                     print(f"Found recording start at {ts}", file=sys.stderr)
 
-            # Bounding rect from CDP (logged by pretool hook)
-            elif event_type == "bounding_rect":
+            # Click event - has screen coordinates directly
+            elif event_type == "click":
                 x = event.get("x", 0)
                 y = event.get("y", 0)
-                w = event.get("width", 0)
-                h = event.get("height", 0)
-                # Compute center and add browser chrome offset (85px)
-                screen_x = int(x + w/2)
-                screen_y = int(y + h/2 + 85)
-                last_bounding_rect = (screen_x, screen_y, ts)
-                print(f"bounding_rect: ({x},{y},{w},{h}) -> center=({screen_x}, {screen_y})", file=sys.stderr)
-
-            # Click event (logged by pretool hook)
-            elif event_type == "pretool":
-                tool_name = event.get("tool", "").lower()
-                uid = event.get("uid", "")
-                if "click" in tool_name:
-                    if last_bounding_rect:
-                        clicks.append((ts, last_bounding_rect[0], last_bounding_rect[1]))
-                        print(f"click (uid={uid}) at ({last_bounding_rect[0]}, {last_bounding_rect[1]}) ts={ts}", file=sys.stderr)
-                    else:
-                        print(f"WARNING: click without bounding_rect, tool={tool_name}, uid={uid}", file=sys.stderr)
+                clicks.append((ts, x, y))
+                print(f"click at ({x}, {y}) ts={ts}", file=sys.stderr)
 
     print(f"Processed {line_count} events", file=sys.stderr)
 except FileNotFoundError:
@@ -596,6 +611,35 @@ except Exception as e:
     print(f"ERROR reading events.log: {e}", file=sys.stderr)
 
 print(f"Found {len(clicks)} clicks", file=sys.stderr)
+
+# Verify raw.mp4 exists and is valid before processing
+raw_path = f"{outdir}/raw.mp4"
+if not os.path.exists(raw_path):
+    print(f"ERROR: raw.mp4 not found at {raw_path}", file=sys.stderr)
+    sys.exit(1)
+
+raw_size = os.path.getsize(raw_path)
+print(f"raw.mp4 size: {raw_size} bytes", file=sys.stderr)
+if raw_size < 1000:
+    print(f"ERROR: raw.mp4 is too small ({raw_size} bytes) - likely corrupted", file=sys.stderr)
+    sys.exit(1)
+
+# Validate raw.mp4 with ffprobe
+probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height,duration", "-of", "csv=p=0", raw_path], capture_output=True, text=True)
+if probe.returncode != 0:
+    print(f"ERROR: raw.mp4 failed ffprobe validation", file=sys.stderr)
+    print(f"ffprobe stderr: {probe.stderr}", file=sys.stderr)
+    # Try to salvage with ffmpeg copy
+    print("Attempting to salvage with ffmpeg copy...", file=sys.stderr)
+    salvage = subprocess.run(f'ffmpeg -y -i "{raw_path}" -c copy -movflags +faststart "{outdir}/workflow.mp4"', shell=True, capture_output=True, text=True)
+    if salvage.returncode == 0:
+        print("Salvage successful", file=sys.stderr)
+    else:
+        print(f"Salvage failed: {salvage.stderr}", file=sys.stderr)
+        os.rename(raw_path, f"{outdir}/workflow.mp4")
+    sys.exit(0)
+
+print(f"raw.mp4 stream info: {probe.stdout.strip()}", file=sys.stderr)
 
 # Convert timestamps to relative time from first click (cursor starts at center)
 if clicks:
@@ -614,10 +658,15 @@ if clicks:
 
     print(f"Animation: center ({cx},{cy}) -> ({first_x},{first_y}) over {anim_dur:.2f}s", file=sys.stderr)
 
-    yellow_x_expr = f"({cx-14}+({first_x-14}-{cx-14})*min(t/{anim_dur},1))"
-    yellow_y_expr = f"({cy-20}+({first_y-20}-{cy-20})*min(t/{anim_dur},1))"
-    black_x_expr = f"({cx-3}+({first_x-3}-{cx-3})*min(t/{anim_dur},1))"
-    black_y_expr = f"({cy-8}+({first_y-8}-{cy-8})*min(t/{anim_dur},1))"
+    # Cursor offsets: yellow outer circle and black center dot
+    # Black dot should be centered within yellow circle
+    yo_x, yo_y = -14, -20  # yellow offset
+    bo_x, bo_y = -6, -12   # black offset (up and left relative to yellow)
+
+    yellow_x_expr = f"({cx+yo_x}+({first_x+yo_x}-{cx+yo_x})*min(t/{anim_dur},1))"
+    yellow_y_expr = f"({cy+yo_y}+({first_y+yo_y}-{cy+yo_y})*min(t/{anim_dur},1))"
+    black_x_expr = f"({cx+bo_x}+({first_x+bo_x}-{cx+bo_x})*min(t/{anim_dur},1))"
+    black_y_expr = f"({cy+bo_y}+({first_y+bo_y}-{cy+bo_y})*min(t/{anim_dur},1))"
 
     # Animation phase - cursor moves from center to first click
     filters.append(f"drawtext=text='●':x='{yellow_x_expr}':y='{yellow_y_expr}':fontsize=36:fontcolor=yellow@0.5:enable='between(t,0,{anim_dur:.2f})'")
@@ -629,24 +678,136 @@ if clicks:
         if end_t <= t:
             continue
         e = f"enable='between(t,{t:.2f},{end_t:.2f})'"
-        filters.append(f"drawtext=text='●':x={x-14}:y={y-20}:fontsize=36:fontcolor=yellow@0.5:{e}")
-        filters.append(f"drawtext=text='●':x={x-3}:y={y-8}:fontsize=12:fontcolor=black:{e}")
+        filters.append(f"drawtext=text='●':x={x+yo_x}:y={y+yo_y}:fontsize=36:fontcolor=yellow@0.5:{e}")
+        filters.append(f"drawtext=text='●':x={x+bo_x}:y={y+bo_y}:fontsize=12:fontcolor=black:{e}")
 
-    filter_str = ",".join(filters) + ",setpts=0.5*PTS"
-    print(f"Running ffmpeg with {len(filters)} filter elements + 2x speed", file=sys.stderr)
-    result = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -vf "{filter_str}" "{outdir}/workflow.mp4"', shell=True)
-    if result.returncode == 0:
-        os.remove(f"{outdir}/raw.mp4")
+    # STEP 1: Draw cursor overlay at original timing (no speed change yet)
+    filter_str = ",".join(filters)
+    print(f"Drawing cursor overlay with {len(filters)} filter elements", file=sys.stderr)
+    result = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -vf "{filter_str}" -movflags +faststart "{outdir}/with_cursor.mp4"', shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"Cursor overlay failed with code {result.returncode}", file=sys.stderr)
+        print(f"ffmpeg stderr: {result.stderr}", file=sys.stderr)
+        # Fall back to just adding faststart to raw video
+        fallback = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -c copy -movflags +faststart "{outdir}/workflow.mp4"', shell=True)
+        if fallback.returncode != 0:
+            os.rename(f"{outdir}/raw.mp4", f"{outdir}/workflow.mp4")
     else:
-        print(f"ffmpeg failed with code {result.returncode}", file=sys.stderr)
-        os.rename(f"{outdir}/raw.mp4", f"{outdir}/workflow.mp4")
+        os.remove(f"{outdir}/raw.mp4")
+
+        # Get video duration
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", f"{outdir}/with_cursor.mp4"],
+            capture_output=True, text=True
+        )
+        video_duration = float(probe.stdout.strip()) if probe.stdout.strip() else 60.0
+        print(f"Video duration: {video_duration:.1f}s", file=sys.stderr)
+
+        # STEP 2: Apply variable speed - 1x during actions, 2x between actions
+        # NO TRIMMING - entire video is kept, just at different speeds
+        FAST_SPEED = 2
+        ACTION_BEFORE = 0.5  # seconds before click at normal speed
+        ACTION_AFTER = 0.5   # seconds after click at normal speed
+
+        # Build segments covering the ENTIRE video
+        video_segments = []  # (start, end, speed)
+        prev_end = 0.0
+
+        for t, x, y in clicks:
+            action_start = max(0, t - ACTION_BEFORE)
+            action_end = min(video_duration, t + ACTION_AFTER)
+
+            # Fast segment before this action (if there's a gap)
+            if action_start > prev_end:
+                video_segments.append((prev_end, action_start, FAST_SPEED))
+
+            # Normal speed during action (merge if overlapping with previous)
+            if video_segments and video_segments[-1][2] == 1 and action_start <= video_segments[-1][1]:
+                # Merge with previous normal-speed segment
+                video_segments[-1] = (video_segments[-1][0], action_end, 1)
+            else:
+                video_segments.append((action_start, action_end, 1))
+
+            prev_end = action_end
+
+        # Add final fast segment after last click (if any video remains)
+        if prev_end < video_duration:
+            video_segments.append((prev_end, video_duration, FAST_SPEED))
+
+        print(f"Video segments: {video_segments}", file=sys.stderr)
+
+        # Build ffmpeg filter for variable speed
+        filter_parts = []
+        concat_inputs = []
+        for i, (start, end, speed) in enumerate(video_segments):
+            pts = 1.0 / speed  # 4x speed = 0.25, 1x = 1.0
+            filter_parts.append(f"[0:v]trim=start={start}:end={end},setpts={pts}*(PTS-STARTPTS)[v{i}]")
+            concat_inputs.append(f"[v{i}]")
+
+        concat_filter = f"{''.join(concat_inputs)}concat=n={len(video_segments)}:v=1:a=0[out]"
+        full_filter = ";".join(filter_parts) + ";" + concat_filter
+
+        print(f"Applying variable speed: 1x during actions, {FAST_SPEED}x between", file=sys.stderr)
+        speed_result = subprocess.run([
+            "ffmpeg", "-y", "-i", f"{outdir}/with_cursor.mp4",
+            "-filter_complex", full_filter,
+            "-map", "[out]",
+            "-movflags", "+faststart",
+            f"{outdir}/workflow.mp4"
+        ], capture_output=True, text=True)
+
+        if speed_result.returncode != 0:
+            print(f"Variable speed failed with code {speed_result.returncode}", file=sys.stderr)
+            print(f"ffmpeg stderr: {speed_result.stderr}", file=sys.stderr)
+            # Fall back to cursor video with faststart
+            fallback = subprocess.run(f'ffmpeg -y -i "{outdir}/with_cursor.mp4" -c copy -movflags +faststart "{outdir}/workflow.mp4"', shell=True)
+            if fallback.returncode != 0:
+                os.rename(f"{outdir}/with_cursor.mp4", f"{outdir}/workflow.mp4")
+        else:
+            os.remove(f"{outdir}/with_cursor.mp4")
+
+        # Log final duration
+        total_dur = sum((end - start) / speed for start, end, speed in video_segments)
+        print(f"Final video: {len(video_segments)} segments, ~{total_dur:.1f}s (from {video_duration:.1f}s original)", file=sys.stderr)
+
 else:
-    print("No clicks found, speeding up raw video 2x", file=sys.stderr)
-    result = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -vf "setpts=0.5*PTS" "{outdir}/workflow.mp4"', shell=True)
+    # No clicks - still draw cursor at center, then speed up
+    print("No clicks found, drawing cursor at center and speeding up 2x", file=sys.stderr)
+    cx, cy = 960, 540  # screen center
+    yo_x, yo_y = -14, -20  # yellow offset
+    bo_x, bo_y = -6, -12   # black offset
+    cursor_filter = f"drawtext=text='●':x={cx+yo_x}:y={cy+yo_y}:fontsize=36:fontcolor=yellow@0.5,drawtext=text='●':x={cx+bo_x}:y={cy+bo_y}:fontsize=12:fontcolor=black"
+    # Draw cursor then speed up
+    result = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -vf "{cursor_filter},setpts=0.5*PTS" -movflags +faststart "{outdir}/workflow.mp4"', shell=True, capture_output=True, text=True)
     if result.returncode == 0:
         os.remove(f"{outdir}/raw.mp4")
     else:
-        os.rename(f"{outdir}/raw.mp4", f"{outdir}/workflow.mp4")
+        print(f"No-click processing failed with code {result.returncode}", file=sys.stderr)
+        print(f"ffmpeg stderr: {result.stderr}", file=sys.stderr)
+        # Fall back to just adding faststart to raw video (sped up)
+        fallback = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -vf "setpts=0.5*PTS" -movflags +faststart "{outdir}/workflow.mp4"', shell=True)
+        if fallback.returncode != 0:
+            # Last resort: just copy with faststart
+            fallback2 = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -c copy -movflags +faststart "{outdir}/workflow.mp4"', shell=True)
+            if fallback2.returncode != 0:
+                os.rename(f"{outdir}/raw.mp4", f"{outdir}/workflow.mp4")
+
+# Final validation: check output video exists and is valid
+workflow_path = f"{outdir}/workflow.mp4"
+if os.path.exists(workflow_path):
+    file_size = os.path.getsize(workflow_path)
+    print(f"Output video: {workflow_path} ({file_size} bytes)", file=sys.stderr)
+    if file_size < 1000:
+        print(f"WARNING: Output video is suspiciously small ({file_size} bytes)", file=sys.stderr)
+    # Quick ffprobe check
+    probe_result = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0", workflow_path], capture_output=True, text=True)
+    if probe_result.returncode == 0:
+        print(f"Video stream info: {probe_result.stdout.strip()}", file=sys.stderr)
+    else:
+        print(f"WARNING: ffprobe failed - video may be corrupted", file=sys.stderr)
+        print(f"ffprobe stderr: {probe_result.stderr}", file=sys.stderr)
+else:
+    print(f"ERROR: Output video not found at {workflow_path}", file=sys.stderr)
 PYSCRIPT
 \`\`\`
 
@@ -824,6 +985,9 @@ Do not create summary documents.
     // Clear/create events.log at start
     await fs.writeFile(eventsLogPath, "");
 
+    // Click listener cleanup function
+    let stopClickListener: (() => void) | null = null;
+
     try {
       for await (const message of query({
         prompt,
@@ -859,8 +1023,12 @@ Do not create summary documents.
         };
         await trajectoryStream.write(JSON.stringify(trajectoryEntry) + "\n");
 
-        // PRETOOL HOOK: When we see a tool_use with uid, call CDP to get bounding rect
-        // This captures cursor position BEFORE the click happens
+        // HOOK: Track mouse clicks via CDP
+        // Inject tracker when recording starts, retrieve clicks after each MCP click completes
+
+        // Debug: log all message types
+        await logToScreenshotCollector(`[HOOK DEBUG] Message type: ${message.type}`);
+
         if (message.type === "assistant") {
           const content = message.message?.content;
           if (Array.isArray(content)) {
@@ -873,64 +1041,81 @@ Do not create summary documents.
                 "name" in block
               ) {
                 const toolName = String(block.name);
-                const toolNameLower = toolName.toLowerCase();
                 const input = "input" in block && block.input && typeof block.input === "object"
                   ? block.input as Record<string, unknown>
                   : {};
-                const uid = typeof input.uid === "string" ? input.uid : undefined;
 
-                const isClickTool = toolNameLower.includes("click");
+                // Detect Bash commands for ffmpeg recording
+                if (toolName === "Bash" && typeof input.command === "string") {
+                  const cmd = input.command;
 
-                // If we have a uid, call CDP to get bounding rect
-                if (uid) {
-                  try {
-                    const rect = await getBoundingRectFromCDP(uid);
-                    if (rect) {
-                      // Log bounding_rect event FIRST (before pretool)
+                  // Recording start: start streaming click listener
+                  if (cmd.includes("ffmpeg") && cmd.includes("x11grab")) {
+                    const BROWSER_CHROME_OFFSET = 85;
+
+                    // Start click listener that streams events to us via CDP console
+                    stopClickListener = await startClickListener(async (viewportX, viewportY) => {
+                      // Convert viewport coords to screen coords
+                      const screenX = viewportX;
+                      const screenY = viewportY + BROWSER_CHROME_OFFSET;
+
+                      await logToScreenshotCollector(
+                        `[HOOK] Click detected: viewport(${viewportX}, ${viewportY}) -> screen(${screenX}, ${screenY})`
+                      );
+
                       await fs.appendFile(
                         eventsLogPath,
                         JSON.stringify({
-                          timestamp,
-                          event: "bounding_rect",
-                          ...rect,
-                          uid,
+                          timestamp: Date.now(),
+                          event: "click",
+                          x: Math.round(screenX),
+                          y: Math.round(screenY),
                         }) + "\n"
                       );
+                    });
 
-                      await logToScreenshotCollector(
-                        `[PRETOOL] Got bounding rect for uid=${uid}: x=${rect.x}, y=${rect.y}, w=${rect.width}, h=${rect.height}`
-                      );
-                    } else {
-                      await logToScreenshotCollector(
-                        `[PRETOOL] Could not get bounding rect for uid=${uid}`
-                      );
-                    }
-                  } catch (cdpError) {
                     await logToScreenshotCollector(
-                      `[PRETOOL] CDP error for uid=${uid}: ${cdpError instanceof Error ? cdpError.message : String(cdpError)}`
+                      `[HOOK] Click listener started: ${!!stopClickListener}`
                     );
+
+                    // Log recording start
+                    await fs.appendFile(
+                      eventsLogPath,
+                      JSON.stringify({
+                        timestamp,
+                        event: "recording_start",
+                      }) + "\n"
+                    );
+                  }
+
+                  // Recording stop: stop click listener when ffmpeg is killed
+                  // Match both "kill -INT $FFMPEG_PID" and "kill -INT 12345"
+                  if (cmd.includes("kill") && cmd.includes("-INT")) {
+                    if (stopClickListener) {
+                      stopClickListener();
+                      stopClickListener = null;
+                      await logToScreenshotCollector("[HOOK] Click listener stopped");
+                    }
                   }
                 }
 
-                // Log pretool event for click tools
-                if (isClickTool) {
-                  await fs.appendFile(
-                    eventsLogPath,
-                    JSON.stringify({
-                      timestamp,
-                      event: "pretool",
-                      tool: toolName,
-                      ...(uid ? { uid } : {}),
-                    }) + "\n"
-                  );
-
-                  await logToScreenshotCollector(
-                    `[PRETOOL] Click: ${toolName}${uid ? ` uid=${uid}` : ""}`
-                  );
+                // Log click tool calls for debugging (actual coordinates come from DOM listener)
+                const toolNameLower = toolName.toLowerCase();
+                if (toolNameLower.includes("click")) {
+                  const uid = typeof input.uid === "string" ? input.uid : undefined;
+                  await logToScreenshotCollector(`[HOOK] Click tool called: ${toolName}, uid: ${uid}`);
                 }
               }
             }
           }
+        }
+
+        // After each MCP click completes, immediately retrieve clicks before page navigates away
+        if (message.type === "user") {
+          const content = message.message?.content;
+          await logToScreenshotCollector(`[HOOK DEBUG] User message, content is array: ${Array.isArray(content)}`);
+          // Tool results are logged via formatClaudeMessage
+          // Click coordinates are captured via CDP console event streaming (startClickListener)
         }
 
         // Format and log all message types
@@ -989,6 +1174,13 @@ Do not create summary documents.
       });
       throw error;
     } finally {
+      // Stop click listener if still running
+      if (stopClickListener) {
+        stopClickListener();
+        stopClickListener = null;
+        await logToScreenshotCollector("[HOOK] Click listener stopped in finally block");
+      }
+
       // Close trajectory stream
       await trajectoryStream.close();
 
