@@ -291,7 +291,7 @@ export function OnboardingTooltip({
             </button>
             <button
               onClick={onNext}
-              className="inline-flex items-center gap-0.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors"
+              className="inline-flex items-center gap-0.5 pl-2 pr-1 py-1 text-xs rounded bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100 transition-colors"
             >
               {isLastStep ? "Done" : "Next"}
               {!isLastStep && <ChevronRight className="w-3 h-3" />}
