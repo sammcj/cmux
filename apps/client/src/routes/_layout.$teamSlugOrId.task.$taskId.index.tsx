@@ -478,6 +478,13 @@ function TaskDetailPage() {
   }, [search.runId, taskRunIndex, taskRuns]);
 
   const selectedRunId = selectedRun?._id ?? null;
+
+  // Query for existing linked local workspace (to prevent creating duplicates)
+  const linkedLocalWorkspace = useQuery(
+    api.tasks.getLinkedLocalWorkspace,
+    selectedRunId ? { teamSlugOrId, cloudTaskRunId: selectedRunId } : "skip"
+  );
+
   useEffect(() => {
     const previousRunId = previousSelectedRunIdRef.current;
     if (previousRunId === selectedRunId) {
@@ -648,6 +655,14 @@ function TaskDetailPage() {
 
   // Handle opening a local workspace for the current task run
   const handleOpenLocalWorkspace = useCallback(() => {
+    // If a linked local workspace already exists, just show a message
+    if (linkedLocalWorkspace) {
+      toast.info("Local workspace already exists", {
+        description: "VS Code (Local) is available in the sidebar",
+      });
+      return;
+    }
+
     if (!socket) {
       toast.error("Socket not connected");
       return;
@@ -688,7 +703,7 @@ function TaskDetailPage() {
         }
       }
     );
-  }, [socket, teamSlugOrId, primaryRepo, selectedRun?.newBranch, selectedRun?._id]);
+  }, [socket, teamSlugOrId, primaryRepo, selectedRun?.newBranch, selectedRun?._id, linkedLocalWorkspace]);
 
   // Determine workspace type for layout overrides
   const isLocalWorkspaceTask = task?.isLocalWorkspace;

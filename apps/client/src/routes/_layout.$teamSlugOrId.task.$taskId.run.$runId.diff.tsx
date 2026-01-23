@@ -350,6 +350,17 @@ function RunDiffPage() {
   const selectedRun = useMemo(() => {
     return taskRuns?.find((run) => run._id === runId);
   }, [runId, taskRuns]);
+
+  // Query for existing linked local workspace (to prevent creating duplicates)
+  const linkedLocalWorkspaceQuery = useRQ({
+    ...convexQuery(api.tasks.getLinkedLocalWorkspace, {
+      teamSlugOrId,
+      cloudTaskRunId: runId,
+    }),
+    enabled: Boolean(teamSlugOrId && runId),
+  });
+  const linkedLocalWorkspace = linkedLocalWorkspaceQuery.data;
+
   const [streamStateByFile, setStreamStateByFile] = useState<
     Map<string, StreamFileState>
   >(() => new Map());
@@ -972,6 +983,14 @@ function RunDiffPage() {
   const taskRunId = selectedRun?._id ?? runId;
 
   const handleOpenLocalWorkspace = useCallback(() => {
+    // If a linked local workspace already exists, just show a message
+    if (linkedLocalWorkspace) {
+      toast.info("Local workspace already exists", {
+        description: "VS Code (Local) is available in the sidebar",
+      });
+      return;
+    }
+
     if (!socket) {
       toast.error("Socket not connected");
       return;
@@ -1012,7 +1031,7 @@ function RunDiffPage() {
         }
       }
     );
-  }, [socket, teamSlugOrId, primaryRepo, selectedRun?.newBranch, selectedRun?._id]);
+  }, [socket, teamSlugOrId, primaryRepo, selectedRun?.newBranch, selectedRun?._id, linkedLocalWorkspace]);
 
   // 404 if selected run is missing
   if (!selectedRun) {
