@@ -32,6 +32,7 @@ import {
   anthropicCountTokens,
   anthropicEventLogging,
 } from "./anthropic_http";
+import { serveMedia } from "./media_proxy_http";
 
 const http = httpRouter();
 
@@ -177,6 +178,15 @@ http.route({
   path: "/api/anthropic/api/event_logging/batch",
   method: "POST",
   handler: anthropicEventLogging,
+});
+
+// Media proxy endpoint for serving storage files with proper Content-Type headers
+// This is used for GitHub PR comments where videos need stable URLs ending in .mp4
+// Path format: /api/media/{storageId}.{ext}
+http.route({
+  pathPrefix: "/api/media/",
+  method: "GET",
+  handler: serveMedia,
 });
 
 export default http;

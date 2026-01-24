@@ -540,7 +540,7 @@ take_snapshot
 
 STEP 2 - START RECORDING:
 \`\`\`bash
-DISPLAY=:1 ffmpeg -y -f x11grab -draw_mouse 0 -framerate 24 -video_size 1920x1080 -i :1+0,0 -c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p "${outputDir}/raw.mp4" &
+DISPLAY=:1 ffmpeg -y -f x11grab -draw_mouse 0 -framerate 24 -video_size 1920x1080 -i :1+0,0 -c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p -movflags +frag_keyframe+empty_moov "${outputDir}/raw.mp4" &
 FFMPEG_PID=$!
 sleep 0.3
 \`\`\`
@@ -557,8 +557,8 @@ The video is NOT VALID until you run the post-processing script. If you skip ste
 
 STEP 4 & 5 - STOP RECORDING AND POST-PROCESS (MANDATORY - RUN THIS EXACT COMMAND):
 \`\`\`bash
-# First stop ffmpeg, then run post-processing
-kill -INT $FFMPEG_PID 2>/dev/null; wait $FFMPEG_PID 2>/dev/null; python3 << PYSCRIPT
+# First stop ffmpeg gracefully, wait for it to finalize, then run post-processing
+kill -INT $FFMPEG_PID 2>/dev/null; sleep 1; wait $FFMPEG_PID 2>/dev/null; sleep 0.5; python3 << PYSCRIPT
 import subprocess, os, sys, json
 
 outdir = "${outputDir}"
@@ -622,13 +622,38 @@ probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-sh
 if probe.returncode != 0:
     print(f"ERROR: raw.mp4 failed ffprobe validation", file=sys.stderr)
     print(f"ffprobe stderr: {probe.stderr}", file=sys.stderr)
-    # Try to salvage with ffmpeg copy
-    print("Attempting to salvage with ffmpeg copy...", file=sys.stderr)
-    salvage = subprocess.run(f'ffmpeg -y -i "{raw_path}" -c copy -movflags +faststart "{outdir}/workflow.mp4"', shell=True, capture_output=True, text=True)
+
+    # Check if it's a moov atom issue (common with fragmented MP4)
+    is_moov_issue = "moov" in probe.stderr.lower() or "Invalid data" in probe.stderr
+
+    if is_moov_issue:
+        print("Detected moov atom issue - attempting recovery with re-encoding...", file=sys.stderr)
+        # For fragmented MP4 without moov, try to re-encode which can sometimes recover
+        salvage = subprocess.run([
+            "ffmpeg", "-y", "-fflags", "+genpts+igndts",
+            "-i", raw_path,
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+            "-movflags", "+faststart",
+            f"{outdir}/workflow.mp4"
+        ], capture_output=True, text=True)
+    else:
+        # Try simple copy first
+        print("Attempting to salvage with ffmpeg copy...", file=sys.stderr)
+        salvage = subprocess.run(f'ffmpeg -y -i "{raw_path}" -c copy -movflags +faststart "{outdir}/workflow.mp4"', shell=True, capture_output=True, text=True)
+
     if salvage.returncode == 0:
-        print("Salvage successful", file=sys.stderr)
+        # Verify the salvaged file is valid
+        verify = subprocess.run(["ffprobe", "-v", "error", raw_path.replace("raw.mp4", "workflow.mp4")], capture_output=True, text=True)
+        if verify.returncode == 0:
+            print("Salvage successful and verified", file=sys.stderr)
+            os.remove(raw_path)
+        else:
+            print(f"Salvaged file failed verification: {verify.stderr}", file=sys.stderr)
+            # Keep raw.mp4 as workflow.mp4 as last resort
+            os.rename(raw_path, f"{outdir}/workflow.mp4")
     else:
         print(f"Salvage failed: {salvage.stderr}", file=sys.stderr)
+        # Last resort: keep raw file
         os.rename(raw_path, f"{outdir}/workflow.mp4")
     sys.exit(0)
 
@@ -651,43 +676,140 @@ if clicks:
 
     print(f"Animation: center ({cx},{cy}) -> ({first_x},{first_y}) over {anim_dur:.2f}s", file=sys.stderr)
 
-    # ScreenStudio-style cursor: white pointer with black shadow
-    # Offset to position cursor tip at click point
-    cursor_char = "⬆"  # Unicode up arrow, will be styled as pointer
-    shadow_offset = 2  # Shadow offset in pixels
-    cursor_size = 28
-    tip_offset_x = -4  # Offset to align cursor tip with click point
-    tip_offset_y = -2
+    # Create cursor PNG using PIL (standard arrow pointer with black outline)
+    cursor_path = f"{outdir}/cursor.png"
+    try:
+        from PIL import Image, ImageDraw
 
-    # Animation expressions for smooth movement from center to first click
-    shadow_x_expr = f"({cx+tip_offset_x+shadow_offset}+({first_x+tip_offset_x+shadow_offset}-{cx+tip_offset_x+shadow_offset})*min(t/{anim_dur},1))"
-    shadow_y_expr = f"({cy+tip_offset_y+shadow_offset}+({first_y+tip_offset_y+shadow_offset}-{cy+tip_offset_y+shadow_offset})*min(t/{anim_dur},1))"
-    cursor_x_expr = f"({cx+tip_offset_x}+({first_x+tip_offset_x}-{cx+tip_offset_x})*min(t/{anim_dur},1))"
-    cursor_y_expr = f"({cy+tip_offset_y}+({first_y+tip_offset_y}-{cy+tip_offset_y})*min(t/{anim_dur},1))"
+        # Cursor dimensions
+        cw, ch = 24, 32
+        img = Image.new('RGBA', (cw, ch), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
 
-    # Animation phase - cursor moves from center to first click (shadow first, then white cursor)
-    filters.append(f"drawtext=text='{cursor_char}':x='{shadow_x_expr}':y='{shadow_y_expr}':fontsize={cursor_size}:fontcolor=black@0.6:enable='between(t,0,{anim_dur:.2f})'")
-    filters.append(f"drawtext=text='{cursor_char}':x='{cursor_x_expr}':y='{cursor_y_expr}':fontsize={cursor_size}:fontcolor=white:enable='between(t,0,{anim_dur:.2f})'")
+        # Classic arrow cursor - white fill with black border
+        # Symmetric shape with inward notch on both sides where tail connects
+        cursor_points = [
+            (4, 4),      # tip (top)
+            (4, 20),     # left edge down
+            (8, 16),     # left notch (inward)
+            (11, 23),    # tail left
+            (13, 21),    # tail right
+            (10, 14),    # right notch (inward)
+            (14, 10),    # right edge
+        ]
 
-    # Static cursor at each click position
-    for i, (t, x, y) in enumerate(clicks):
-        end_t = clicks[i+1][0] if i+1 < len(clicks) else 9999
-        if end_t <= t:
-            continue
-        e = f"enable='between(t,{t:.2f},{end_t:.2f})'"
-        # Shadow layer (slightly offset, semi-transparent black)
-        filters.append(f"drawtext=text='{cursor_char}':x={x+tip_offset_x+shadow_offset}:y={y+tip_offset_y+shadow_offset}:fontsize={cursor_size}:fontcolor=black@0.6:{e}")
-        # Main cursor layer (white)
-        filters.append(f"drawtext=text='{cursor_char}':x={x+tip_offset_x}:y={y+tip_offset_y}:fontsize={cursor_size}:fontcolor=white:{e}")
+        # Draw black border by drawing expanded shape
+        for dx in [-2, -1, 0, 1, 2]:
+            for dy in [-2, -1, 0, 1, 2]:
+                if dx == 0 and dy == 0:
+                    continue
+                offset_points = [(x + dx, y + dy) for x, y in cursor_points]
+                draw.polygon(offset_points, fill=(0, 0, 0, 255))
+
+        # Draw white fill on top
+        draw.polygon(cursor_points, fill=(255, 255, 255, 255))
+
+        img.save(cursor_path)
+        print(f"Created cursor PNG at {cursor_path}", file=sys.stderr)
+        use_cursor_png = True
+    except ImportError:
+        print("PIL not available, falling back to drawtext cursor", file=sys.stderr)
+        use_cursor_png = False
+    except Exception as e:
+        print(f"Failed to create cursor PNG: {e}, falling back to drawtext", file=sys.stderr)
+        use_cursor_png = False
+
+    if use_cursor_png:
+        # Use overlay filter with cursor PNG
+        # We need to create a complex filter that positions the cursor at different locations over time
+        # First, generate intermediate video with cursor, then process further
+
+        # Animation expressions for smooth movement from center to first click
+        # For overlay, x/y position the top-left of the overlay image (cursor tip is at ~1,1)
+        anim_x_expr = f"({cx}+({first_x}-{cx})*min(t/{anim_dur},1))"
+        anim_y_expr = f"({cy}+({first_y}-{cy})*min(t/{anim_dur},1))"
+
+        # Build overlay filter - cursor moves during animation phase, then jumps to click positions
+        # We'll use multiple overlay applications with enable expressions
+        overlay_parts = []
+
+        # Animation phase - cursor moves from center to first click
+        overlay_parts.append(f"overlay=x='{anim_x_expr}':y='{anim_y_expr}':enable='between(t,0,{anim_dur:.2f})'")
+
+        # Static cursor at each click position
+        for i, (t, x, y) in enumerate(clicks):
+            end_t = clicks[i+1][0] if i+1 < len(clicks) else 9999
+            if end_t <= t:
+                continue
+            overlay_parts.append(f"overlay=x={x}:y={y}:enable='between(t,{t:.2f},{end_t:.2f})'")
+
+        # Build filter: load cursor image, apply overlays sequentially
+        # Format: [0:v][1:v]overlay...[tmp];[tmp][1:v]overlay...
+        filter_chain = f"[0:v][1:v]{overlay_parts[0]}[v0]"
+        for i, overlay in enumerate(overlay_parts[1:], 1):
+            filter_chain += f";[v{i-1}][1:v]{overlay}[v{i}]"
+        last_idx = len(overlay_parts) - 1
+
+        print(f"Drawing cursor overlay with {len(overlay_parts)} overlay filters", file=sys.stderr)
+        result = subprocess.run([
+            "ffmpeg", "-y",
+            "-i", f"{outdir}/raw.mp4",
+            "-i", cursor_path,
+            "-filter_complex", f"{filter_chain}",
+            "-map", f"[v{last_idx}]",
+            "-movflags", "+faststart",
+            f"{outdir}/with_cursor.mp4"
+        ], capture_output=True, text=True)
+
+        if result.returncode != 0:
+            print(f"Cursor overlay failed with code {result.returncode}", file=sys.stderr)
+            print(f"ffmpeg stderr: {result.stderr}", file=sys.stderr)
+            # Fall back to drawtext method
+            use_cursor_png = False
+
+    if not use_cursor_png:
+        # Fallback: use drawtext with Unicode arrow
+        cursor_char = "⮝"  # Unicode up-pointing triangle
+        shadow_offset = 2
+        cursor_size = 28
+        tip_offset_x = -4
+        tip_offset_y = -2
+
+        shadow_x_expr = f"({cx+tip_offset_x+shadow_offset}+({first_x+tip_offset_x+shadow_offset}-{cx+tip_offset_x+shadow_offset})*min(t/{anim_dur},1))"
+        shadow_y_expr = f"({cy+tip_offset_y+shadow_offset}+({first_y+tip_offset_y+shadow_offset}-{cy+tip_offset_y+shadow_offset})*min(t/{anim_dur},1))"
+        cursor_x_expr = f"({cx+tip_offset_x}+({first_x+tip_offset_x}-{cx+tip_offset_x})*min(t/{anim_dur},1))"
+        cursor_y_expr = f"({cy+tip_offset_y}+({first_y+tip_offset_y}-{cy+tip_offset_y})*min(t/{anim_dur},1))"
+
+        filters.append(f"drawtext=text='{cursor_char}':x='{shadow_x_expr}':y='{shadow_y_expr}':fontsize={cursor_size}:fontcolor=black@0.6:enable='between(t,0,{anim_dur:.2f})'")
+        filters.append(f"drawtext=text='{cursor_char}':x='{cursor_x_expr}':y='{cursor_y_expr}':fontsize={cursor_size}:fontcolor=white:enable='between(t,0,{anim_dur:.2f})'")
+
+        for i, (t, x, y) in enumerate(clicks):
+            end_t = clicks[i+1][0] if i+1 < len(clicks) else 9999
+            if end_t <= t:
+                continue
+            e = f"enable='between(t,{t:.2f},{end_t:.2f})'"
+            filters.append(f"drawtext=text='{cursor_char}':x={x+tip_offset_x+shadow_offset}:y={y+tip_offset_y+shadow_offset}:fontsize={cursor_size}:fontcolor=black@0.6:{e}")
+            filters.append(f"drawtext=text='{cursor_char}':x={x+tip_offset_x}:y={y+tip_offset_y}:fontsize={cursor_size}:fontcolor=white:{e}")
 
     # STEP 1: Draw cursor overlay at original timing (no speed change yet)
-    filter_str = ",".join(filters)
-    print(f"Drawing cursor overlay with {len(filters)} filter elements", file=sys.stderr)
-    result = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -vf "{filter_str}" -movflags +faststart "{outdir}/with_cursor.mp4"', shell=True, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"Cursor overlay failed with code {result.returncode}", file=sys.stderr)
-        print(f"ffmpeg stderr: {result.stderr}", file=sys.stderr)
+    # If PNG overlay succeeded, with_cursor.mp4 already exists; otherwise use drawtext
+    cursor_overlay_success = use_cursor_png and os.path.exists(f"{outdir}/with_cursor.mp4")
+
+    if not cursor_overlay_success and filters:
+        # Fallback: use drawtext filters
+        filter_str = ",".join(filters)
+        print(f"Drawing cursor overlay with {len(filters)} drawtext filters", file=sys.stderr)
+        result = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -vf "{filter_str}" -movflags +faststart "{outdir}/with_cursor.mp4"', shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"Cursor overlay failed with code {result.returncode}", file=sys.stderr)
+            print(f"ffmpeg stderr: {result.stderr}", file=sys.stderr)
+            cursor_overlay_success = False
+        else:
+            cursor_overlay_success = True
+
+    if not cursor_overlay_success:
         # Fall back to just adding faststart to raw video
+        print("All cursor overlay methods failed, using raw video", file=sys.stderr)
         fallback = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -c copy -movflags +faststart "{outdir}/workflow.mp4"', shell=True)
         if fallback.returncode != 0:
             os.rename(f"{outdir}/raw.mp4", f"{outdir}/workflow.mp4")
@@ -702,38 +824,54 @@ if clicks:
         video_duration = float(probe.stdout.strip()) if probe.stdout.strip() else 60.0
         print(f"Video duration: {video_duration:.1f}s", file=sys.stderr)
 
-        # STEP 2: Apply variable speed - 1x during actions, 4x between actions
-        # NO TRIMMING - entire video is kept, just at different speeds
-        FAST_SPEED = 4
-        ACTION_BEFORE = 0.5  # seconds before click at normal speed
+        # STEP 2: Trim inactive sections and speed up transitions
+        # Goal: Short, focused videos showing only the action
+        FAST_SPEED = 8  # Speed for transition segments
+        ACTION_BEFORE = 0.3  # seconds before click at normal speed
         ACTION_AFTER = 0.5   # seconds after click at normal speed
+        MAX_TRANSITION = 0.5  # max seconds to keep from gaps (before speedup)
 
-        # Build segments covering the ENTIRE video
+        # Build segments - TRIM long gaps, keep only action windows
         video_segments = []  # (start, end, speed)
-        prev_end = 0.0
+        prev_action_end = 0.0
 
-        for t, x, y in clicks:
+        for i, (t, x, y) in enumerate(clicks):
             action_start = max(0, t - ACTION_BEFORE)
             action_end = min(video_duration, t + ACTION_AFTER)
 
-            # Fast segment before this action (if there's a gap)
-            if action_start > prev_end:
-                video_segments.append((prev_end, action_start, FAST_SPEED))
+            # Handle gap before this action
+            gap = action_start - prev_action_end
+            if gap > 0:
+                if gap > MAX_TRANSITION:
+                    # Long gap: trim most of it, keep only a brief transition
+                    # Take last MAX_TRANSITION seconds of the gap at fast speed
+                    transition_start = action_start - MAX_TRANSITION
+                    if transition_start > prev_action_end:
+                        video_segments.append((transition_start, action_start, FAST_SPEED))
+                    elif prev_action_end < action_start:
+                        video_segments.append((prev_action_end, action_start, FAST_SPEED))
+                else:
+                    # Short gap: speed it up but keep it
+                    video_segments.append((prev_action_end, action_start, FAST_SPEED))
 
-            # Normal speed during action (merge if overlapping with previous)
+            # Action segment at normal speed (merge if overlapping)
             if video_segments and video_segments[-1][2] == 1 and action_start <= video_segments[-1][1]:
-                # Merge with previous normal-speed segment
                 video_segments[-1] = (video_segments[-1][0], action_end, 1)
             else:
                 video_segments.append((action_start, action_end, 1))
 
-            prev_end = action_end
+            prev_action_end = action_end
 
-        # Add final fast segment after last click (if any video remains)
-        if prev_end < video_duration:
-            video_segments.append((prev_end, video_duration, FAST_SPEED))
+        # Handle end of video - trim to brief ending
+        if prev_action_end < video_duration:
+            remaining = video_duration - prev_action_end
+            if remaining > MAX_TRANSITION:
+                # Only keep a brief ending
+                video_segments.append((prev_action_end, prev_action_end + MAX_TRANSITION, FAST_SPEED))
+            else:
+                video_segments.append((prev_action_end, video_duration, FAST_SPEED))
 
-        print(f"Video segments: {video_segments}", file=sys.stderr)
+        print(f"Video segments (trimmed): {video_segments}", file=sys.stderr)
 
         # Build ffmpeg filter for variable speed
         filter_parts = []
@@ -746,7 +884,7 @@ if clicks:
         concat_filter = f"{''.join(concat_inputs)}concat=n={len(video_segments)}:v=1:a=0[out]"
         full_filter = ";".join(filter_parts) + ";" + concat_filter
 
-        print(f"Applying variable speed: 1x during actions, {FAST_SPEED}x between", file=sys.stderr)
+        print(f"Trimming video: keeping action segments at 1x, transitions at {FAST_SPEED}x", file=sys.stderr)
         speed_result = subprocess.run([
             "ffmpeg", "-y", "-i", f"{outdir}/with_cursor.mp4",
             "-filter_complex", full_filter,
@@ -773,27 +911,72 @@ else:
     # No clicks - still draw cursor at center, then speed up
     print("No clicks found, drawing cursor at center and speeding up 2x", file=sys.stderr)
     cx, cy = 960, 540  # screen center
-    cursor_char = "⬆"
-    shadow_offset = 2
-    cursor_size = 28
-    tip_offset_x = -4
-    tip_offset_y = -2
-    # ScreenStudio-style cursor: white with black shadow
-    cursor_filter = f"drawtext=text='{cursor_char}':x={cx+tip_offset_x+shadow_offset}:y={cy+tip_offset_y+shadow_offset}:fontsize={cursor_size}:fontcolor=black@0.6,drawtext=text='{cursor_char}':x={cx+tip_offset_x}:y={cy+tip_offset_y}:fontsize={cursor_size}:fontcolor=white"
-    # Draw cursor then speed up
-    result = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -vf "{cursor_filter},setpts=0.5*PTS" -movflags +faststart "{outdir}/workflow.mp4"', shell=True, capture_output=True, text=True)
-    if result.returncode == 0:
-        os.remove(f"{outdir}/raw.mp4")
-    else:
-        print(f"No-click processing failed with code {result.returncode}", file=sys.stderr)
-        print(f"ffmpeg stderr: {result.stderr}", file=sys.stderr)
-        # Fall back to just adding faststart to raw video (sped up)
-        fallback = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -vf "setpts=0.5*PTS" -movflags +faststart "{outdir}/workflow.mp4"', shell=True)
-        if fallback.returncode != 0:
-            # Last resort: just copy with faststart
-            fallback2 = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -c copy -movflags +faststart "{outdir}/workflow.mp4"', shell=True)
-            if fallback2.returncode != 0:
-                os.rename(f"{outdir}/raw.mp4", f"{outdir}/workflow.mp4")
+
+    # Try to create cursor PNG for no-click case too
+    cursor_path = f"{outdir}/cursor.png"
+    use_cursor_png = False
+    try:
+        from PIL import Image, ImageDraw
+
+        cw, ch = 24, 32
+        img = Image.new('RGBA', (cw, ch), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        # Classic arrow cursor - white fill with black border
+        cursor_points = [
+            (4, 4), (4, 20), (8, 16), (11, 23), (13, 21), (10, 14), (14, 10),
+        ]
+        # Draw black border by drawing expanded shape
+        for dx in [-2, -1, 0, 1, 2]:
+            for dy in [-2, -1, 0, 1, 2]:
+                if dx == 0 and dy == 0:
+                    continue
+                offset_points = [(x + dx, y + dy) for x, y in cursor_points]
+                draw.polygon(offset_points, fill=(0, 0, 0, 255))
+        # Draw white fill
+        draw.polygon(cursor_points, fill=(255, 255, 255, 255))
+        img.save(cursor_path)
+        use_cursor_png = True
+        print(f"Created cursor PNG at {cursor_path}", file=sys.stderr)
+    except:
+        print("PIL not available for no-click cursor, using drawtext fallback", file=sys.stderr)
+
+    if use_cursor_png:
+        # Use overlay filter with cursor PNG, then speed up
+        result = subprocess.run([
+            "ffmpeg", "-y",
+            "-i", f"{outdir}/raw.mp4",
+            "-i", cursor_path,
+            "-filter_complex", f"[0:v][1:v]overlay=x={cx}:y={cy},setpts=0.5*PTS[out]",
+            "-map", "[out]",
+            "-movflags", "+faststart",
+            f"{outdir}/workflow.mp4"
+        ], capture_output=True, text=True)
+        if result.returncode == 0:
+            os.remove(f"{outdir}/raw.mp4")
+        else:
+            print(f"PNG overlay failed: {result.stderr}", file=sys.stderr)
+            use_cursor_png = False  # Fall back to drawtext
+
+    if not use_cursor_png:
+        # Fallback: use drawtext with Unicode arrow
+        cursor_char = "⮝"
+        shadow_offset = 2
+        cursor_size = 28
+        tip_offset_x = -4
+        tip_offset_y = -2
+        cursor_filter = f"drawtext=text='{cursor_char}':x={cx+tip_offset_x+shadow_offset}:y={cy+tip_offset_y+shadow_offset}:fontsize={cursor_size}:fontcolor=black@0.6,drawtext=text='{cursor_char}':x={cx+tip_offset_x}:y={cy+tip_offset_y}:fontsize={cursor_size}:fontcolor=white"
+        result = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -vf "{cursor_filter},setpts=0.5*PTS" -movflags +faststart "{outdir}/workflow.mp4"', shell=True, capture_output=True, text=True)
+        if result.returncode == 0:
+            os.remove(f"{outdir}/raw.mp4")
+        else:
+            print(f"No-click processing failed with code {result.returncode}", file=sys.stderr)
+            print(f"ffmpeg stderr: {result.stderr}", file=sys.stderr)
+            fallback = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -vf "setpts=0.5*PTS" -movflags +faststart "{outdir}/workflow.mp4"', shell=True)
+            if fallback.returncode != 0:
+                fallback2 = subprocess.run(f'ffmpeg -y -i "{outdir}/raw.mp4" -c copy -movflags +faststart "{outdir}/workflow.mp4"', shell=True)
+                if fallback2.returncode != 0:
+                    os.rename(f"{outdir}/raw.mp4", f"{outdir}/workflow.mp4")
 
 # Final validation: check output video exists and is valid
 workflow_path = f"{outdir}/workflow.mp4"
