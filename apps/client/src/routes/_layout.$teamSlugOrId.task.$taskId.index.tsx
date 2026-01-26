@@ -43,7 +43,7 @@ import {
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -58,10 +58,7 @@ import z from "zod";
 import { useLocalVSCodeServeWebQuery } from "@/queries/local-vscode-serve-web";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useSocket } from "@/contexts/socket/use-socket";
-import type {
-  CreateLocalWorkspaceResponse,
-  TriggerLocalCloudSyncResponse,
-} from "@cmux/shared";
+import type { CreateLocalWorkspaceResponse } from "@cmux/shared";
 import { toast } from "sonner";
 
 type TaskRunListItem = (typeof api.taskRuns.getByTask._returnType)[number];
@@ -324,6 +321,12 @@ function TaskDetailPage() {
     teamSlugOrId,
     taskId,
   });
+  // Query workspace settings for auto-sync toggle
+  const workspaceSettings = useQuery(api.workspaceSettings.get, { teamSlugOrId });
+  const updateWorkspaceSettings = useMutation(api.workspaceSettings.update);
+
+  // Auto-sync enabled state (defaults to true)
+  const autoSyncEnabled = workspaceSettings?.autoSyncEnabled ?? true;
 
   const [panelConfig, setPanelConfig] = useState<PanelConfig>(() =>
     loadPanelConfig()
@@ -717,53 +720,21 @@ function TaskDetailPage() {
     );
   }, [socket, teamSlugOrId, primaryRepo, selectedRun?.newBranch, selectedRun?._id, linkedLocalWorkspace]);
 
-  // Handle triggering a manual sync from local workspace to cloud
-  const handleTriggerSync = useCallback(() => {
-    if (!socket) {
-      toast.error("Socket not connected");
-      return;
-    }
-
-    if (!linkedLocalWorkspace) {
-      toast.error("No linked local workspace found");
-      return;
-    }
-
-    if (!selectedRun?._id) {
-      toast.error("No cloud task run selected");
-      return;
-    }
-
-    const worktreePath = linkedLocalWorkspace.taskRun?.worktreePath;
-    if (!worktreePath) {
-      toast.error("Local workspace path not available");
-      return;
-    }
-
-    const loadingToast = toast.loading("Syncing files to cloud...");
-
-    socket.emit(
-      "trigger-local-cloud-sync",
-      {
-        localWorkspacePath: worktreePath,
-        cloudTaskRunId: selectedRun._id,
-      },
-      (response: TriggerLocalCloudSyncResponse) => {
-        if (response.success) {
-          toast.success(response.message || "Sync triggered!", {
-            id: loadingToast,
-            description: response.filesQueued
-              ? `${response.filesQueued} files queued for sync`
-              : undefined,
-          });
-        } else {
-          toast.error(response.error || "Failed to trigger sync", {
-            id: loadingToast,
-          });
-        }
-      }
-    );
-  }, [socket, linkedLocalWorkspace, selectedRun?._id]);
+  // Handle toggling auto-sync on/off
+  const handleToggleAutoSync = useCallback(() => {
+    const newValue = !autoSyncEnabled;
+    updateWorkspaceSettings({
+      teamSlugOrId,
+      autoSyncEnabled: newValue,
+    })
+      .then(() => {
+        toast.success(newValue ? "Auto-sync enabled" : "Auto-sync disabled");
+      })
+      .catch((error) => {
+        console.error("Failed to toggle auto-sync:", error);
+        toast.error("Failed to toggle auto-sync");
+      });
+  }, [autoSyncEnabled, teamSlugOrId, updateWorkspaceSettings]);
 
   // Determine workspace type for layout overrides
   const isLocalWorkspaceTask = task?.isLocalWorkspace;
@@ -911,15 +882,12 @@ function TaskDetailPage() {
           teamSlugOrId={teamSlugOrId}
           onPanelSettings={handleOpenPanelSettings}
           onOpenLocalWorkspace={
-            // Only show folder icon for regular tasks (not local/cloud workspaces)
             !isLocalWorkspaceTask && !isCloudWorkspaceTask
               ? handleOpenLocalWorkspace
               : undefined
           }
-          onTriggerSync={
-            // Only show sync button when there's a linked local workspace
-            linkedLocalWorkspace ? handleTriggerSync : undefined
-          }
+          onToggleAutoSync={linkedLocalWorkspace ? handleToggleAutoSync : undefined}
+          autoSyncEnabled={autoSyncEnabled}
         />
         <PanelConfigModal
           open={isPanelSettingsOpen}
