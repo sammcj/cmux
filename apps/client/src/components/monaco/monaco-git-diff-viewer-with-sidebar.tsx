@@ -1,4 +1,5 @@
 import { DiffEditor, type DiffOnMount } from "@monaco-editor/react";
+import { PanelLeftClose, PanelLeft } from "lucide-react";
 import type { editor } from "monaco-editor";
 import {
   memo,
@@ -982,7 +983,10 @@ function MonacoFileDiffRow({
     <div
       id={anchorId}
       ref={rowContainerRef}
-      className={cn("bg-white dark:bg-neutral-900", classNames?.container)}
+      className={cn(
+        "bg-white dark:bg-neutral-900 border-b border-neutral-200/80 dark:border-neutral-800/70",
+        classNames?.container
+      )}
     >
       <FileDiffHeaderWithViewed
         filePath={file.filePath}
@@ -998,7 +1002,7 @@ function MonacoFileDiffRow({
       />
 
       <div
-        className="overflow-hidden border-b border-neutral-200 dark:border-neutral-800 flex flex-col"
+        className="overflow-hidden flex flex-col"
         style={
           isExpanded
             ? isHeightSettled
@@ -1078,6 +1082,7 @@ const MemoMonacoFileDiffRow = memo(MonacoFileDiffRow, (prev, next) => {
 
 export function MonacoGitDiffViewerWithSidebar({
   diffs,
+  isLoading,
   onControlsChange,
   classNames,
   onFileToggle,
@@ -1087,6 +1092,9 @@ export function MonacoGitDiffViewerWithSidebar({
   const kitty = useMemo(() => {
     return kitties[Math.floor(Math.random() * kitties.length)];
   }, []);
+
+  // Sidebar collapsed state
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // All files expanded by default
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(
@@ -1100,6 +1108,42 @@ export function MonacoGitDiffViewerWithSidebar({
   const [activePath, setActivePath] = useState<string>(() => {
     return diffs[0]?.filePath ?? "";
   });
+
+  // Sync expanded files when diffs change (e.g., after loading)
+  useEffect(() => {
+    if (diffs.length > 0) {
+      setExpandedFiles((prev) => {
+        const newSet = new Set(prev);
+        for (const diff of diffs) {
+          // Add any new files to expanded set
+          if (!prev.has(diff.filePath)) {
+            newSet.add(diff.filePath);
+          }
+        }
+        return newSet;
+      });
+    }
+  }, [diffs]);
+
+  // Keyboard shortcut: F to toggle sidebar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input/textarea
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target instanceof HTMLElement && e.target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        setIsSidebarCollapsed((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const fileGroups: MonacoFileGroup[] = useMemo(
     () =>
@@ -1263,55 +1307,145 @@ export function MonacoGitDiffViewerWithSidebar({
 
   use(loaderInitPromise);
 
-  if (diffs.length === 0) {
+  // Loading state - show skeleton
+  if (isLoading) {
     return (
-      <div className="grow bg-white dark:bg-neutral-900 flex items-center justify-center p-8">
-        <span className="text-sm text-neutral-500 dark:text-neutral-400">
-          No files changed
-        </span>
+      <div className="grow flex flex-col bg-white dark:bg-neutral-900 min-h-0">
+        {/* Header bar skeleton */}
+        <div className="flex-shrink-0 flex items-center gap-2 px-2 py-1.5 border-b border-neutral-200/80 dark:border-neutral-800/70">
+          <div className="flex items-center gap-1.5 px-2 py-1">
+            <div className="w-4 h-4 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+            <div className="w-10 h-4 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-4 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+            <div className="w-6 h-4 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+          </div>
+        </div>
+
+        {/* Content area */}
+        <div className="flex flex-1 min-h-0">
+          {/* Sidebar skeleton */}
+          <div className="w-[280px] h-full border-r border-neutral-200/80 dark:border-neutral-800/70">
+            <div className="p-2">
+              <div className="h-8 bg-neutral-100 dark:bg-neutral-800 rounded-md animate-pulse" />
+            </div>
+            <div className="space-y-0.5 px-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center gap-2 px-2 py-1">
+                  <div className="w-4 h-4 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+                  <div className="h-4 bg-neutral-100 dark:bg-neutral-800 rounded flex-1 animate-pulse" />
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Content skeleton */}
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-col">
+              {[1, 2].map((i) => (
+                <div key={i} className="border-b border-neutral-200/80 dark:border-neutral-800/70">
+                  <div className="flex items-center gap-2 px-4 py-3">
+                    <div className="w-4 h-4 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+                    <div className="h-4 w-48 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+                    <div className="ml-auto flex gap-2">
+                      <div className="h-4 w-8 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+                      <div className="h-4 w-8 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+                    </div>
+                  </div>
+                  <div className="h-32 bg-neutral-50 dark:bg-neutral-900/50 animate-pulse" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
+  // No diff detected - show message at top without sidebar/header
+  if (diffs.length === 0) {
+    return (
+      <div className="grow bg-white dark:bg-neutral-900 px-3 py-6">
+        <div className="text-center">
+          <span className="select-none text-xs text-neutral-500 dark:text-neutral-400">
+            No diff detected
+          </span>
+          <div className="grid place-content-center">
+            <pre className="mt-2 select-none text-left text-[8px] font-mono text-neutral-500 dark:text-neutral-400">
+              {kitty}
+            </pre>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Has diffs - show full UI with sidebar
   return (
-    <div className="grow flex bg-white dark:bg-neutral-900 min-h-0">
-      {/* Sidebar */}
-      <div className="flex-shrink-0 sticky top-0 self-start max-h-screen overflow-y-auto">
-        <DiffSidebarFilter
-          diffs={diffs}
-          viewedFiles={viewedFiles}
-          activePath={activePath}
-          onSelectFile={handleSelectFile}
-          onToggleViewed={handleToggleViewed}
-        />
+    <div className="grow flex flex-col bg-white dark:bg-neutral-900 min-h-0">
+      {/* Header bar */}
+      <div className="flex-shrink-0 flex items-center gap-2 px-2 py-1.5 border-b border-neutral-200/80 dark:border-neutral-800/70">
+        <button
+          type="button"
+          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          className="flex items-center gap-1.5 px-2 py-1 rounded text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+          title={isSidebarCollapsed ? "Show files (F)" : "Hide files (F)"}
+        >
+          {isSidebarCollapsed ? (
+            <PanelLeft className="w-4 h-4" />
+          ) : (
+            <PanelLeftClose className="w-4 h-4" />
+          )}
+          <span>Files</span>
+        </button>
+        <div className="flex items-center gap-2 text-xs font-medium">
+          <span className="text-green-600 dark:text-green-400">+{totalAdditions}</span>
+          <span className="text-red-600 dark:text-red-400">−{totalDeletions}</span>
+        </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex flex-col -space-y-[2px]">
-          {fileGroups.map((file) => (
-            <MemoMonacoFileDiffRow
-              key={`monaco:${file.filePath}`}
-              file={file}
-              isExpanded={expandedFiles.has(file.filePath)}
-              isViewed={viewedFiles.has(file.filePath)}
-              onToggle={() => toggleFile(file.filePath)}
-              onToggleViewed={() => handleToggleViewed(file.filePath)}
-              editorTheme={editorTheme}
-              diffOptions={diffOptions}
-              classNames={classNames?.fileDiffRow}
-              anchorId={file.filePath}
+      {/* Content area */}
+      <div className="flex flex-1 min-h-0">
+        {/* Sidebar */}
+        {!isSidebarCollapsed && (
+          <div className="flex-shrink-0 sticky top-[var(--cmux-diff-header-offset,0px)] self-start h-[calc(100vh-var(--cmux-diff-header-offset,0px)-41px)] max-h-[calc(100vh-var(--cmux-diff-header-offset,0px)-41px)] overflow-hidden">
+            <DiffSidebarFilter
+              diffs={diffs}
+              viewedFiles={viewedFiles}
+              activePath={activePath}
+              onSelectFile={handleSelectFile}
+              onToggleViewed={handleToggleViewed}
+              className="h-full min-h-0"
             />
-          ))}
-          <hr className="border-neutral-200 dark:border-neutral-800" />
-          <div className="px-3 py-6 text-center">
-            <span className="select-none text-xs text-neutral-500 dark:text-neutral-400">
-              You've reached the end of the diff!
-            </span>
-            <div className="grid place-content-center">
-              <pre className="mt-2 pb-20 select-none text-left text-[8px] font-mono text-neutral-500 dark:text-neutral-400">
-                {kitty}
-              </pre>
+          </div>
+        )}
+
+        {/* Main content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-col">
+            {fileGroups.map((file) => (
+              <MemoMonacoFileDiffRow
+                key={`monaco:${file.filePath}`}
+                file={file}
+                isExpanded={expandedFiles.has(file.filePath)}
+                isViewed={viewedFiles.has(file.filePath)}
+                onToggle={() => toggleFile(file.filePath)}
+                onToggleViewed={() => handleToggleViewed(file.filePath)}
+                editorTheme={editorTheme}
+                diffOptions={diffOptions}
+                classNames={classNames?.fileDiffRow}
+                anchorId={file.filePath}
+              />
+            ))}
+            <div className="px-3 py-6 text-center">
+              <span className="select-none text-xs text-neutral-500 dark:text-neutral-400">
+                You've reached the end of the diff!
+              </span>
+              <div className="grid place-content-center">
+                <pre className="mt-2 pb-12 select-none text-left text-[8px] font-mono text-neutral-500 dark:text-neutral-400">
+                  {kitty}
+                </pre>
+              </div>
             </div>
           </div>
         </div>

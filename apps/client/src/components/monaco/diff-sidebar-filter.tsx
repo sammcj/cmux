@@ -17,7 +17,6 @@ import {
   FileMinus,
   FilePlus,
   FileText,
-  Filter,
   Folder,
   FolderOpen,
   Search,
@@ -179,17 +178,6 @@ function filterTree(nodes: FileTreeNode[], filter: string): FileTreeNode[] {
     .filter((node): node is FileTreeNode => node !== null);
 }
 
-function countFilesInTree(nodes: FileTreeNode[]): number {
-  let count = 0;
-  for (const node of nodes) {
-    if (node.file) {
-      count += 1;
-    }
-    count += countFilesInTree(node.children);
-  }
-  return count;
-}
-
 // ============================================================================
 // Components
 // ============================================================================
@@ -229,12 +217,12 @@ const FileTreeNavigator = memo(function FileTreeNavigatorComponent({
                 type="button"
                 onClick={() => onToggleDirectory(node.path)}
                 className={cn(
-                  "flex w-full items-center gap-1.5 px-2.5 py-1 text-left text-sm transition hover:bg-neutral-100 dark:hover:bg-neutral-800",
+                  "flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[13px] transition hover:bg-neutral-100/80 dark:hover:bg-neutral-800/70",
                   isExpanded
                     ? "text-neutral-900 dark:text-neutral-100"
                     : "text-neutral-700 dark:text-neutral-300"
                 )}
-                style={{ paddingLeft: depth * 14 + 10 }}
+                style={{ paddingLeft: depth * 14 + 12 }}
               >
                 {isExpanded ? (
                   <ChevronDown
@@ -284,29 +272,27 @@ const FileTreeNavigator = memo(function FileTreeNavigatorComponent({
         }
 
         const isViewed = viewedFiles.has(node.path);
+        // Extra indent for files to align with folder text (account for chevron space)
+        const fileIndent = depth * 14 + 12 + 20;
 
         return (
           <div
             key={node.path}
             className={cn(
-              "group flex w-full items-center gap-1 text-sm transition hover:bg-neutral-100 dark:hover:bg-neutral-800",
+              "group flex w-full items-center gap-1.5 pr-2 text-[13px] transition-colors",
               isActive
-                ? "bg-sky-100/80 dark:bg-sky-900/40"
-                : "",
-              isViewed && !isActive
-                ? "opacity-60"
-                : ""
+                ? "bg-sky-500/10 text-neutral-900 dark:text-neutral-100"
+                : "text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800",
+              isViewed && !isActive ? "opacity-60" : ""
             )}
-            style={{ paddingLeft: depth * 14 + 10 }}
+            style={{ paddingLeft: fileIndent }}
           >
             <button
               type="button"
               onClick={() => onSelectFile(node.path)}
               className={cn(
-                "flex flex-1 items-center gap-1.5 py-1 text-left min-w-0",
-                isActive
-                  ? "text-sky-900 font-semibold dark:text-sky-100"
-                  : "text-neutral-700 dark:text-neutral-300"
+                "flex flex-1 items-center gap-1.5 py-1.5 text-left min-w-0",
+                isActive ? "font-semibold" : ""
               )}
             >
               {getStatusIcon(file.status)}
@@ -331,14 +317,14 @@ const FileTreeNavigator = memo(function FileTreeNavigatorComponent({
                 onToggleViewed(node.path);
               }}
               className={cn(
-                "flex-shrink-0 w-5 h-5 flex items-center justify-center rounded border transition-colors mr-1.5",
+                "flex-shrink-0 h-4 w-4 flex items-center justify-center rounded-[4px] border transition-colors mr-2",
                 isViewed
-                  ? "bg-green-500 border-green-500 text-white"
+                  ? "bg-emerald-500 border-emerald-500 text-white"
                   : "border-neutral-300 dark:border-neutral-600 hover:border-neutral-400 dark:hover:border-neutral-500"
               )}
               title={isViewed ? "Mark as not viewed" : "Mark as viewed"}
             >
-              {isViewed && <Check className="w-3 h-3" />}
+              {isViewed && <Check className="h-2.5 w-2.5" />}
             </button>
           </div>
         );
@@ -617,24 +603,11 @@ export function DiffSidebarFilter({
     filterInputRef.current?.focus();
   }, []);
 
-  const totalFiles = diffs.length;
-  const viewedCount = viewedFiles.size;
-  const filteredCount = countFilesInTree(filteredFileTree);
-
-  const totalAdditions = useMemo(
-    () => diffs.reduce((sum, diff) => sum + (diff.additions ?? 0), 0),
-    [diffs]
-  );
-  const totalDeletions = useMemo(
-    () => diffs.reduce((sum, diff) => sum + (diff.deletions ?? 0), 0),
-    [diffs]
-  );
-
   return (
-    <div className={cn("flex max-h-screen", className)}>
+    <div className={cn("relative h-full min-h-0", className)}>
       <aside
         id={sidebarPanelId}
-        className="relative flex flex-col max-h-screen bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800"
+        className="flex h-full min-h-0 flex-col border-r border-neutral-200/80 dark:border-neutral-800/70"
         style={
           {
             width: `${sidebarWidth}px`,
@@ -643,69 +616,40 @@ export function DiffSidebarFilter({
           } as CSSProperties
         }
       >
-        {/* Header */}
-        <div className="flex-shrink-0 border-b border-neutral-200 dark:border-neutral-800">
-          <div className="flex items-center justify-between px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-neutral-500" />
-              <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                Files
-              </span>
-              <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                {filterText.trim() ? `${filteredCount} / ${totalFiles}` : totalFiles}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 text-xs font-medium">
-              <span className="text-green-600 dark:text-green-400">+{totalAdditions}</span>
-              <span className="text-red-600 dark:text-red-400">−{totalDeletions}</span>
-            </div>
-          </div>
-
-          {/* Filter input */}
-          <div className="px-3 pb-2.5">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
-              <input
-                ref={filterInputRef}
-                type="text"
-                placeholder="Filter files..."
-                value={filterText}
-                onChange={(e) => setFilterText(e.target.value)}
-                className={cn(
-                  "w-full pl-8 pr-8 py-1.5 text-sm",
-                  "bg-neutral-50 dark:bg-neutral-800",
-                  "border border-neutral-200 dark:border-neutral-700",
-                  "rounded-md",
-                  "placeholder:text-neutral-400 dark:placeholder:text-neutral-500",
-                  "text-neutral-900 dark:text-neutral-100",
-                  "focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
-                )}
-              />
-              {filterText && (
-                <button
-                  type="button"
-                  onClick={handleClearFilter}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+        {/* Search input */}
+        <div className="flex-shrink-0 p-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
+            <input
+              ref={filterInputRef}
+              type="text"
+              placeholder="Search files"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              className={cn(
+                "w-full pl-8 pr-8 py-1.5 text-sm",
+                "bg-neutral-100 dark:bg-neutral-800",
+                "border-none",
+                "rounded-md",
+                "placeholder:text-neutral-500 dark:placeholder:text-neutral-400",
+                "text-neutral-900 dark:text-neutral-100",
+                "focus:outline-none focus:ring-2 focus:ring-sky-500"
               )}
-            </div>
-          </div>
-
-          {/* Viewed count */}
-          <div className="px-3 pb-2 flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
-            <span>{viewedCount} of {totalFiles} files viewed</span>
-            {viewedCount > 0 && (
-              <span className="text-green-600 dark:text-green-400">
-                {Math.round((viewedCount / totalFiles) * 100)}%
-              </span>
+            />
+            {filterText && (
+              <button
+                type="button"
+                onClick={handleClearFilter}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             )}
           </div>
         </div>
 
         {/* File tree */}
-        <div className="flex-1 overflow-y-auto overscroll-contain py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain py-1">
           {filteredFileTree.length > 0 ? (
             <FileTreeNavigator
               nodes={filteredFileTree}
@@ -720,47 +664,38 @@ export function DiffSidebarFilter({
             <div className="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
               No files match &ldquo;{filterText}&rdquo;
             </div>
-          ) : (
-            <div className="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
-              No files to display
-            </div>
-          )}
+          ) : null}
         </div>
       </aside>
 
       {/* Resize handle */}
-      <div className="relative flex flex-none self-stretch px-1 group/resize">
+      <div
+        className={cn(
+          "absolute top-0 bottom-0 right-0 w-2 cursor-col-resize select-none touch-none group/resize z-10 translate-x-1/2",
+          "focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-sky-500"
+        )}
+        role="separator"
+        aria-label="Resize file navigation panel"
+        aria-orientation="vertical"
+        aria-controls={sidebarPanelId}
+        aria-valuenow={Math.round(sidebarWidth)}
+        aria-valuemin={SIDEBAR_MIN_WIDTH}
+        aria-valuemax={SIDEBAR_MAX_WIDTH}
+        tabIndex={0}
+        onPointerDown={handleSidebarResizePointerDown}
+        onKeyDown={handleSidebarResizeKeyDown}
+        onDoubleClick={handleSidebarResizeDoubleClick}
+      >
+        <span className="sr-only">Drag to adjust file navigation width</span>
         <div
           className={cn(
-            "flex h-full w-full cursor-col-resize select-none items-center justify-center touch-none rounded",
-            "focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-sky-500",
+            "absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[3px] rounded-full transition-opacity",
             isResizingSidebar
-              ? "bg-sky-200/60 dark:bg-sky-900/40"
-              : "bg-transparent hover:bg-sky-100/60 dark:hover:bg-sky-900/40"
+              ? "bg-sky-500 dark:bg-sky-400 opacity-100"
+              : "opacity-0 group-hover/resize:opacity-100 group-hover/resize:bg-sky-500 dark:group-hover/resize:bg-sky-400"
           )}
-          role="separator"
-          aria-label="Resize file navigation panel"
-          aria-orientation="vertical"
-          aria-controls={sidebarPanelId}
-          aria-valuenow={Math.round(sidebarWidth)}
-          aria-valuemin={SIDEBAR_MIN_WIDTH}
-          aria-valuemax={SIDEBAR_MAX_WIDTH}
-          tabIndex={0}
-          onPointerDown={handleSidebarResizePointerDown}
-          onKeyDown={handleSidebarResizeKeyDown}
-          onDoubleClick={handleSidebarResizeDoubleClick}
-        >
-          <span className="sr-only">Drag to adjust file navigation width</span>
-          <div
-            className={cn(
-              "h-full w-[3px] rounded-full transition-opacity",
-              isResizingSidebar
-                ? "bg-sky-500 dark:bg-sky-400 opacity-100"
-                : "bg-neutral-400 opacity-0 group-hover/resize:opacity-100 dark:bg-neutral-500"
-            )}
-            aria-hidden
-          />
-        </div>
+          aria-hidden
+        />
       </div>
     </div>
   );

@@ -481,7 +481,7 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
   }
 
   return (
-    <section className="border-b border-neutral-200 bg-neutral-50/60 dark:border-neutral-800 dark:bg-neutral-950/40">
+    <section className="border-b border-neutral-200 dark:border-neutral-800">
       <div className="px-3.5 pt-3 pb-2 flex items-center justify-between gap-3">
         <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
           Screenshots and videos

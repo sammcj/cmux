@@ -70,7 +70,7 @@ export function FileDiffHeaderWithViewed({
   return (
     <div
       className={cn(
-        "w-full pl-3 pr-2.5 py-1.5 flex items-center transition-colors text-left group pt-1 bg-white dark:bg-neutral-900 border-y border-neutral-200 dark:border-neutral-800 sticky top-[var(--cmux-diff-header-offset,0px)] z-[var(--z-sticky-low)]",
+        "w-full px-3 py-2 flex items-center transition-colors text-left group bg-neutral-50/80 dark:bg-neutral-900/70 border-b border-neutral-200/80 dark:border-neutral-800/70 sticky top-[var(--cmux-diff-header-offset,0px)] z-[var(--z-sticky-low)]",
         isViewed && "opacity-60",
         className
       )}
@@ -117,31 +117,31 @@ export function FileDiffHeaderWithViewed({
       </button>
 
       {/* Viewed checkbox */}
-      <div className="flex items-center gap-2 ml-3">
+      <div className="flex items-center gap-1.5 ml-2">
         <button
           onClick={(e) => {
             e.stopPropagation();
             onToggleViewed();
           }}
           className={cn(
-            "flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-colors",
+            "flex items-center gap-1 px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors",
             isViewed
-              ? "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300"
-              : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700"
+              ? "text-emerald-700 dark:text-emerald-300"
+              : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800/70"
           )}
           title={isViewed ? "Mark as not viewed" : "Mark as viewed"}
         >
           <div
             className={cn(
-              "w-4 h-4 flex items-center justify-center rounded border transition-colors",
+              "h-3.5 w-3.5 flex items-center justify-center rounded-[3px] border transition-colors",
               isViewed
-                ? "bg-green-500 border-green-500 text-white"
+                ? "bg-emerald-500 border-emerald-500 text-white"
                 : "border-neutral-300 dark:border-neutral-600"
             )}
           >
-            {isViewed && <Check className="w-3 h-3" />}
+            {isViewed && <Check className="h-2.5 w-2.5" />}
           </div>
-          <span>Viewed</span>
+          <span className="hidden sm:inline">Viewed</span>
         </button>
       </div>
     </div>
