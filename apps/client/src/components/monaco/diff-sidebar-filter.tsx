@@ -282,8 +282,7 @@ const FileTreeNavigator = memo(function FileTreeNavigatorComponent({
               "group flex w-full items-center gap-1.5 pr-2 text-[13px] transition-colors",
               isActive
                 ? "bg-sky-500/10 text-neutral-900 dark:text-neutral-100"
-                : "text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800",
-              isViewed && !isActive ? "opacity-60" : ""
+                : "text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
             )}
             style={{ paddingLeft: fileIndent }}
           >

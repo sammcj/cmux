@@ -71,7 +71,6 @@ export function FileDiffHeaderWithViewed({
     <div
       className={cn(
         "w-full px-3 py-2 flex items-center transition-colors text-left group bg-neutral-50/80 dark:bg-neutral-900/70 border-b border-neutral-200/80 dark:border-neutral-800/70 sticky top-[var(--cmux-diff-header-offset,0px)] z-[var(--z-sticky-low)]",
-        isViewed && "opacity-60",
         className
       )}
     >
