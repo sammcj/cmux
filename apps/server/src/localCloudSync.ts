@@ -7,12 +7,21 @@ import type {
 } from "@cmux/shared";
 import type { Socket } from "@cmux/shared/socket";
 import chokidar, { type FSWatcher } from "chokidar";
+import { createHash } from "node:crypto";
 import ignore, { type Ignore } from "ignore";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { serverLogger } from "./utils/fileLogger";
 import { workerUploadFiles } from "./utils/workerUploadFiles";
 import { VSCodeInstance } from "./vscode/VSCodeInstance";
+
+/**
+ * Compute a fast content hash for change detection.
+ * Using MD5 for speed - this is for change detection, not security.
+ */
+function computeContentHash(content: Buffer): string {
+  return createHash("md5").update(content).digest("hex");
+}
 
 type WorkerSocket = Socket<WorkerToServerEvents, ServerToWorkerEvents>;
 type SyncAction = "write" | "delete";
@@ -136,8 +145,10 @@ class LocalCloudSyncSession {
   private lastSyncTime: number | null = null;
   private lastSyncFileCount = 0;
   private lastSyncError: string | null = null;
-  // Track files recently written by cloud sync to avoid echo loops
+  // Track files recently written by cloud sync to avoid echo loops (timing-based)
   private recentlySyncedFromCloud = new Set<string>();
+  // Content-based echo prevention: track hash of last synced content per file
+  private lastSyncedHashes = new Map<string, string>();
   // Lazy sync: track retry attempts for exponential backoff
   private retryAttempts = 0;
   private waitingForWorker = false;
@@ -324,14 +335,27 @@ class LocalCloudSyncSession {
 
   /**
    * Mark a file as recently synced from cloud, so we don't echo it back.
+   * Uses both timing-based and content-hash based detection.
    */
-  markSyncedFromCloud(relativePath: string): void {
+  markSyncedFromCloud(relativePath: string, contentHash?: string): void {
     const normalized = normalizeRelativePath(relativePath);
+    // Timing-based: mark for 3 seconds
     this.recentlySyncedFromCloud.add(normalized);
-    // Clear after 3 seconds to allow future human edits
     setTimeout(() => {
       this.recentlySyncedFromCloud.delete(normalized);
     }, 3000);
+    // Content-based: store hash if provided
+    if (contentHash) {
+      this.lastSyncedHashes.set(normalized, contentHash);
+    }
+  }
+
+  /**
+   * Clear hash tracking for a deleted file.
+   */
+  clearSyncedHash(relativePath: string): void {
+    const normalized = normalizeRelativePath(relativePath);
+    this.lastSyncedHashes.delete(normalized);
   }
 
   private recordChange(filePath: string, action: SyncAction): void {
@@ -598,9 +622,20 @@ class LocalCloudSyncSession {
           destinationPath: entry.relativePath,
           action: "delete",
         });
+        this.lastSyncedHashes.delete(entry.relativePath);
         if (batch.length >= MAX_BATCH_FILES) {
           await flushBatch();
         }
+        continue;
+      }
+
+      // Content-based echo prevention: skip if content hash matches what we received from cloud
+      const contentHash = computeContentHash(content);
+      const lastHash = this.lastSyncedHashes.get(entry.relativePath);
+      if (lastHash === contentHash) {
+        serverLogger.debug(
+          `[localCloudSync] Skipping ${entry.relativePath} - content unchanged (hash: ${contentHash.slice(0, 8)})`
+        );
         continue;
       }
 
@@ -621,6 +656,9 @@ class LocalCloudSyncSession {
         mode: (stats.mode & 0o777).toString(8),
       });
       batchBytes += estimatedSize;
+
+      // Update the hash to track what we're sending
+      this.lastSyncedHashes.set(entry.relativePath, contentHash);
     }
 
     await flushBatch();
@@ -781,12 +819,6 @@ export class LocalCloudSyncManager {
     for (const file of files) {
       const absolutePath = path.join(localPath, file.relativePath);
 
-      // Mark this file as recently synced from cloud BEFORE writing
-      // This prevents the file watcher from echoing it back to the cloud
-      if (session) {
-        session.markSyncedFromCloud(file.relativePath);
-      }
-
       // Security: ensure path is within workspace
       const resolvedPath = path.resolve(absolutePath);
       if (!resolvedPath.startsWith(localPath)) {
@@ -798,6 +830,12 @@ export class LocalCloudSyncManager {
 
       try {
         if (file.action === "delete") {
+          // Clear hash tracking for deleted files
+          if (session) {
+            session.markSyncedFromCloud(file.relativePath);
+            session.clearSyncedHash(file.relativePath);
+          }
+
           try {
             await fs.unlink(absolutePath);
             serverLogger.debug(
@@ -810,12 +848,21 @@ export class LocalCloudSyncManager {
             }
           }
         } else if (file.action === "write" && file.contentBase64) {
+          // Compute content hash BEFORE writing
+          const content = Buffer.from(file.contentBase64, "base64");
+          const contentHash = computeContentHash(content);
+
+          // Mark with both timing and hash BEFORE writing
+          // This prevents the file watcher from echoing it back
+          if (session) {
+            session.markSyncedFromCloud(file.relativePath, contentHash);
+          }
+
           // Ensure directory exists
           const dir = path.dirname(absolutePath);
           await fs.mkdir(dir, { recursive: true });
 
           // Write file
-          const content = Buffer.from(file.contentBase64, "base64");
           await fs.writeFile(absolutePath, content);
 
           // Set file mode if provided
@@ -825,7 +872,7 @@ export class LocalCloudSyncManager {
           }
 
           serverLogger.debug(
-            `[localCloudSync] Wrote ${file.relativePath} (${content.length} bytes)`
+            `[localCloudSync] Wrote ${file.relativePath} (${content.length} bytes, hash: ${contentHash.slice(0, 8)})`
           );
         }
       } catch (error) {

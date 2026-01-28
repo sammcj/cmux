@@ -6,9 +6,18 @@
 import type { Id } from "@cmux/convex/dataModel";
 import type { WorkerSyncFile } from "@cmux/shared";
 import chokidar, { type FSWatcher } from "chokidar";
+import { createHash } from "node:crypto";
 import ignore, { type Ignore } from "ignore";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
+
+/**
+ * Compute a fast content hash for change detection.
+ * Using MD5 for speed - this is for change detection, not security.
+ */
+function computeContentHash(content: Buffer): string {
+  return createHash("md5").update(content).digest("hex");
+}
 
 type SyncAction = "write" | "delete";
 
@@ -70,8 +79,10 @@ export class CloudToLocalSyncSession {
   private flushTimer: NodeJS.Timeout | null = null;
   private syncing = false;
   private disposed = false;
-  // Track files recently written by local->cloud sync to avoid echo loops
+  // Track files recently written by local->cloud sync to avoid echo loops (timing-based)
   private recentlySyncedFromLocal = new Set<string>();
+  // Content-based echo prevention: track hash of last synced content per file
+  private lastSyncedHashes = new Map<string, string>();
 
   constructor({
     workspacePath,
@@ -130,15 +141,28 @@ export class CloudToLocalSyncSession {
 
   /**
    * Mark a file as recently synced from local, so we don't echo it back.
+   * Uses both timing-based and content-hash based detection.
    * Call this BEFORE writing files received from local sync.
    */
-  markSyncedFromLocal(relativePath: string): void {
+  markSyncedFromLocal(relativePath: string, contentHash?: string): void {
     const normalized = normalizeRelativePath(relativePath);
+    // Timing-based: mark for 3 seconds
     this.recentlySyncedFromLocal.add(normalized);
-    // Clear after 3 seconds to allow future cloud edits
     setTimeout(() => {
       this.recentlySyncedFromLocal.delete(normalized);
     }, 3000);
+    // Content-based: store hash if provided
+    if (contentHash) {
+      this.lastSyncedHashes.set(normalized, contentHash);
+    }
+  }
+
+  /**
+   * Clear hash tracking for a deleted file.
+   */
+  clearSyncedHash(relativePath: string): void {
+    const normalized = normalizeRelativePath(relativePath);
+    this.lastSyncedHashes.delete(normalized);
   }
 
   private recordChange(absolutePath: string, action: SyncAction): void {
@@ -214,6 +238,7 @@ export class CloudToLocalSyncSession {
             relativePath: entry.relativePath,
             action: "delete",
           });
+          this.lastSyncedHashes.delete(entry.relativePath);
           continue;
         }
 
@@ -231,6 +256,17 @@ export class CloudToLocalSyncSession {
           }
 
           const content = await fs.readFile(entry.absolutePath);
+
+          // Content-based echo prevention: skip if content hash matches what we received from local
+          const contentHash = computeContentHash(content);
+          const lastHash = this.lastSyncedHashes.get(entry.relativePath);
+          if (lastHash === contentHash) {
+            console.log(
+              `[CloudToLocalSync] Skipping ${entry.relativePath} - content unchanged (hash: ${contentHash.slice(0, 8)})`
+            );
+            continue;
+          }
+
           const contentBase64 = content.toString("base64");
           const mode = (stat.mode & 0o777).toString(8);
 
@@ -241,6 +277,9 @@ export class CloudToLocalSyncSession {
             mode,
           });
           batchBytes += content.length;
+
+          // Update the hash to track what we're sending
+          this.lastSyncedHashes.set(entry.relativePath, contentHash);
         } catch (error) {
           // File may have been deleted between detection and read
           console.error(
@@ -479,6 +518,32 @@ export class CloudToLocalSyncManager {
     for (const session of this.sessions.values()) {
       for (const relativePath of relativePaths) {
         session.markSyncedFromLocal(relativePath);
+      }
+    }
+  }
+
+  /**
+   * Mark files with their content hashes in ALL active sessions.
+   * Use when taskRunId is not known (e.g., in upload-files handler).
+   * This provides content-based echo prevention alongside timing-based.
+   */
+  markSyncedFromLocalWithHashes(
+    files: Array<{ relativePath: string; contentHash: string }>
+  ): void {
+    for (const session of this.sessions.values()) {
+      for (const file of files) {
+        session.markSyncedFromLocal(file.relativePath, file.contentHash);
+      }
+    }
+  }
+
+  /**
+   * Clear hash tracking for deleted files in ALL active sessions.
+   */
+  clearSyncedHashesAllSessions(relativePaths: string[]): void {
+    for (const session of this.sessions.values()) {
+      for (const relativePath of relativePaths) {
+        session.clearSyncedHash(relativePath);
       }
     }
   }

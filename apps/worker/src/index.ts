@@ -35,6 +35,7 @@ import {
   spawn,
   type ChildProcessWithoutNullStreams,
 } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { createServer } from "node:http";
 import { cpus, platform, totalmem } from "node:os";
@@ -1088,11 +1089,35 @@ managementIO.on("connection", (socket) => {
       const validated = WorkerUploadFilesSchema.parse(data);
       const workspaceRoot = "/root/workspace";
 
-      // Mark files as synced from local BEFORE writing to prevent echo loops
-      // This tells cloud-to-local sync to ignore these files when detected
+      // Compute content hashes and mark files BEFORE writing to prevent echo loops
+      // This uses both timing-based and content-hash based echo prevention
       if (cloudToLocalSyncManager) {
-        const relativePaths = validated.files.map((f) => f.destinationPath);
-        cloudToLocalSyncManager.markSyncedFromLocalAllSessions(relativePaths);
+        const filesToMark: Array<{ relativePath: string; contentHash: string }> = [];
+        const deletedPaths: string[] = [];
+
+        for (const file of validated.files) {
+          const action = file.action ?? "write";
+          if (action === "delete") {
+            deletedPaths.push(file.destinationPath);
+          } else if (file.contentBase64) {
+            // Compute hash of content we're about to write
+            const content = Buffer.from(file.contentBase64, "base64");
+            const contentHash = createHash("md5").update(content).digest("hex");
+            filesToMark.push({
+              relativePath: file.destinationPath,
+              contentHash,
+            });
+          }
+        }
+
+        // Mark write files with their content hashes (timing + content-based)
+        if (filesToMark.length > 0) {
+          cloudToLocalSyncManager.markSyncedFromLocalWithHashes(filesToMark);
+        }
+        // Clear hashes for deleted files
+        if (deletedPaths.length > 0) {
+          cloudToLocalSyncManager.clearSyncedHashesAllSessions(deletedPaths);
+        }
       }
 
       for (const file of validated.files) {
