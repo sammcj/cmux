@@ -33,7 +33,7 @@ Examples:
   dba computer screenshot dba_abc123           # Take screenshot`,
 }
 
-// getWorkerClient returns the worker URL and auth token for an instance
+// getWorkerClient returns the worker URL and JWT for an instance
 func getWorkerClient(ctx context.Context, instanceID string) (workerURL string, token string, err error) {
 	teamSlug, err := auth.GetTeamSlug()
 	if err != nil {
@@ -56,13 +56,13 @@ func getWorkerClient(ctx context.Context, instanceID string) (workerURL string, 
 		return "", "", fmt.Errorf("instance has no worker URL")
 	}
 
-	// Get the auth token from the VM
-	stdout, _, _, err := client.ExecCommand(ctx, instanceID, "cat /var/run/dba/worker-token")
+	// Get the Stack Auth JWT (same token used for Convex API)
+	accessToken, err := auth.GetAccessToken()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get worker token: %w", err)
+		return "", "", fmt.Errorf("failed to get access token: %w", err)
 	}
 
-	return instance.WorkerURL, strings.TrimSpace(stdout), nil
+	return instance.WorkerURL, accessToken, nil
 }
 
 // callWorkerAPI makes an authenticated request to the worker daemon

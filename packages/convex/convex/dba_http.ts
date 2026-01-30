@@ -297,6 +297,45 @@ export const createInstance = httpAction(async (ctx, req) => {
     const vncUrl = exposedServices.vncUrl ?? bootUrls.vncUrl;
     const workerUrl = exposedServices.workerUrl ?? bootUrls.workerUrl;
 
+    // Inject auth config for worker daemon (JWT validation)
+    // This writes the owner ID and Stack Auth project ID to the VM
+    const stackProjectId = env.NEXT_PUBLIC_STACK_PROJECT_ID;
+    if (stackProjectId) {
+      try {
+        // Create directory and write auth config files
+        await morphFetch(`/instance/${morphData.id}/exec`, {
+          method: "POST",
+          body: JSON.stringify({
+            command: ["mkdir", "-p", "/var/run/dba"],
+            timeout: 10,
+          }),
+        });
+
+        // Write owner ID (user's Stack Auth subject)
+        await morphFetch(`/instance/${morphData.id}/exec`, {
+          method: "POST",
+          body: JSON.stringify({
+            command: ["sh", "-c", `echo '${identity!.subject}' > /var/run/dba/owner-id`],
+            timeout: 10,
+          }),
+        });
+
+        // Write Stack Auth project ID
+        await morphFetch(`/instance/${morphData.id}/exec`, {
+          method: "POST",
+          body: JSON.stringify({
+            command: ["sh", "-c", `echo '${stackProjectId}' > /var/run/dba/stack-project-id`],
+            timeout: 10,
+          }),
+        });
+      } catch (e) {
+        console.error("[dba.create] Failed to inject auth config:", e);
+        // Don't fail instance creation if auth config injection fails
+      }
+    } else {
+      console.warn("[dba.create] NEXT_PUBLIC_STACK_PROJECT_ID not set, worker auth will be disabled");
+    }
+
     // Store the instance in Convex with provider mapping (no URL caching)
     const result = await ctx.runMutation(devboxApi.create, {
       teamSlugOrId: body.teamSlugOrId,

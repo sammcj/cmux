@@ -123,57 +123,171 @@ cat > /usr/local/bin/dba-worker << 'WORKER_EOF'
  * Runs on port 39377 (exposed via Morph's worker URL).
  *
  * Authentication:
- * - Requires DBA_WORKER_TOKEN environment variable to be set
- * - All requests must include Authorization: Bearer <token> header
- * - Token is generated at VM creation and stored securely
+ * - Validates Stack Auth JWT from Authorization header
+ * - Verifies JWT signature using Stack Auth's JWKS
+ * - Checks that the user ID in JWT matches the instance owner
  */
 
 const http = require('http');
+const https = require('https');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 39377;
-const TOKEN_FILE = '/var/run/dba/worker-token';
+const OWNER_ID_FILE = '/var/run/dba/owner-id';
+const PROJECT_ID_FILE = '/var/run/dba/stack-project-id';
 
-// Get or generate auth token
-let AUTH_TOKEN = process.env.DBA_WORKER_TOKEN;
-if (!AUTH_TOKEN) {
-  // Try to read from file
+// Auth configuration - loaded at startup
+let ownerId = null;
+let projectId = null;
+let jwksCache = null;
+let jwksCacheTime = 0;
+const JWKS_CACHE_TTL = 3600000; // 1 hour
+
+/**
+ * Load auth configuration from files
+ */
+function loadAuthConfig() {
   try {
-    AUTH_TOKEN = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
+    ownerId = fs.readFileSync(OWNER_ID_FILE, 'utf8').trim();
+    projectId = fs.readFileSync(PROJECT_ID_FILE, 'utf8').trim();
+    console.log(`Auth config loaded: owner=${ownerId}, project=${projectId}`);
+    return true;
   } catch (e) {
-    // Generate new token and save it
-    AUTH_TOKEN = crypto.randomBytes(32).toString('hex');
-    try {
-      fs.mkdirSync(path.dirname(TOKEN_FILE), { recursive: true });
-      fs.writeFileSync(TOKEN_FILE, AUTH_TOKEN, { mode: 0o600 });
-      console.log(`Generated new auth token, saved to ${TOKEN_FILE}`);
-    } catch (writeErr) {
-      console.error('Warning: Could not save token file:', writeErr.message);
-    }
+    console.error('Warning: Could not load auth config:', e.message);
+    console.error('JWT auth will be disabled. Set up owner-id and stack-project-id files.');
+    return false;
   }
 }
 
 /**
- * Verify authentication token
+ * Fetch JWKS from Stack Auth
  */
-function verifyAuth(req) {
+async function fetchJWKS() {
+  // Return cached JWKS if still valid
+  if (jwksCache && Date.now() - jwksCacheTime < JWKS_CACHE_TTL) {
+    return jwksCache;
+  }
+
+  const jwksUrl = `https://api.stack-auth.com/api/v1/projects/${projectId}/.well-known/jwks.json?include_anonymous=true`;
+
+  return new Promise((resolve, reject) => {
+    https.get(jwksUrl, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          jwksCache = JSON.parse(data);
+          jwksCacheTime = Date.now();
+          resolve(jwksCache);
+        } catch (e) {
+          reject(new Error('Failed to parse JWKS'));
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+/**
+ * Base64URL decode
+ */
+function base64UrlDecode(str) {
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (str.length % 4) str += '=';
+  return Buffer.from(str, 'base64');
+}
+
+/**
+ * Verify JWT signature using JWKS
+ */
+async function verifyJWT(token) {
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Invalid JWT format');
+  }
+
+  const [headerB64, payloadB64, signatureB64] = parts;
+  const header = JSON.parse(base64UrlDecode(headerB64).toString());
+  const payload = JSON.parse(base64UrlDecode(payloadB64).toString());
+
+  // Check expiration
+  if (payload.exp && payload.exp < Date.now() / 1000) {
+    throw new Error('JWT expired');
+  }
+
+  // Check issuer
+  const expectedIssuer = `https://api.stack-auth.com/api/v1/projects/${projectId}`;
+  const anonIssuer = `https://api.stack-auth.com/api/v1/projects-anonymous-users/${projectId}`;
+  if (payload.iss !== expectedIssuer && payload.iss !== anonIssuer) {
+    throw new Error('Invalid issuer');
+  }
+
+  // Fetch JWKS and find matching key
+  const jwks = await fetchJWKS();
+  const key = jwks.keys.find(k => k.kid === header.kid);
+  if (!key) {
+    throw new Error('Key not found in JWKS');
+  }
+
+  // Verify signature using Node.js crypto
+  const signatureData = `${headerB64}.${payloadB64}`;
+  const signature = base64UrlDecode(signatureB64);
+
+  // Import the JWK as a crypto key
+  const keyObject = crypto.createPublicKey({ key, format: 'jwk' });
+
+  const isValid = crypto.verify(
+    'sha256',
+    Buffer.from(signatureData),
+    { key: keyObject, dsaEncoding: 'ieee-p1363' },
+    signature
+  );
+
+  if (!isValid) {
+    throw new Error('Invalid signature');
+  }
+
+  return payload;
+}
+
+/**
+ * Verify authentication - checks JWT and owner ID
+ */
+async function verifyAuth(req) {
+  // If auth config not loaded, deny all requests
+  if (!ownerId || !projectId) {
+    return { valid: false, error: 'Auth not configured' };
+  }
+
   const authHeader = req.headers['authorization'];
   if (!authHeader) {
-    return false;
+    return { valid: false, error: 'No authorization header' };
   }
+
   const [type, token] = authHeader.split(' ');
   if (type !== 'Bearer' || !token) {
-    return false;
+    return { valid: false, error: 'Invalid authorization format' };
   }
-  // Constant-time comparison to prevent timing attacks
-  if (token.length !== AUTH_TOKEN.length) {
-    return false;
+
+  try {
+    const payload = await verifyJWT(token);
+
+    // Check if user ID matches owner
+    const userId = payload.sub;
+    if (userId !== ownerId) {
+      return { valid: false, error: 'User is not the instance owner' };
+    }
+
+    return { valid: true, userId };
+  } catch (e) {
+    return { valid: false, error: e.message };
   }
-  return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(AUTH_TOKEN));
 }
+
+// Load auth config at startup
+loadAuthConfig();
 
 /**
  * Run an agent-browser command and return the result
@@ -271,8 +385,9 @@ async function handleRequest(req, res) {
   }
 
   // All other endpoints require authentication
-  if (!verifyAuth(req)) {
-    sendJson(res, { error: 'Unauthorized', message: 'Valid Bearer token required' }, 401);
+  const authResult = await verifyAuth(req);
+  if (!authResult.valid) {
+    sendJson(res, { error: 'Unauthorized', message: authResult.error || 'Authentication required' }, 401);
     return;
   }
 
