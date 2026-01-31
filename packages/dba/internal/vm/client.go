@@ -39,7 +39,7 @@ type Client struct {
 func NewClient() (*Client, error) {
 	cfg := auth.GetConfig()
 	return &Client{
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		httpClient: &http.Client{Timeout: 180 * time.Second}, // 3 minutes for slow Morph operations
 		baseURL:    cfg.ConvexSiteURL,
 	}, nil
 }
@@ -399,22 +399,13 @@ func sshOptions() []string {
 }
 
 func resolveRemoteSyncPath(ctx context.Context, sshTarget string) (string, error) {
-	cmdArgs := append(sshOptions(), sshTarget, "sh", "-lc",
-		`for p in /home/dba/workspace /root/workspace /workspace /home/user/project; do
-  if [ -d "$p" ]; then
-    echo "$p"
-    exit 0
-  fi
-done
-echo "$HOME"`,
-	)
+	// Use a single-line command that works reliably over SSH
+	script := `for p in /home/dba/workspace /root/workspace /workspace /home/user/project; do [ -d "$p" ] && echo "$p" && exit 0; done; echo "$HOME"`
+	cmdArgs := append(sshOptions(), sshTarget, script)
 	cmd := exec.CommandContext(ctx, "ssh", cmdArgs...)
-	output, err := cmd.CombinedOutput()
+	// Use Output() not CombinedOutput() to avoid stderr (SSH warnings) in the path
+	output, err := cmd.Output()
 	if err != nil {
-		trimmed := strings.TrimSpace(string(output))
-		if trimmed != "" {
-			return "", fmt.Errorf("failed to determine remote sync path: %w: %s", err, trimmed)
-		}
 		return "", fmt.Errorf("failed to determine remote sync path: %w", err)
 	}
 
@@ -427,13 +418,20 @@ echo "$HOME"`,
 }
 
 func ensureRemoteDir(ctx context.Context, sshTarget, remotePath string) error {
-	cmdArgs := append(sshOptions(), sshTarget, "mkdir", "-p", remotePath)
+	// Use a single command string to avoid issues with argument parsing
+	mkdirCmd := fmt.Sprintf("mkdir -p %s", remotePath)
+	cmdArgs := append(sshOptions(), sshTarget, mkdirCmd)
 	cmd := exec.CommandContext(ctx, "ssh", cmdArgs...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		trimmed := strings.TrimSpace(string(output))
-		if trimmed != "" {
+		// Ignore "Warning: Permanently added" messages which go to stderr
+		if trimmed != "" && !strings.HasPrefix(trimmed, "Warning: Permanently added") {
 			return fmt.Errorf("failed to create remote directory: %w: %s", err, trimmed)
+		}
+		// If the only output is the warning, don't treat as error
+		if strings.HasPrefix(trimmed, "Warning: Permanently added") {
+			return nil
 		}
 		return fmt.Errorf("failed to create remote directory: %w", err)
 	}
@@ -556,4 +554,65 @@ func (c *Client) SyncFromVM(ctx context.Context, instanceID string, localPath st
 	}
 
 	return nil
+}
+
+// PtySession represents a PTY session
+type PtySession struct {
+	ID          string `json:"id"`
+	CreatedAt   int64  `json:"createdAt"`
+	ClientCount int    `json:"clientCount"`
+}
+
+// ListPtySessions lists all PTY sessions in a VM
+func (c *Client) ListPtySessions(ctx context.Context, instanceID string) ([]PtySession, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	// Get instance to get worker URL
+	instance, err := c.GetInstance(ctx, instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get instance: %w", err)
+	}
+	if instance.WorkerURL == "" {
+		return nil, fmt.Errorf("worker URL not available")
+	}
+
+	// Get access token
+	accessToken, err := auth.GetAccessToken()
+	if err != nil {
+		return nil, fmt.Errorf("not authenticated: %w", err)
+	}
+
+	// Call worker's PTY list endpoint
+	workerURL := strings.TrimRight(instance.WorkerURL, "/") + "/_dba/pty/list"
+
+	req, err := http.NewRequestWithContext(ctx, "POST", workerURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call worker: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("worker error (%d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Success  bool         `json:"success"`
+		Sessions []PtySession `json:"sessions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Sessions, nil
 }

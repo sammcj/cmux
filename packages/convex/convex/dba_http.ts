@@ -12,7 +12,7 @@ import type { FunctionReference } from "convex/server";
 const MORPH_API_BASE_URL = "https://cloud.morph.so/api";
 
 // Default snapshot ID for dba CLI instances
-const DEFAULT_DBA_SNAPSHOT_ID = "snapshot_z84t8vej";
+const DEFAULT_DBA_SNAPSHOT_ID = "snapshot_mx8mwqhx";
 
 const JSON_HEADERS = {
   "Content-Type": "application/json",
@@ -117,8 +117,8 @@ function buildDbaProxyUrls(workerUrl?: string) {
 
   const base = workerUrl.replace(/\/+$/, "");
   return {
-    vscodeUrl: `${base}/code/`,
-    vncUrl: `${base}/vnc/vnc.html?path=vnc/websockify`,
+    vscodeUrl: `${base}/code/?folder=/home/dba/workspace`,
+    vncUrl: `${base}/vnc/vnc.html?path=vnc/websockify&resize=scale&quality=9&compression=0`,
   };
 }
 
@@ -230,8 +230,12 @@ export const createInstance = httpAction(async (ctx, req) => {
 
   try {
     const snapshotId = body.snapshotId ?? DEFAULT_DBA_SNAPSHOT_ID;
+    const startTime = Date.now();
+    const timings: Record<string, number> = {};
 
     // Start a new Morph instance via boot endpoint
+    console.log("[dba.create] Starting boot...");
+    const bootStart = Date.now();
     const morphResponse = await morphFetch(`/snapshot/${snapshotId}/boot`, {
       method: "POST",
       body: JSON.stringify({
@@ -246,6 +250,8 @@ export const createInstance = httpAction(async (ctx, req) => {
         },
       }),
     });
+    timings.boot = Date.now() - bootStart;
+    console.log(`[dba.create] Boot completed in ${timings.boot}ms`);
 
     if (!morphResponse.ok) {
       const errorText = await morphResponse.text();
@@ -274,9 +280,10 @@ export const createInstance = httpAction(async (ctx, req) => {
 
     // Expose HTTP services (worker only) for the new instance
     const exposedServices: { workerUrl?: string } = {};
-
     const servicesToExpose = [{ name: "worker", port: 39377 }];
 
+    console.log("[dba.create] Exposing HTTP services...");
+    const exposeStart = Date.now();
     for (const service of servicesToExpose) {
       try {
         const exposeResponse = await morphFetch(
@@ -294,6 +301,8 @@ export const createInstance = httpAction(async (ctx, req) => {
         console.error(`[dba.create] Failed to expose ${service.name}:`, e);
       }
     }
+    timings.exposeHttp = Date.now() - exposeStart;
+    console.log(`[dba.create] Expose HTTP completed in ${timings.exposeHttp}ms`);
 
     // Fall back to any services that were already in the boot response
     const httpServices = morphData.networking?.http_services ?? [];
@@ -306,7 +315,23 @@ export const createInstance = httpAction(async (ctx, req) => {
     const stackProjectId = env.NEXT_PUBLIC_STACK_PROJECT_ID;
     if (stackProjectId) {
       try {
+        console.log("[dba.create] Injecting auth config...");
+        const authStart = Date.now();
+
+        // Fix /home/dba ownership (may be root:root in snapshot) and create config dir
+        const chownStart = Date.now();
+        await morphFetch(`/instance/${morphData.id}/exec`, {
+          method: "POST",
+          body: JSON.stringify({
+            command: ["chown", "dba:dba", "/home/dba"],
+            timeout: 10,
+          }),
+        });
+        timings.chown = Date.now() - chownStart;
+        console.log(`[dba.create] chown completed in ${timings.chown}ms`);
+
         // Create directory
+        const mkdirStart = Date.now();
         await morphFetch(`/instance/${morphData.id}/exec`, {
           method: "POST",
           body: JSON.stringify({
@@ -314,12 +339,12 @@ export const createInstance = httpAction(async (ctx, req) => {
             timeout: 10,
           }),
         });
+        timings.mkdir = Date.now() - mkdirStart;
+        console.log(`[dba.create] mkdir completed in ${timings.mkdir}ms`);
 
         // Write owner ID using echo with shell redirection
-        // Note: Morph API requires command as array of tokens, NOT bash -c
-        // User IDs are UUIDs with only safe characters (a-f, 0-9, -)
         const ownerId = identity!.subject;
-        console.log("[dba.create] Injecting owner-id:", ownerId);
+        const ownerIdStart = Date.now();
         await morphFetch(`/instance/${morphData.id}/exec`, {
           method: "POST",
           body: JSON.stringify({
@@ -327,9 +352,11 @@ export const createInstance = httpAction(async (ctx, req) => {
             timeout: 10,
           }),
         });
+        timings.writeOwnerId = Date.now() - ownerIdStart;
+        console.log(`[dba.create] write owner-id completed in ${timings.writeOwnerId}ms`);
 
-        // Write Stack Auth project ID - also UUID format
-        console.log("[dba.create] Injecting stack-project-id:", stackProjectId);
+        // Write Stack Auth project ID
+        const projectIdStart = Date.now();
         await morphFetch(`/instance/${morphData.id}/exec`, {
           method: "POST",
           body: JSON.stringify({
@@ -337,24 +364,33 @@ export const createInstance = httpAction(async (ctx, req) => {
             timeout: 10,
           }),
         });
+        timings.writeProjectId = Date.now() - projectIdStart;
+        console.log(`[dba.create] write project-id completed in ${timings.writeProjectId}ms`);
 
         // Restart dba-worker to pick up the new config
+        const restartStart = Date.now();
         await morphFetch(`/instance/${morphData.id}/exec`, {
           method: "POST",
           body: JSON.stringify({
-            command: ["systemctl", "restart", "dba-worker"],
+            command: ["systemctl", "restart", "--no-block", "dba-worker"],
             timeout: 10,
           }),
         });
+        timings.restartWorker = Date.now() - restartStart;
+        console.log(`[dba.create] restart dba-worker completed in ${timings.restartWorker}ms`);
+
+        timings.authTotal = Date.now() - authStart;
+        console.log(`[dba.create] Auth config total: ${timings.authTotal}ms`);
       } catch (e) {
         console.error("[dba.create] Failed to inject auth config:", e);
-        // Don't fail instance creation if auth config injection fails
       }
     } else {
       console.warn("[dba.create] NEXT_PUBLIC_STACK_PROJECT_ID not set, worker auth will be disabled");
     }
 
     // Store the instance in Convex with provider mapping (no URL caching)
+    console.log("[dba.create] Storing in Convex...");
+    const convexStart = Date.now();
     const result = await ctx.runMutation(devboxApi.create, {
       teamSlugOrId: body.teamSlugOrId,
       providerInstanceId: morphData.id,
@@ -364,6 +400,11 @@ export const createInstance = httpAction(async (ctx, req) => {
       metadata: body.metadata,
       source: "cli",
     }) as { id: string; isExisting: boolean };
+    timings.convexStore = Date.now() - convexStart;
+    console.log(`[dba.create] Convex store completed in ${timings.convexStore}ms`);
+
+    timings.total = Date.now() - startTime;
+    console.log(`[dba.create] TOTAL: ${timings.total}ms | Breakdown:`, timings);
 
     // Return URLs from Morph response (not cached in DB)
     return jsonResponse({
@@ -1158,7 +1199,7 @@ async function handleHideHttpService(
 // ============================================================================
 // GET /api/v1/dba/snapshots - List snapshots
 // ============================================================================
-export const listSnapshots = httpAction(async (ctx, req) => {
+export const listSnapshots = httpAction(async (ctx) => {
   const { error } = await getAuthenticatedUser(ctx);
   if (error) return error;
 

@@ -113,11 +113,11 @@ Examples:
 		}
 
 		// Build authenticated URLs
-		codeAuthURL, err := buildAuthURL(instance.WorkerURL, "/code/", token)
+		codeAuthURL, err := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/dba/workspace", token)
 		if err != nil {
 			return fmt.Errorf("failed to build VS Code URL: %w", err)
 		}
-		vncAuthURL, err := buildAuthURL(instance.WorkerURL, "/vnc/vnc.html?path=vnc/websockify", token)
+		vncAuthURL, err := buildAuthURL(instance.WorkerURL, "/vnc/vnc.html?path=vnc/websockify&resize=scale&quality=9&compression=0", token)
 		if err != nil {
 			return fmt.Errorf("failed to build VNC URL: %w", err)
 		}

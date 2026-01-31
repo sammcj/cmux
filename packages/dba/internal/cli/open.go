@@ -79,7 +79,7 @@ Examples:
 		}
 
 		// Build auth URL that sets session cookie and redirects to VS Code
-		authURL, err := buildAuthURL(instance.WorkerURL, "/code/", token)
+		authURL, err := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/dba/workspace", token)
 		if err != nil {
 			return err
 		}
@@ -130,7 +130,7 @@ Examples:
 		}
 
 		// Build auth URL that sets session cookie and redirects to VNC
-		authURL, err := buildAuthURL(instance.WorkerURL, "/vnc/vnc.html?path=vnc/websockify", token)
+		authURL, err := buildAuthURL(instance.WorkerURL, "/vnc/vnc.html?path=vnc/websockify&resize=scale&quality=9&compression=0", token)
 		if err != nil {
 			return err
 		}
@@ -236,8 +236,8 @@ Examples:
 					fmt.Printf("VNC:      %s\n", instance.VNCURL)
 				}
 			} else {
-				codeAuthURL, _ := buildAuthURL(instance.WorkerURL, "/code/", token)
-				vncAuthURL, _ := buildAuthURL(instance.WorkerURL, "/vnc/vnc.html?path=vnc/websockify", token)
+				codeAuthURL, _ := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/dba/workspace", token)
+				vncAuthURL, _ := buildAuthURL(instance.WorkerURL, "/vnc/vnc.html?path=vnc/websockify&resize=scale&quality=9&compression=0", token)
 				fmt.Printf("VS Code:  %s\n", codeAuthURL)
 				fmt.Printf("VNC:      %s\n", vncAuthURL)
 			}

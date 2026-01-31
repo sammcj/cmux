@@ -60,8 +60,8 @@ func GetConfig() Config {
 		stackAuthURL = StackAuthAPIURL
 	}
 
-	// Check if we're in dev mode
-	isDev := os.Getenv("DBA_DEV") == "1" || os.Getenv("DBA_DEV") == "true"
+	// Dev mode is the default (set DBA_PROD=1 to use production)
+	isDev := os.Getenv("DBA_PROD") != "1" && os.Getenv("DBA_PROD") != "true"
 
 	if projectID == "" {
 		if isDev {
