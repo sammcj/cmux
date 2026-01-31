@@ -12,7 +12,7 @@ import type { FunctionReference } from "convex/server";
 const MORPH_API_BASE_URL = "https://cloud.morph.so/api";
 
 // Default snapshot ID for dba CLI instances
-const DEFAULT_DBA_SNAPSHOT_ID = "snapshot_mx8mwqhx";
+const DEFAULT_DBA_SNAPSHOT_ID = "snapshot_yiwkxuwb";
 
 const JSON_HEADERS = {
   "Content-Type": "application/json",

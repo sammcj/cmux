@@ -1452,12 +1452,13 @@ chmod +x /home/dba/.vnc/xstartup
 chown -R dba:dba /home/dba/.vnc
 
 # Create XFCE autostart for Chrome browser (visible in VNC desktop)
+# Flags prevent restore pages dialog and other session-related popups
 mkdir -p /home/dba/.config/autostart
 cat > /home/dba/.config/autostart/chrome-browser.desktop << 'EOF'
 [Desktop Entry]
 Type=Application
 Name=Google Chrome
-Exec=/usr/bin/google-chrome --no-first-run --no-default-browser-check --start-maximized
+Exec=/usr/bin/google-chrome --no-first-run --no-default-browser-check --start-maximized --disable-session-crashed-bubble --disable-infobars --hide-crash-restore-bubble
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
@@ -1465,7 +1466,24 @@ X-GNOME-Autostart-Delay=3
 EOF
 chown -R dba:dba /home/dba/.config
 
-log_info "VNC configured with Chrome autostart"
+# Create Chrome preferences to disable session restore
+mkdir -p /home/dba/.config/google-chrome/Default
+cat > /home/dba/.config/google-chrome/Default/Preferences << 'CHROME_PREFS_EOF'
+{
+  "session": {
+    "restore_on_startup": 5
+  },
+  "profile": {
+    "exit_type": "Normal"
+  },
+  "browser": {
+    "has_seen_welcome_page": true
+  }
+}
+CHROME_PREFS_EOF
+chown -R dba:dba /home/dba/.config/google-chrome
+
+log_info "VNC configured with Chrome autostart (session restore disabled)"
 
 # -----------------------------------------------------------------------------
 # Step 10/13: Create systemd services
@@ -1941,6 +1959,23 @@ log_info "Started dba-worker"
 # Final stabilization wait
 log_info "Waiting for services to stabilize..."
 sleep 5
+
+# Clean Chrome session state to prevent "restore pages" dialog on next boot
+log_info "Cleaning Chrome session state..."
+# Stop visible Chrome processes (not headless CDP)
+pkill -f "google-chrome.*--start-maximized" || true
+sleep 2
+# Remove session files that cause restore prompts
+rm -f /home/dba/.config/google-chrome/Default/Current\ Session 2>/dev/null || true
+rm -f /home/dba/.config/google-chrome/Default/Current\ Tabs 2>/dev/null || true
+rm -f /home/dba/.config/google-chrome/Default/Last\ Session 2>/dev/null || true
+rm -f /home/dba/.config/google-chrome/Default/Last\ Tabs 2>/dev/null || true
+rm -rf /home/dba/.config/google-chrome/Default/Sessions 2>/dev/null || true
+# Ensure exit_type is Normal
+if [ -f /home/dba/.config/google-chrome/Default/Preferences ]; then
+    sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/g' /home/dba/.config/google-chrome/Default/Preferences 2>/dev/null || true
+fi
+log_info "Chrome session state cleaned"
 
 # -----------------------------------------------------------------------------
 # Verification
