@@ -1,4 +1,4 @@
-module github.com/dba-cli/dba
+module github.com/cmux-cli/cmux-devbox
 
 go 1.24.0
 

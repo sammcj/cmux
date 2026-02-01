@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dba-cli/dba/internal/auth"
-	"github.com/dba-cli/dba/internal/vm"
+	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
 
@@ -21,7 +21,7 @@ func buildAuthURL(workerURL, targetPath, token string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid URL: %w", err)
 	}
-	parsed.Path = "/_dba/auth"
+	parsed.Path = "/_cmux/auth"
 	query := parsed.Query()
 	query.Set("token", token)
 	query.Set("return", targetPath)
@@ -44,7 +44,7 @@ var codeCmd = &cobra.Command{
 	Long: `Open VS Code for a VM in your browser.
 
 Examples:
-  dba code dba_abc123`,
+  cmux code cmux_abc123`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -79,7 +79,7 @@ Examples:
 		}
 
 		// Build auth URL that sets session cookie and redirects to VS Code
-		authURL, err := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/dba/workspace", token)
+		authURL, err := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/cmux/workspace", token)
 		if err != nil {
 			return err
 		}
@@ -95,7 +95,7 @@ var vncCmd = &cobra.Command{
 	Long: `Open VNC desktop for a VM in your browser.
 
 Examples:
-  dba vnc dba_abc123`,
+  cmux vnc cmux_abc123`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -146,7 +146,7 @@ var sshCmd = &cobra.Command{
 	Long: `SSH into a VM.
 
 Examples:
-  dba ssh dba_abc123`,
+  cmux ssh cmux_abc123`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -197,7 +197,7 @@ var statusCmd = &cobra.Command{
 	Long: `Show the status of a VM.
 
 Examples:
-  dba status dba_abc123`,
+  cmux status cmux_abc123`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -236,7 +236,7 @@ Examples:
 					fmt.Printf("VNC:      %s\n", instance.VNCURL)
 				}
 			} else {
-				codeAuthURL, _ := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/dba/workspace", token)
+				codeAuthURL, _ := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/cmux/workspace", token)
 				vncAuthURL, _ := buildAuthURL(instance.WorkerURL, "/vnc/vnc.html?path=vnc/websockify&resize=scale&quality=9&compression=0", token)
 				fmt.Printf("VS Code:  %s\n", codeAuthURL)
 				fmt.Printf("VNC:      %s\n", vncAuthURL)

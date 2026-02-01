@@ -446,7 +446,7 @@ export const getApiMorphInstances = <ThrowOnError extends boolean = false>(optio
 
 /**
  * Get CLI credentials for authenticated user
- * Returns the Morph API key and default snapshot ID for CLI tools (dba, cmux). Requires authentication via Stack Auth Bearer token.
+ * Returns the Morph API key and default snapshot ID for CLI tools (cmux devbox, cmux sandbox). Requires authentication via Stack Auth Bearer token.
  */
 export const getApiMorphCliCredentials = <ThrowOnError extends boolean = false>(options?: Options<GetApiMorphCliCredentialsData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<GetApiMorphCliCredentialsResponses, GetApiMorphCliCredentialsErrors, ThrowOnError>({

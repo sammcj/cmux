@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dba-cli/dba/internal/auth"
-	"github.com/dba-cli/dba/internal/vm"
+	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
 
@@ -18,8 +18,8 @@ var listCmd = &cobra.Command{
 	Long: `List all your VM instances.
 
 Examples:
-  dba ls
-  dba list`,
+  cmux ls
+  cmux list`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -41,7 +41,7 @@ Examples:
 		}
 
 		if len(instances) == 0 {
-			fmt.Println("No VMs found. Run 'dba start' to create one.")
+			fmt.Println("No VMs found. Run 'cmux start' to create one.")
 			return nil
 		}
 

@@ -1,4 +1,4 @@
-// Package auth provides authentication for the dba CLI via Stack Auth.
+// Package auth provides authentication for the cmux devbox CLI via Stack Auth.
 // Credentials are stored in a location compatible with the cmux Rust CLI,
 // allowing users to log in once and use both tools.
 package auth
@@ -60,8 +60,8 @@ func GetConfig() Config {
 		stackAuthURL = StackAuthAPIURL
 	}
 
-	// Dev mode is the default (set DBA_PROD=1 to use production)
-	isDev := os.Getenv("DBA_PROD") != "1" && os.Getenv("DBA_PROD") != "true"
+	// Dev mode is the default (set CMUX_DEVBOX_PROD=1 to use production)
+	isDev := os.Getenv("CMUX_DEVBOX_PROD") != "1" && os.Getenv("CMUX_DEVBOX_PROD") != "true"
 
 	if projectID == "" {
 		if isDev {
@@ -402,7 +402,7 @@ func Login() error {
 
 	// Check if already logged in
 	if IsLoggedIn() {
-		return fmt.Errorf("already logged in. Run 'dba auth logout' first to re-authenticate")
+		return fmt.Errorf("already logged in. Run 'cmux auth logout' first to re-authenticate")
 	}
 
 	fmt.Println("Starting authentication...")
@@ -564,7 +564,7 @@ func GetAccessToken() (string, error) {
 	// Need to refresh
 	refreshToken, err := GetRefreshToken()
 	if err != nil {
-		return "", fmt.Errorf("not logged in. Run 'dba auth login' first")
+		return "", fmt.Errorf("not logged in. Run 'cmux auth login' first")
 	}
 
 	cfg := GetConfig()
@@ -589,7 +589,7 @@ func GetAccessToken() (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to refresh token: status %d. Try 'dba auth login' to re-authenticate", resp.StatusCode)
+		return "", fmt.Errorf("failed to refresh token: status %d. Try 'cmux auth login' to re-authenticate", resp.StatusCode)
 	}
 
 	var refreshResp RefreshTokenResponse
@@ -666,7 +666,7 @@ func openBrowser(url string) error {
 }
 
 // Note: Morph API key is now managed server-side via Convex.
-// The dba CLI no longer needs to fetch or cache the API key locally.
+// The cmux CLI no longer needs to fetch or cache the API key locally.
 // All Morph operations are proxied through Convex HTTP endpoints.
 
 // UserProfile holds cached user profile information including team
@@ -762,7 +762,7 @@ func FetchUserProfile() (*UserProfile, error) {
 	cfg := GetConfig()
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	profileURL := fmt.Sprintf("%s/api/v1/dba/me", cfg.ConvexSiteURL)
+	profileURL := fmt.Sprintf("%s/api/v1/cmux/me", cfg.ConvexSiteURL)
 	req, err := http.NewRequest("GET", profileURL, nil)
 	if err != nil {
 		return nil, err

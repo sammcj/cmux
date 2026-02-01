@@ -1,4 +1,4 @@
-// Package state manages minimal local state for the dba CLI.
+// Package state manages minimal local state for the cmux devbox CLI.
 // Just tracks the last used instance for convenience.
 package state
 
@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dba-cli/dba/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/auth"
 )
 
 // State holds minimal local state
@@ -24,9 +24,9 @@ func statePath() (string, error) {
 	}
 
 	cfg := auth.GetConfig()
-	filename := "dba_state_prod.json"
+	filename := "cmux_devbox_state_prod.json"
 	if cfg.IsDev {
-		filename = "dba_state_dev.json"
+		filename = "cmux_devbox_state_dev.json"
 	}
 
 	return filepath.Join(home, ".config", "cmux", filename), nil

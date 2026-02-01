@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * DBA Worker Daemon
+ * cmux devbox Worker Daemon
  *
  * HTTP server that wraps agent-browser commands.
  * Runs on port 39377 (exposed via Morph's worker URL).
@@ -20,12 +20,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const PORT = process.env.PORT || 39377;
-const VSCODE_PORT = Number(process.env.DBA_VSCODE_PORT || 39378);
-const VNC_PORT = Number(process.env.DBA_VNC_PORT || 39380);
-const AUTH_COOKIE_NAME = 'dba_auth';
+const VSCODE_PORT = Number(process.env.CMUX_VSCODE_PORT || 39378);
+const VNC_PORT = Number(process.env.CMUX_VNC_PORT || 39380);
+const AUTH_COOKIE_NAME = 'cmux_auth';
 const VNC_PREFIX = '/vnc';
-const OWNER_ID_FILE = '/var/run/dba/owner-id';
-const PROJECT_ID_FILE = '/var/run/dba/stack-project-id';
+const OWNER_ID_FILE = '/var/run/cmux/owner-id';
+const PROJECT_ID_FILE = '/var/run/cmux/stack-project-id';
 
 // Auth configuration - loaded at startup
 let ownerId = null;
@@ -629,7 +629,7 @@ server.on('upgrade', async (req, socket, head) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`DBA Worker daemon listening on port ${PORT}`);
+  console.log(`cmux devbox Worker daemon listening on port ${PORT}`);
 });
 
 // Handle graceful shutdown

@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dba-cli/dba/internal/auth"
-	"github.com/dba-cli/dba/internal/state"
-	"github.com/dba-cli/dba/internal/vm"
+	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/state"
+	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
 
@@ -19,13 +19,13 @@ var startCmd = &cobra.Command{
 	Short: "Create a new VM",
 	Long: `Create a new VM and optionally sync a local directory into it.
 
-Each call creates a NEW VM. Use 'dba resume <id>' to resume a paused VM.
+Each call creates a NEW VM. Use 'cmux resume <id>' to resume a paused VM.
 
 Examples:
-  dba start                    # Create VM (no sync)
-  dba start .                  # Create VM, sync current directory
-  dba start ./my-project       # Create VM, sync specific directory
-  dba start --snapshot=snap_x  # Create from specific snapshot`,
+  cmux start                    # Create VM (no sync)
+  cmux start .                  # Create VM, sync current directory
+  cmux start ./my-project       # Create VM, sync specific directory
+  cmux start --snapshot=snap_x  # Create from specific snapshot`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -34,7 +34,7 @@ Examples:
 		// Get team slug
 		teamSlug, err := auth.GetTeamSlug()
 		if err != nil {
-			return fmt.Errorf("failed to get team: %w\nRun 'dba auth login' to authenticate", err)
+			return fmt.Errorf("failed to get team: %w\nRun 'cmux auth login' to authenticate", err)
 		}
 
 		// Create VM client
@@ -113,7 +113,7 @@ Examples:
 		}
 
 		// Build authenticated URLs
-		codeAuthURL, err := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/dba/workspace", token)
+		codeAuthURL, err := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/cmux/workspace", token)
 		if err != nil {
 			return fmt.Errorf("failed to build VS Code URL: %w", err)
 		}

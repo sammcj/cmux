@@ -853,7 +853,7 @@ export const getApiMorphCliCredentialsQueryKey = (options?: Options<GetApiMorphC
 
 /**
  * Get CLI credentials for authenticated user
- * Returns the Morph API key and default snapshot ID for CLI tools (dba, cmux). Requires authentication via Stack Auth Bearer token.
+ * Returns the Morph API key and default snapshot ID for CLI tools (cmux devbox, cmux sandbox). Requires authentication via Stack Auth Bearer token.
  */
 export const getApiMorphCliCredentialsOptions = (options?: Options<GetApiMorphCliCredentialsData>) => {
     return queryOptions({

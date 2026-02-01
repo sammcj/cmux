@@ -28,12 +28,12 @@ func SetBuildMode(mode string) {
 }
 
 // IsDev returns true if running in dev mode
-// Checks: 1) DBA_DEV env var, 2) build mode
+// Checks: 1) CMUX_DEVBOX_DEV env var, 2) build mode
 func IsDev() bool {
-	if env := os.Getenv("DBA_DEV"); env == "1" || env == "true" {
+	if env := os.Getenv("CMUX_DEVBOX_DEV"); env == "1" || env == "true" {
 		return true
 	}
-	if env := os.Getenv("DBA_PROD"); env == "1" || env == "true" {
+	if env := os.Getenv("CMUX_DEVBOX_PROD"); env == "1" || env == "true" {
 		return false
 	}
 	return buildMode == "dev"
@@ -48,7 +48,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("dba version %s\n", version)
+		fmt.Printf("cmux devbox version %s\n", version)
 		fmt.Printf("  commit:  %s\n", commit)
 		fmt.Printf("  built:   %s\n", buildTime)
 		fmt.Printf("  go:      %s\n", runtime.Version())

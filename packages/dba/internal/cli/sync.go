@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dba-cli/dba/internal/auth"
-	"github.com/dba-cli/dba/internal/vm"
+	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
 
@@ -21,9 +21,9 @@ var syncCmd = &cobra.Command{
 Use --pull to sync from VM to local instead.
 
 Examples:
-  dba sync dba_abc123 .              # Sync current directory to VM
-  dba sync dba_abc123 ./my-project   # Sync specific directory
-  dba sync dba_abc123 ./output --pull  # Pull from VM to local`,
+  cmux sync cmux_abc123 .              # Sync current directory to VM
+  cmux sync cmux_abc123 ./my-project   # Sync specific directory
+  cmux sync cmux_abc123 ./output --pull  # Pull from VM to local`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

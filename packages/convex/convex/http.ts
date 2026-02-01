@@ -236,60 +236,60 @@ http.route({
 });
 
 // =============================================================================
-// v1/dba API - Morph instance management for dba CLI
+// v1/cmux API - Morph instance management for cmux devbox CLI
 // =============================================================================
 
 http.route({
-  path: "/api/v1/dba/instances",
+  path: "/api/v1/cmux/instances",
   method: "POST",
   handler: dbaCreateInstance,
 });
 
 http.route({
-  path: "/api/v1/dba/instances",
+  path: "/api/v1/cmux/instances",
   method: "GET",
   handler: dbaListInstances,
 });
 
 http.route({
-  path: "/api/v1/dba/snapshots",
+  path: "/api/v1/cmux/snapshots",
   method: "GET",
   handler: dbaListSnapshots,
 });
 
 http.route({
-  pathPrefix: "/api/v1/dba/snapshots/",
+  pathPrefix: "/api/v1/cmux/snapshots/",
   method: "GET",
   handler: dbaGetSnapshot,
 });
 
 http.route({
-  path: "/api/v1/dba/config",
+  path: "/api/v1/cmux/config",
   method: "GET",
   handler: dbaGetConfig,
 });
 
 http.route({
-  path: "/api/v1/dba/me",
+  path: "/api/v1/cmux/me",
   method: "GET",
   handler: dbaGetMe,
 });
 
 // Instance-specific routes use pathPrefix to capture the instance ID
 http.route({
-  pathPrefix: "/api/v1/dba/instances/",
+  pathPrefix: "/api/v1/cmux/instances/",
   method: "GET",
   handler: dbaInstanceGetRouter,
 });
 
 http.route({
-  pathPrefix: "/api/v1/dba/instances/",
+  pathPrefix: "/api/v1/cmux/instances/",
   method: "POST",
   handler: dbaInstanceActionRouter,
 });
 
 http.route({
-  pathPrefix: "/api/v1/dba/instances/",
+  pathPrefix: "/api/v1/cmux/instances/",
   method: "DELETE",
   handler: dbaInstanceDeleteRouter,
 });

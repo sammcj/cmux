@@ -1,5 +1,5 @@
 /**
- * DBA CLI HTTP API - Convex httpActions that proxy Morph Cloud operations.
+ * cmux devbox CLI HTTP API - Convex httpActions that proxy Morph Cloud operations.
  *
  * All endpoints require Stack Auth authentication and inject the MORPH_API_KEY server-side.
  * Instance data is tracked in devboxInstances table, with provider info in devboxInfo.
@@ -11,8 +11,8 @@ import type { FunctionReference } from "convex/server";
 
 const MORPH_API_BASE_URL = "https://cloud.morph.so/api";
 
-// Default snapshot ID for dba CLI instances
-const DEFAULT_DBA_SNAPSHOT_ID = "snapshot_yiwkxuwb";
+// Default snapshot ID for cmux devbox CLI instances
+const DEFAULT_CMUX_SNAPSHOT_ID = "snapshot_b74x626y";
 
 const JSON_HEADERS = {
   "Content-Type": "application/json",
@@ -117,12 +117,12 @@ function buildDbaProxyUrls(workerUrl?: string) {
 
   const base = workerUrl.replace(/\/+$/, "");
   return {
-    vscodeUrl: `${base}/code/?folder=/home/dba/workspace`,
+    vscodeUrl: `${base}/code/?folder=/home/cmux/workspace`,
     vncUrl: `${base}/vnc/vnc.html?path=vnc/websockify&resize=scale&quality=9&compression=0`,
   };
 }
 
-// Type-safe references to devboxInstances functions (used by dba CLI)
+// Type-safe references to devboxInstances functions (used by cmux devbox CLI)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const devboxApi = (api as any).devboxInstances as {
   create: FunctionReference<"mutation", "public">;
@@ -169,7 +169,7 @@ async function recordMorphActivity(
     }
   } catch (error) {
     // Log but don't fail the main operation if activity recording fails
-    console.error("[dba] Failed to record morph activity:", error);
+    console.error("[cmux] Failed to record morph activity:", error);
   }
 }
 
@@ -187,7 +187,7 @@ async function getProviderInstanceId(
 }
 
 // ============================================================================
-// POST /api/v1/dba/instances - Start a new instance from snapshot
+// POST /api/v1/cmux/instances - Start a new instance from snapshot
 // ============================================================================
 export const createInstance = httpAction(async (ctx, req) => {
   const contentTypeError = verifyContentType(req);
@@ -229,12 +229,12 @@ export const createInstance = httpAction(async (ctx, req) => {
   }
 
   try {
-    const snapshotId = body.snapshotId ?? DEFAULT_DBA_SNAPSHOT_ID;
+    const snapshotId = body.snapshotId ?? DEFAULT_CMUX_SNAPSHOT_ID;
     const startTime = Date.now();
     const timings: Record<string, number> = {};
 
     // Start a new Morph instance via boot endpoint
-    console.log("[dba.create] Starting boot...");
+    console.log("[cmux.create] Starting boot...");
     const bootStart = Date.now();
     const morphResponse = await morphFetch(`/snapshot/${snapshotId}/boot`, {
       method: "POST",
@@ -244,18 +244,18 @@ export const createInstance = httpAction(async (ctx, req) => {
         vcpus: body.vcpus ?? 2,
         memory: body.memory ?? 4096, // 4GB default
         metadata: {
-          app: "cmux-dba",
+          app: "cmux-devbox",
           userId: identity!.subject,
           ...(body.metadata || {}),
         },
       }),
     });
     timings.boot = Date.now() - bootStart;
-    console.log(`[dba.create] Boot completed in ${timings.boot}ms`);
+    console.log(`[cmux.create] Boot completed in ${timings.boot}ms`);
 
     if (!morphResponse.ok) {
       const errorText = await morphResponse.text();
-      console.error("[dba.create] Morph API error:", {
+      console.error("[cmux.create] Morph API error:", {
         status: morphResponse.status,
         body: errorText.slice(0, 500),
       });
@@ -282,7 +282,7 @@ export const createInstance = httpAction(async (ctx, req) => {
     const exposedServices: { workerUrl?: string } = {};
     const servicesToExpose = [{ name: "worker", port: 39377 }];
 
-    console.log("[dba.create] Exposing HTTP services...");
+    console.log("[cmux.create] Exposing HTTP services...");
     const exposeStart = Date.now();
     for (const service of servicesToExpose) {
       try {
@@ -298,11 +298,11 @@ export const createInstance = httpAction(async (ctx, req) => {
           if (service.name === "worker") exposedServices.workerUrl = exposeData.url;
         }
       } catch (e) {
-        console.error(`[dba.create] Failed to expose ${service.name}:`, e);
+        console.error(`[cmux.create] Failed to expose ${service.name}:`, e);
       }
     }
     timings.exposeHttp = Date.now() - exposeStart;
-    console.log(`[dba.create] Expose HTTP completed in ${timings.exposeHttp}ms`);
+    console.log(`[cmux.create] Expose HTTP completed in ${timings.exposeHttp}ms`);
 
     // Fall back to any services that were already in the boot response
     const httpServices = morphData.networking?.http_services ?? [];
@@ -315,32 +315,32 @@ export const createInstance = httpAction(async (ctx, req) => {
     const stackProjectId = env.NEXT_PUBLIC_STACK_PROJECT_ID;
     if (stackProjectId) {
       try {
-        console.log("[dba.create] Injecting auth config...");
+        console.log("[cmux.create] Injecting auth config...");
         const authStart = Date.now();
 
-        // Fix /home/dba ownership (may be root:root in snapshot) and create config dir
+        // Fix /home/cmux ownership (may be root:root in snapshot) and create config dir
         const chownStart = Date.now();
         await morphFetch(`/instance/${morphData.id}/exec`, {
           method: "POST",
           body: JSON.stringify({
-            command: ["chown", "dba:dba", "/home/dba"],
+            command: ["chown", "cmux:cmux", "/home/cmux"],
             timeout: 10,
           }),
         });
         timings.chown = Date.now() - chownStart;
-        console.log(`[dba.create] chown completed in ${timings.chown}ms`);
+        console.log(`[cmux.create] chown completed in ${timings.chown}ms`);
 
         // Create directory
         const mkdirStart = Date.now();
         await morphFetch(`/instance/${morphData.id}/exec`, {
           method: "POST",
           body: JSON.stringify({
-            command: ["mkdir", "-p", "/var/run/dba"],
+            command: ["mkdir", "-p", "/var/run/cmux"],
             timeout: 10,
           }),
         });
         timings.mkdir = Date.now() - mkdirStart;
-        console.log(`[dba.create] mkdir completed in ${timings.mkdir}ms`);
+        console.log(`[cmux.create] mkdir completed in ${timings.mkdir}ms`);
 
         // Write owner ID using echo with shell redirection
         const ownerId = identity!.subject;
@@ -348,48 +348,48 @@ export const createInstance = httpAction(async (ctx, req) => {
         await morphFetch(`/instance/${morphData.id}/exec`, {
           method: "POST",
           body: JSON.stringify({
-            command: ["echo", ownerId, ">", "/var/run/dba/owner-id"],
+            command: ["echo", ownerId, ">", "/var/run/cmux/owner-id"],
             timeout: 10,
           }),
         });
         timings.writeOwnerId = Date.now() - ownerIdStart;
-        console.log(`[dba.create] write owner-id completed in ${timings.writeOwnerId}ms`);
+        console.log(`[cmux.create] write owner-id completed in ${timings.writeOwnerId}ms`);
 
         // Write Stack Auth project ID
         const projectIdStart = Date.now();
         await morphFetch(`/instance/${morphData.id}/exec`, {
           method: "POST",
           body: JSON.stringify({
-            command: ["echo", stackProjectId, ">", "/var/run/dba/stack-project-id"],
+            command: ["echo", stackProjectId, ">", "/var/run/cmux/stack-project-id"],
             timeout: 10,
           }),
         });
         timings.writeProjectId = Date.now() - projectIdStart;
-        console.log(`[dba.create] write project-id completed in ${timings.writeProjectId}ms`);
+        console.log(`[cmux.create] write project-id completed in ${timings.writeProjectId}ms`);
 
-        // Restart dba-worker to pick up the new config
+        // Restart cmux-worker to pick up the new config
         const restartStart = Date.now();
         await morphFetch(`/instance/${morphData.id}/exec`, {
           method: "POST",
           body: JSON.stringify({
-            command: ["systemctl", "restart", "--no-block", "dba-worker"],
+            command: ["systemctl", "restart", "--no-block", "cmux-worker"],
             timeout: 10,
           }),
         });
         timings.restartWorker = Date.now() - restartStart;
-        console.log(`[dba.create] restart dba-worker completed in ${timings.restartWorker}ms`);
+        console.log(`[cmux.create] restart cmux-worker completed in ${timings.restartWorker}ms`);
 
         timings.authTotal = Date.now() - authStart;
-        console.log(`[dba.create] Auth config total: ${timings.authTotal}ms`);
+        console.log(`[cmux.create] Auth config total: ${timings.authTotal}ms`);
       } catch (e) {
-        console.error("[dba.create] Failed to inject auth config:", e);
+        console.error("[cmux.create] Failed to inject auth config:", e);
       }
     } else {
-      console.warn("[dba.create] NEXT_PUBLIC_STACK_PROJECT_ID not set, worker auth will be disabled");
+      console.warn("[cmux.create] NEXT_PUBLIC_STACK_PROJECT_ID not set, worker auth will be disabled");
     }
 
     // Store the instance in Convex with provider mapping (no URL caching)
-    console.log("[dba.create] Storing in Convex...");
+    console.log("[cmux.create] Storing in Convex...");
     const convexStart = Date.now();
     const result = await ctx.runMutation(devboxApi.create, {
       teamSlugOrId: body.teamSlugOrId,
@@ -401,10 +401,10 @@ export const createInstance = httpAction(async (ctx, req) => {
       source: "cli",
     }) as { id: string; isExisting: boolean };
     timings.convexStore = Date.now() - convexStart;
-    console.log(`[dba.create] Convex store completed in ${timings.convexStore}ms`);
+    console.log(`[cmux.create] Convex store completed in ${timings.convexStore}ms`);
 
     timings.total = Date.now() - startTime;
-    console.log(`[dba.create] TOTAL: ${timings.total}ms | Breakdown:`, timings);
+    console.log(`[cmux.create] TOTAL: ${timings.total}ms | Breakdown:`, timings);
 
     // Return URLs from Morph response (not cached in DB)
     return jsonResponse({
@@ -417,7 +417,7 @@ export const createInstance = httpAction(async (ctx, req) => {
       spec: morphData.spec,
     });
   } catch (error) {
-    console.error("[dba.create] Error:", error);
+    console.error("[cmux.create] Error:", error);
     return jsonResponse(
       { code: 500, message: "Failed to create instance" },
       500
@@ -426,7 +426,7 @@ export const createInstance = httpAction(async (ctx, req) => {
 });
 
 // ============================================================================
-// GET /api/v1/dba/instances - List instances
+// GET /api/v1/cmux/instances - List instances
 // ============================================================================
 export const listInstances = httpAction(async (ctx, req) => {
   const { error } = await getAuthenticatedUser(ctx);
@@ -464,7 +464,7 @@ export const listInstances = httpAction(async (ctx, req) => {
 
     return jsonResponse({ instances });
   } catch (error) {
-    console.error("[dba.list] Error:", error);
+    console.error("[cmux.list] Error:", error);
     return jsonResponse(
       { code: 500, message: "Failed to list instances" },
       500
@@ -473,7 +473,7 @@ export const listInstances = httpAction(async (ctx, req) => {
 });
 
 // ============================================================================
-// GET /api/v1/dba/instances/{id} - Get instance details
+// GET /api/v1/cmux/instances/{id} - Get instance details
 // ============================================================================
 async function handleGetInstance(
   ctx: ActionCtx,
@@ -566,13 +566,13 @@ async function handleGetInstance(
       spec: morphData.spec,
     });
   } catch (error) {
-    console.error("[dba.get] Error:", error);
+    console.error("[cmux.get] Error:", error);
     return jsonResponse({ code: 500, message: "Failed to get instance" }, 500);
   }
 }
 
 // ============================================================================
-// POST /api/v1/dba/instances/{id}/exec - Execute command
+// POST /api/v1/cmux/instances/{id}/exec - Execute command
 // ============================================================================
 async function handleExecCommand(
   ctx: ActionCtx,
@@ -616,7 +616,7 @@ async function handleExecCommand(
 
     if (!morphResponse.ok) {
       const errorText = await morphResponse.text();
-      console.error("[dba.exec] Morph API error:", {
+      console.error("[cmux.exec] Morph API error:", {
         status: morphResponse.status,
         body: errorText.slice(0, 500),
       });
@@ -636,7 +636,7 @@ async function handleExecCommand(
 
     return jsonResponse(result);
   } catch (error) {
-    console.error("[dba.exec] Error:", error);
+    console.error("[cmux.exec] Error:", error);
     return jsonResponse(
       { code: 500, message: "Failed to execute command" },
       500
@@ -645,7 +645,7 @@ async function handleExecCommand(
 }
 
 // ============================================================================
-// POST /api/v1/dba/instances/{id}/pause - Pause instance
+// POST /api/v1/cmux/instances/{id}/pause - Pause instance
 // ============================================================================
 async function handlePauseInstance(
   ctx: ActionCtx,
@@ -679,7 +679,7 @@ async function handlePauseInstance(
 
     if (!morphResponse.ok) {
       const errorText = await morphResponse.text();
-      console.error("[dba.pause] Morph API error:", {
+      console.error("[cmux.pause] Morph API error:", {
         status: morphResponse.status,
         body: errorText.slice(0, 500),
       });
@@ -701,7 +701,7 @@ async function handlePauseInstance(
 
     return jsonResponse({ paused: true });
   } catch (error) {
-    console.error("[dba.pause] Error:", error);
+    console.error("[cmux.pause] Error:", error);
     return jsonResponse(
       { code: 500, message: "Failed to pause instance" },
       500
@@ -710,7 +710,7 @@ async function handlePauseInstance(
 }
 
 // ============================================================================
-// POST /api/v1/dba/instances/{id}/resume - Resume instance
+// POST /api/v1/cmux/instances/{id}/resume - Resume instance
 // ============================================================================
 async function handleResumeInstance(
   ctx: ActionCtx,
@@ -744,7 +744,7 @@ async function handleResumeInstance(
 
     if (!morphResponse.ok) {
       const errorText = await morphResponse.text();
-      console.error("[dba.resume] Morph API error:", {
+      console.error("[cmux.resume] Morph API error:", {
         status: morphResponse.status,
         body: errorText.slice(0, 500),
       });
@@ -766,7 +766,7 @@ async function handleResumeInstance(
 
     return jsonResponse({ resumed: true });
   } catch (error) {
-    console.error("[dba.resume] Error:", error);
+    console.error("[cmux.resume] Error:", error);
     return jsonResponse(
       { code: 500, message: "Failed to resume instance" },
       500
@@ -775,7 +775,7 @@ async function handleResumeInstance(
 }
 
 // ============================================================================
-// POST /api/v1/dba/instances/{id}/stop - Stop instance
+// POST /api/v1/cmux/instances/{id}/stop - Stop instance
 // ============================================================================
 async function handleStopInstance(
   ctx: ActionCtx,
@@ -809,7 +809,7 @@ async function handleStopInstance(
 
     if (!morphResponse.ok && morphResponse.status !== 404) {
       const errorText = await morphResponse.text();
-      console.error("[dba.stop] Morph API error:", {
+      console.error("[cmux.stop] Morph API error:", {
         status: morphResponse.status,
         body: errorText.slice(0, 500),
       });
@@ -831,13 +831,13 @@ async function handleStopInstance(
 
     return jsonResponse({ stopped: true });
   } catch (error) {
-    console.error("[dba.stop] Error:", error);
+    console.error("[cmux.stop] Error:", error);
     return jsonResponse({ code: 500, message: "Failed to stop instance" }, 500);
   }
 }
 
 // ============================================================================
-// GET /api/v1/dba/instances/{id}/ssh - Get SSH credentials
+// GET /api/v1/cmux/instances/{id}/ssh - Get SSH credentials
 // ============================================================================
 async function handleGetInstanceSsh(
   ctx: ActionCtx,
@@ -876,7 +876,7 @@ async function handleGetInstanceSsh(
       } else {
         const primaryText = await primaryResponse.text();
         const fallbackText = await fallbackResponse.text();
-        console.error("[dba.ssh] Morph API error:", {
+        console.error("[cmux.ssh] Morph API error:", {
           primaryStatus: primaryResponse.status,
           primaryBody: primaryText.slice(0, 500),
           fallbackStatus: fallbackResponse.status,
@@ -913,7 +913,7 @@ async function handleGetInstanceSsh(
         : undefined,
     });
   } catch (error) {
-    console.error("[dba.ssh] Error:", error);
+    console.error("[cmux.ssh] Error:", error);
     return jsonResponse(
       { code: 500, message: "Failed to get SSH credentials" },
       500
@@ -922,7 +922,7 @@ async function handleGetInstanceSsh(
 }
 
 // ============================================================================
-// POST /api/v1/dba/instances/{id}/ttl - Update TTL
+// POST /api/v1/cmux/instances/{id}/ttl - Update TTL
 // ============================================================================
 async function handleUpdateTtl(
   ctx: ActionCtx,
@@ -958,7 +958,7 @@ async function handleUpdateTtl(
 
     if (!morphResponse.ok) {
       const errorText = await morphResponse.text();
-      console.error("[dba.ttl] Morph API error:", {
+      console.error("[cmux.ttl] Morph API error:", {
         status: morphResponse.status,
         body: errorText.slice(0, 500),
       });
@@ -970,13 +970,13 @@ async function handleUpdateTtl(
 
     return jsonResponse({ updated: true, ttlSeconds });
   } catch (error) {
-    console.error("[dba.ttl] Error:", error);
+    console.error("[cmux.ttl] Error:", error);
     return jsonResponse({ code: 500, message: "Failed to update TTL" }, 500);
   }
 }
 
 // ============================================================================
-// POST /api/v1/dba/instances/{id}/reboot - Reboot instance
+// POST /api/v1/cmux/instances/{id}/reboot - Reboot instance
 // ============================================================================
 async function handleRebootInstance(
   ctx: ActionCtx,
@@ -1010,7 +1010,7 @@ async function handleRebootInstance(
 
     if (!morphResponse.ok) {
       const errorText = await morphResponse.text();
-      console.error("[dba.reboot] Morph API error:", {
+      console.error("[cmux.reboot] Morph API error:", {
         status: morphResponse.status,
         body: errorText.slice(0, 500),
       });
@@ -1022,13 +1022,13 @@ async function handleRebootInstance(
 
     return jsonResponse({ rebooted: true });
   } catch (error) {
-    console.error("[dba.reboot] Error:", error);
+    console.error("[cmux.reboot] Error:", error);
     return jsonResponse({ code: 500, message: "Failed to reboot instance" }, 500);
   }
 }
 
 // ============================================================================
-// POST /api/v1/dba/instances/{id}/snapshot - Create snapshot
+// POST /api/v1/cmux/instances/{id}/snapshot - Create snapshot
 // ============================================================================
 async function handleSnapshotInstance(
   ctx: ActionCtx,
@@ -1069,7 +1069,7 @@ async function handleSnapshotInstance(
 
     if (!morphResponse.ok) {
       const errorText = await morphResponse.text();
-      console.error("[dba.snapshot] Morph API error:", {
+      console.error("[cmux.snapshot] Morph API error:", {
         status: morphResponse.status,
         body: errorText.slice(0, 500),
       });
@@ -1082,13 +1082,13 @@ async function handleSnapshotInstance(
     const result = await morphResponse.json();
     return jsonResponse(result);
   } catch (error) {
-    console.error("[dba.snapshot] Error:", error);
+    console.error("[cmux.snapshot] Error:", error);
     return jsonResponse({ code: 500, message: "Failed to create snapshot" }, 500);
   }
 }
 
 // ============================================================================
-// POST /api/v1/dba/instances/{id}/http - Expose HTTP service
+// POST /api/v1/cmux/instances/{id}/http - Expose HTTP service
 // ============================================================================
 async function handleExposeHttpService(
   ctx: ActionCtx,
@@ -1125,7 +1125,7 @@ async function handleExposeHttpService(
 
     if (!morphResponse.ok) {
       const errorText = await morphResponse.text();
-      console.error("[dba.http.expose] Morph API error:", {
+      console.error("[cmux.http.expose] Morph API error:", {
         status: morphResponse.status,
         body: errorText.slice(0, 500),
       });
@@ -1138,13 +1138,13 @@ async function handleExposeHttpService(
     const result = await morphResponse.json();
     return jsonResponse(result);
   } catch (error) {
-    console.error("[dba.http.expose] Error:", error);
+    console.error("[cmux.http.expose] Error:", error);
     return jsonResponse({ code: 500, message: "Failed to expose HTTP service" }, 500);
   }
 }
 
 // ============================================================================
-// DELETE /api/v1/dba/instances/{id}/http/{serviceName} - Hide HTTP service
+// DELETE /api/v1/cmux/instances/{id}/http/{serviceName} - Hide HTTP service
 // ============================================================================
 async function handleHideHttpService(
   ctx: ActionCtx,
@@ -1179,7 +1179,7 @@ async function handleHideHttpService(
 
     if (!morphResponse.ok) {
       const errorText = await morphResponse.text();
-      console.error("[dba.http.hide] Morph API error:", {
+      console.error("[cmux.http.hide] Morph API error:", {
         status: morphResponse.status,
         body: errorText.slice(0, 500),
       });
@@ -1191,13 +1191,13 @@ async function handleHideHttpService(
 
     return jsonResponse({ hidden: true });
   } catch (error) {
-    console.error("[dba.http.hide] Error:", error);
+    console.error("[cmux.http.hide] Error:", error);
     return jsonResponse({ code: 500, message: "Failed to hide HTTP service" }, 500);
   }
 }
 
 // ============================================================================
-// GET /api/v1/dba/snapshots - List snapshots
+// GET /api/v1/cmux/snapshots - List snapshots
 // ============================================================================
 export const listSnapshots = httpAction(async (ctx) => {
   const { error } = await getAuthenticatedUser(ctx);
@@ -1208,7 +1208,7 @@ export const listSnapshots = httpAction(async (ctx) => {
 
     if (!morphResponse.ok) {
       const errorText = await morphResponse.text();
-      console.error("[dba.snapshots.list] Morph API error:", {
+      console.error("[cmux.snapshots.list] Morph API error:", {
         status: morphResponse.status,
         body: errorText.slice(0, 500),
       });
@@ -1221,13 +1221,13 @@ export const listSnapshots = httpAction(async (ctx) => {
     const result = await morphResponse.json();
     return jsonResponse({ snapshots: result });
   } catch (error) {
-    console.error("[dba.snapshots.list] Error:", error);
+    console.error("[cmux.snapshots.list] Error:", error);
     return jsonResponse({ code: 500, message: "Failed to list snapshots" }, 500);
   }
 });
 
 // ============================================================================
-// GET /api/v1/dba/snapshots/{id} - Get snapshot details
+// GET /api/v1/cmux/snapshots/{id} - Get snapshot details
 // ============================================================================
 export const getSnapshot = httpAction(async (ctx, req) => {
   const { error } = await getAuthenticatedUser(ctx);
@@ -1249,7 +1249,7 @@ export const getSnapshot = httpAction(async (ctx, req) => {
         return jsonResponse({ code: 404, message: "Snapshot not found" }, 404);
       }
       const errorText = await morphResponse.text();
-      console.error("[dba.snapshots.get] Morph API error:", {
+      console.error("[cmux.snapshots.get] Morph API error:", {
         status: morphResponse.status,
         body: errorText.slice(0, 500),
       });
@@ -1262,25 +1262,25 @@ export const getSnapshot = httpAction(async (ctx, req) => {
     const result = await morphResponse.json();
     return jsonResponse(result);
   } catch (error) {
-    console.error("[dba.snapshots.get] Error:", error);
+    console.error("[cmux.snapshots.get] Error:", error);
     return jsonResponse({ code: 500, message: "Failed to get snapshot" }, 500);
   }
 });
 
 // ============================================================================
-// GET /api/v1/dba/config - Get CLI configuration (snapshot ID, etc.)
+// GET /api/v1/cmux/config - Get CLI configuration (snapshot ID, etc.)
 // ============================================================================
 export const getConfig = httpAction(async (ctx) => {
   const { error } = await getAuthenticatedUser(ctx);
   if (error) return error;
 
   return jsonResponse({
-    defaultSnapshotId: DEFAULT_DBA_SNAPSHOT_ID,
+    defaultSnapshotId: DEFAULT_CMUX_SNAPSHOT_ID,
   });
 });
 
 // ============================================================================
-// GET /api/v1/dba/me - Get current user profile including team
+// GET /api/v1/cmux/me - Get current user profile including team
 // ============================================================================
 export const getMe = httpAction(async (ctx) => {
   const { identity, error } = await getAuthenticatedUser(ctx);
@@ -1344,7 +1344,7 @@ export const getMe = httpAction(async (ctx) => {
       teamDisplayName,
     });
   } catch (err) {
-    console.error("[dba.me] Error:", err);
+    console.error("[cmux.me] Error:", err);
     return jsonResponse(
       { code: 500, message: "Failed to get user profile" },
       500
@@ -1367,10 +1367,10 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
 
   // Parse path to get id and action
   // Path formats:
-  // /api/v1/dba/instances/{id}/{action}
-  // /api/v1/dba/instances/{id}/http/{serviceName}
+  // /api/v1/cmux/instances/{id}/{action}
+  // /api/v1/cmux/instances/{id}/http/{serviceName}
   const pathParts = path.split("/").filter(Boolean);
-  // pathParts: ["api", "v1", "dba", "instances", "{id}", "{action}", ...]
+  // pathParts: ["api", "v1", "cmux", "instances", "{id}", "{action}", ...]
 
   const id = pathParts[4]; // instances/{id}
   const action = pathParts[5]; // {action}
@@ -1483,7 +1483,7 @@ export const instanceGetRouter = httpAction(async (ctx, req) => {
 
   // Parse path to get id and action
   const pathParts = path.split("/").filter(Boolean);
-  // pathParts: ["api", "v1", "dba", "instances", "{id}", "{action}?"]
+  // pathParts: ["api", "v1", "cmux", "instances", "{id}", "{action}?"]
 
   const id = pathParts[4];
   const action = pathParts[5]; // May be undefined for GET /instances/{id}
@@ -1515,7 +1515,7 @@ export const instanceDeleteRouter = httpAction(async (ctx, req) => {
     );
   }
 
-  // Parse path: /api/v1/dba/instances/{id}/http/{serviceName}
+  // Parse path: /api/v1/cmux/instances/{id}/http/{serviceName}
   const pathParts = path.split("/").filter(Boolean);
   const id = pathParts[4];
   const action = pathParts[5];

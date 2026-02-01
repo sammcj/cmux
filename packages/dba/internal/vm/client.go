@@ -14,12 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dba-cli/dba/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/auth"
 )
 
 // Instance represents a VM instance
 type Instance struct {
-	ID              string `json:"id"`              // Our dba ID (Convex doc ID)
+	ID              string `json:"id"`              // Our cmux ID (Convex doc ID)
 	MorphInstanceID string `json:"morphInstanceId"` // Internal Morph ID
 	Status          string `json:"status"`
 	VSCodeURL       string `json:"vscodeUrl"`
@@ -104,7 +104,7 @@ func (c *Client) CreateInstance(ctx context.Context, opts CreateOptions) (*Insta
 		body["ttlSeconds"] = opts.TTLSeconds
 	}
 
-	resp, err := c.doRequest(ctx, "POST", "/api/v1/dba/instances", body)
+	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/instances", body)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (c *Client) GetInstance(ctx context.Context, instanceID string) (*Instance,
 		return nil, fmt.Errorf("team slug not set")
 	}
 
-	path := fmt.Sprintf("/api/v1/dba/instances/%s?teamSlugOrId=%s", instanceID, c.teamSlug)
+	path := fmt.Sprintf("/api/v1/cmux/instances/%s?teamSlugOrId=%s", instanceID, c.teamSlug)
 	resp, err := c.doRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return nil, err
@@ -159,7 +159,7 @@ func (c *Client) StopInstance(ctx context.Context, instanceID string) error {
 		"teamSlugOrId": c.teamSlug,
 	}
 
-	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/dba/instances/%s/stop", instanceID), body)
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/cmux/instances/%s/stop", instanceID), body)
 	if err != nil {
 		return err
 	}
@@ -183,7 +183,7 @@ func (c *Client) PauseInstance(ctx context.Context, instanceID string) error {
 		"teamSlugOrId": c.teamSlug,
 	}
 
-	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/dba/instances/%s/pause", instanceID), body)
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/cmux/instances/%s/pause", instanceID), body)
 	if err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func (c *Client) ResumeInstance(ctx context.Context, instanceID string) error {
 		"teamSlugOrId": c.teamSlug,
 	}
 
-	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/dba/instances/%s/resume", instanceID), body)
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/cmux/instances/%s/resume", instanceID), body)
 	if err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func (c *Client) ListInstances(ctx context.Context) ([]Instance, error) {
 		return nil, fmt.Errorf("team slug not set")
 	}
 
-	path := fmt.Sprintf("/api/v1/dba/instances?teamSlugOrId=%s", c.teamSlug)
+	path := fmt.Sprintf("/api/v1/cmux/instances?teamSlugOrId=%s", c.teamSlug)
 	resp, err := c.doRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return nil, err
@@ -287,7 +287,7 @@ func (c *Client) ExecCommand(ctx context.Context, instanceID string, command str
 		"timeout":      60,
 	}
 
-	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/dba/instances/%s/exec", instanceID), body)
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/cmux/instances/%s/exec", instanceID), body)
 	if err != nil {
 		return "", "", -1, err
 	}
@@ -331,8 +331,8 @@ func (c *Client) GenerateAuthToken(ctx context.Context, instanceID string) (stri
 		return "", fmt.Errorf("not authenticated: %w", err)
 	}
 
-	// Call the worker's /_dba/generate-token endpoint
-	workerURL := strings.TrimRight(instance.WorkerURL, "/") + "/_dba/generate-token"
+	// Call the worker's /_cmux/generate-token endpoint
+	workerURL := strings.TrimRight(instance.WorkerURL, "/") + "/_cmux/generate-token"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", workerURL, nil)
 	if err != nil {
@@ -369,7 +369,7 @@ func (c *Client) GetSSHCredentials(ctx context.Context, instanceID string) (stri
 		return "", fmt.Errorf("team slug not set")
 	}
 
-	path := fmt.Sprintf("/api/v1/dba/instances/%s/ssh?teamSlugOrId=%s", instanceID, c.teamSlug)
+	path := fmt.Sprintf("/api/v1/cmux/instances/%s/ssh?teamSlugOrId=%s", instanceID, c.teamSlug)
 	resp, err := c.doRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return "", err
@@ -400,7 +400,7 @@ func sshOptions() []string {
 
 func resolveRemoteSyncPath(ctx context.Context, sshTarget string) (string, error) {
 	// Use a single-line command that works reliably over SSH
-	script := `for p in /home/dba/workspace /root/workspace /workspace /home/user/project; do [ -d "$p" ] && echo "$p" && exit 0; done; echo "$HOME"`
+	script := `for p in /home/cmux/workspace /root/workspace /workspace /home/user/project; do [ -d "$p" ] && echo "$p" && exit 0; done; echo "$HOME"`
 	cmdArgs := append(sshOptions(), sshTarget, script)
 	cmd := exec.CommandContext(ctx, "ssh", cmdArgs...)
 	// Use Output() not CombinedOutput() to avoid stderr (SSH warnings) in the path
@@ -585,7 +585,7 @@ func (c *Client) ListPtySessions(ctx context.Context, instanceID string) ([]PtyS
 	}
 
 	// Call worker's PTY list endpoint
-	workerURL := strings.TrimRight(instance.WorkerURL, "/") + "/_dba/pty/list"
+	workerURL := strings.TrimRight(instance.WorkerURL, "/") + "/_cmux/pty/list"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", workerURL, nil)
 	if err != nil {

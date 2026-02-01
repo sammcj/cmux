@@ -14,20 +14,20 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "dba",
-	Short: "DevBox Agent - Cloud VMs for development",
-	Long: `DBA (DevBox Agent) manages cloud VMs for development.
+	Use:   "cmux",
+	Short: "cmux devbox - Cloud VMs for development",
+	Long: `cmux devbox manages cloud VMs for development.
 
 Quick start:
-  dba login                      # Authenticate (or: dba auth login)
-  dba start ./my-project         # Create VM, sync directory → returns ID
-  dba code <id>                  # Open VS Code
-  dba ssh <id>                   # SSH into VM
-  dba sync <id> ./my-project     # Sync files to VM
-  dba pause <id>                 # Pause VM (preserves state)
-  dba resume <id>                # Resume paused VM
-  dba delete <id>                # Delete VM
-  dba ls                         # List all VMs`,
+  cmux login                      # Authenticate (or: cmux auth login)
+  cmux start ./my-project         # Create VM, sync directory → returns ID
+  cmux code <id>                  # Open VS Code
+  cmux ssh <id>                   # SSH into VM
+  cmux sync <id> ./my-project     # Sync files to VM
+  cmux pause <id>                 # Pause VM (preserves state)
+  cmux resume <id>                # Resume paused VM
+  cmux delete <id>                # Delete VM
+  cmux ls                         # List all VMs`,
 	// Silence usage and errors - we handle our own error output
 	SilenceUsage:  true,
 	SilenceErrors: true,

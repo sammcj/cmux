@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dba-cli/dba/internal/auth"
-	"github.com/dba-cli/dba/internal/vm"
+	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
 
@@ -18,9 +18,9 @@ var execCmd = &cobra.Command{
 	Long: `Execute a command in a VM.
 
 Examples:
-  dba exec dba_abc123 "ls -la"
-  dba exec dba_abc123 "npm install"
-  dba exec dba_abc123 "cat /etc/os-release"`,
+  cmux exec cmux_abc123 "ls -la"
+  cmux exec cmux_abc123 "npm install"
+  cmux exec cmux_abc123 "cat /etc/os-release"`,
 	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

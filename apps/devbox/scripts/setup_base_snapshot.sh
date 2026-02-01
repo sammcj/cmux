@@ -2,7 +2,7 @@
 # scripts/setup_base_snapshot.sh
 # Run this ONCE on a fresh Morph VM to create the reusable base snapshot
 #
-# This script installs all required software for the DBA development environment:
+# This script installs all required software for the cmux devbox development environment:
 # - Chrome with CDP for browser automation
 # - TigerVNC + XFCE for visual desktop
 # - noVNC for web-based VNC access
@@ -15,7 +15,7 @@
 #   ./setup_base_snapshot.sh
 #
 # After running, save as snapshot with:
-#   morph snapshot create --digest="dba-base-v1"
+#   morph snapshot create --digest="cmux-base-v1"
 
 set -e
 
@@ -43,7 +43,7 @@ log_step() {
 }
 
 echo "=============================================="
-echo "       DBA Base Snapshot Setup Script        "
+echo "    cmux devbox Base Snapshot Setup Script   "
 echo "=============================================="
 echo ""
 echo "Started at: $(date)"
@@ -114,21 +114,21 @@ log_info "npm installed: $NPM_VERSION"
 # It will use the existing Chrome via CDP on port 9222
 npm install -g agent-browser || log_warn "agent-browser installation failed"
 
-# Create directory for dba-worker and its dependencies
-mkdir -p /opt/dba-worker
-cd /opt/dba-worker
+# Create directory for cmux-worker and its dependencies
+mkdir -p /opt/cmux-worker
+cd /opt/cmux-worker
 
-# Install node-pty and ws locally for dba-worker
+# Install node-pty and ws locally for cmux-worker
 npm init -y
 npm install node-pty ws || log_warn "node-pty/ws installation failed"
 
 cd -
 
-# Install dba-worker daemon script
-cat > /usr/local/bin/dba-worker << 'WORKER_EOF'
+# Install cmux-worker daemon script
+cat > /usr/local/bin/cmux-worker << 'WORKER_EOF'
 #!/usr/bin/env node
 /**
- * DBA Worker Daemon
+ * cmux devbox Worker Daemon
  *
  * HTTP server that wraps agent-browser commands.
  * Runs on port 39377 (exposed via Morph's worker URL).
@@ -147,15 +147,15 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-// Load modules from /opt/dba-worker/node_modules
-const modulePath = '/opt/dba-worker/node_modules';
+// Load modules from /opt/cmux-worker/node_modules
+const modulePath = '/opt/cmux-worker/node_modules';
 const WebSocket = require(path.join(modulePath, 'ws'));
 const pty = require(path.join(modulePath, 'node-pty'));
 
 const PORT = process.env.PORT || 39377;
-const OWNER_ID_FILE = '/var/run/dba/owner-id';
-const PROJECT_ID_FILE = '/var/run/dba/stack-project-id';
-const SESSION_SECRET_FILE = '/var/run/dba/session-secret';
+const OWNER_ID_FILE = '/var/run/cmux/owner-id';
+const PROJECT_ID_FILE = '/var/run/cmux/stack-project-id';
+const SESSION_SECRET_FILE = '/var/run/cmux/session-secret';
 
 // Auth configuration - loaded at startup
 let ownerId = null;
@@ -164,7 +164,7 @@ let sessionSecret = null;
 let jwksCache = null;
 let jwksCacheTime = 0;
 const JWKS_CACHE_TTL = 3600000; // 1 hour
-const SESSION_COOKIE_NAME = 'dba_session';
+const SESSION_COOKIE_NAME = 'cmux_session';
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60; // 7 days in seconds
 
 /**
@@ -187,7 +187,7 @@ function loadAuthConfig() {
     // Generate new session secret
     sessionSecret = crypto.randomBytes(32).toString('hex');
     try {
-      fs.mkdirSync('/var/run/dba', { recursive: true });
+      fs.mkdirSync('/var/run/cmux', { recursive: true });
       fs.writeFileSync(SESSION_SECRET_FILE, sessionSecret);
       console.log('Generated new session secret');
     } catch (writeErr) {
@@ -217,7 +217,7 @@ function generatePtySessionId() {
  */
 function createPtySession(sessionId, options = {}) {
   const shell = options.shell || process.env.SHELL || '/bin/bash';
-  const cwd = options.cwd || process.env.HOME || '/home/dba';
+  const cwd = options.cwd || process.env.HOME || '/home/cmux';
   const cols = options.cols || 80;
   const rows = options.rows || 24;
   const env = { ...process.env, ...options.env, TERM: 'xterm-256color' };
@@ -649,8 +649,8 @@ function isBrowserPath(pathname) {
   if (pathname.startsWith('/static')) return true;
   if (pathname.startsWith('/stable')) return true;
   if (pathname.startsWith('/vscode')) return true;
-  // VS Code internal paths (but not our /_dba/ endpoints)
-  if (pathname.startsWith('/_') && !pathname.startsWith('/_dba')) return true;
+  // VS Code internal paths (but not our /_cmux/ endpoints)
+  if (pathname.startsWith('/_') && !pathname.startsWith('/_cmux')) return true;
   // Favicon, manifest, etc.
   if (pathname === '/favicon.ico') return true;
   if (pathname === '/manifest.json') return true;
@@ -671,8 +671,8 @@ async function handleRequest(req, res) {
   }
 
   // Auth endpoint - CLI generates URL with signed token, sets session cookie
-  // URL format: /_dba/auth?token=xxx&return=/code/
-  if (reqPath === '/_dba/auth') {
+  // URL format: /_cmux/auth?token=xxx&return=/code/
+  if (reqPath === '/_cmux/auth') {
     const token = url.searchParams.get('token');
     const returnTo = url.searchParams.get('return') || '/code/';
 
@@ -753,7 +753,7 @@ async function handleRequest(req, res) {
     switch (reqPath) {
 
       // Generate one-time auth token for browser access (CLI calls this)
-      case '/_dba/generate-token':
+      case '/_cmux/generate-token':
         const tokenData = {
           userId: ownerId,
           exp: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
@@ -889,7 +889,7 @@ async function handleRequest(req, res) {
       // PTY Endpoints
       // =====================================================================
 
-      case '/_dba/pty/create':
+      case '/_cmux/pty/create':
         // Create a new PTY session
         const ptySessionId = generatePtySessionId();
         const ptySession = createPtySession(ptySessionId, {
@@ -906,7 +906,7 @@ async function handleRequest(req, res) {
         });
         return;
 
-      case '/_dba/pty/list':
+      case '/_cmux/pty/list':
         // List all PTY sessions
         sendJson(res, {
           success: true,
@@ -914,7 +914,7 @@ async function handleRequest(req, res) {
         });
         return;
 
-      case '/_dba/pty/destroy':
+      case '/_cmux/pty/destroy':
         // Destroy a PTY session
         if (!body.sessionId) {
           sendJson(res, { error: 'sessionId required' }, 400);
@@ -924,7 +924,7 @@ async function handleRequest(req, res) {
         sendJson(res, { success: destroyed });
         return;
 
-      case '/_dba/pty/resize':
+      case '/_cmux/pty/resize':
         // Resize a PTY session
         if (!body.sessionId || !body.cols || !body.rows) {
           sendJson(res, { error: 'sessionId, cols, and rows required' }, 400);
@@ -939,7 +939,7 @@ async function handleRequest(req, res) {
         sendJson(res, { success: true });
         return;
 
-      case '/_dba/pty/write':
+      case '/_cmux/pty/write':
         // Write to a PTY session (for non-WebSocket clients)
         if (!body.sessionId || body.data === undefined) {
           sendJson(res, { error: 'sessionId and data required' }, 400);
@@ -1067,7 +1067,7 @@ server.on('upgrade', async (req, socket, head) => {
   }
 
   // Handle PTY WebSocket connections
-  if (!pathname.startsWith('/_dba/pty/ws/')) {
+  if (!pathname.startsWith('/_cmux/pty/ws/')) {
     socket.destroy();
     return;
   }
@@ -1080,8 +1080,8 @@ server.on('upgrade', async (req, socket, head) => {
     return;
   }
 
-  // Extract session ID from path: /_dba/pty/ws/{sessionId}
-  const sessionId = pathname.replace('/_dba/pty/ws/', '');
+  // Extract session ID from path: /_cmux/pty/ws/{sessionId}
+  const sessionId = pathname.replace('/_cmux/pty/ws/', '');
 
   // Get or create the PTY session
   let session = getPtySession(sessionId);
@@ -1154,8 +1154,8 @@ server.on('upgrade', async (req, socket, head) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`DBA Worker daemon listening on port ${PORT}`);
-  console.log(`PTY WebSocket endpoint: ws://localhost:${PORT}/_dba/pty/ws/{sessionId}`);
+  console.log(`cmux devbox Worker daemon listening on port ${PORT}`);
+  console.log(`PTY WebSocket endpoint: ws://localhost:${PORT}/_cmux/pty/ws/{sessionId}`);
 });
 
 // Handle graceful shutdown
@@ -1179,11 +1179,11 @@ process.on('SIGINT', () => {
 });
 WORKER_EOF
 
-chmod +x /usr/local/bin/dba-worker
-log_info "Installed dba-worker daemon"
+chmod +x /usr/local/bin/cmux-worker
+log_info "Installed cmux devbox worker daemon"
 
 # Create token directory
-mkdir -p /var/run/dba
+mkdir -p /var/run/cmux
 
 # -----------------------------------------------------------------------------
 # Step 4/13: Install Docker
@@ -1279,19 +1279,19 @@ tar xf /tmp/openvscode-server.tar.gz -C /app/openvscode-server --strip-component
 rm -f /tmp/openvscode-server.tar.gz
 
 # Create user data directory
-# Note: dba user may not exist yet, but we create the directory structure
+# Note: cmux user may not exist yet, but we create the directory structure
 # and will fix ownership in Step 11
-mkdir -p /home/dba/.openvscode-server/data/User
-mkdir -p /home/dba/.openvscode-server/data/User/profiles/default-profile
-mkdir -p /home/dba/.openvscode-server/data/Machine
-mkdir -p /home/dba/.openvscode-server/extensions
+mkdir -p /home/cmux/.openvscode-server/data/User
+mkdir -p /home/cmux/.openvscode-server/data/User/profiles/default-profile
+mkdir -p /home/cmux/.openvscode-server/data/Machine
+mkdir -p /home/cmux/.openvscode-server/extensions
 
 # Create configure-openvscode script
 cat > /usr/local/bin/configure-openvscode << 'CONFIGURE_EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-home="${HOME:-/home/dba}"
+home="${HOME:-/home/cmux}"
 user_base="${home}/.openvscode-server"
 user_dir="${user_base}/data/User"
 default_profile_dir="${user_base}/data/User/profiles/default-profile"
@@ -1375,22 +1375,22 @@ chmod +x /opt/noVNC/utils/novnc_proxy
 log_info "noVNC installed to /opt/noVNC"
 
 # -----------------------------------------------------------------------------
-# Step 8/13: Create dba user
+# Step 8/13: Create cmux user
 # -----------------------------------------------------------------------------
-log_step "Step 8/13: Creating dba user"
+log_step "Step 8/13: Creating cmux user"
 
 # Create user if doesn't exist
-if ! id "dba" &>/dev/null; then
-    useradd -m -s /usr/bin/zsh dba
-    log_info "Created user 'dba'"
+if ! id "cmux" &>/dev/null; then
+    useradd -m -s /usr/bin/zsh cmux
+    log_info "Created user 'cmux'"
 else
-    log_info "User 'dba' already exists"
+    log_info "User 'cmux' already exists"
     # Update shell to zsh if not already set
-    chsh -s /usr/bin/zsh dba 2>/dev/null || true
+    chsh -s /usr/bin/zsh cmux 2>/dev/null || true
 fi
 
 # Create basic zsh config
-cat > /home/dba/.zshrc << 'ZSHRC_EOF'
+cat > /home/cmux/.zshrc << 'ZSHRC_EOF'
 # Basic zsh configuration
 export TERM=xterm-256color
 export EDITOR=nano
@@ -1411,17 +1411,17 @@ alias ll='ls -la'
 alias la='ls -A'
 alias l='ls -CF'
 ZSHRC_EOF
-chown dba:dba /home/dba/.zshrc
+chown cmux:cmux /home/cmux/.zshrc
 
 # Add to sudoers
-echo "dba ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dba
-chmod 440 /etc/sudoers.d/dba
+echo "cmux ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/cmux
+chmod 440 /etc/sudoers.d/cmux
 
-# Add dba user to docker group
-usermod -aG docker dba
-log_info "User 'dba' added to docker group"
+# Add cmux user to docker group
+usermod -aG docker cmux
+log_info "User 'cmux' added to docker group"
 
-log_info "User 'dba' configured with sudo access"
+log_info "User 'cmux' configured with sudo access"
 
 # -----------------------------------------------------------------------------
 # Step 9/13: Configure VNC
@@ -1429,10 +1429,10 @@ log_info "User 'dba' configured with sudo access"
 log_step "Step 9/13: Configuring VNC"
 
 # Create VNC directory
-mkdir -p /home/dba/.vnc
+mkdir -p /home/cmux/.vnc
 
 # Create VNC startup script for XFCE
-cat > /home/dba/.vnc/xstartup << 'EOF'
+cat > /home/cmux/.vnc/xstartup << 'EOF'
 #!/bin/bash
 unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
@@ -1448,13 +1448,13 @@ fi
 exec startxfce4
 EOF
 
-chmod +x /home/dba/.vnc/xstartup
-chown -R dba:dba /home/dba/.vnc
+chmod +x /home/cmux/.vnc/xstartup
+chown -R cmux:cmux /home/cmux/.vnc
 
 # Create XFCE autostart for Chrome browser (visible in VNC desktop)
 # Flags prevent restore pages dialog and other session-related popups
-mkdir -p /home/dba/.config/autostart
-cat > /home/dba/.config/autostart/chrome-browser.desktop << 'EOF'
+mkdir -p /home/cmux/.config/autostart
+cat > /home/cmux/.config/autostart/chrome-browser.desktop << 'EOF'
 [Desktop Entry]
 Type=Application
 Name=Google Chrome
@@ -1464,11 +1464,11 @@ NoDisplay=false
 X-GNOME-Autostart-enabled=true
 X-GNOME-Autostart-Delay=3
 EOF
-chown -R dba:dba /home/dba/.config
+chown -R cmux:cmux /home/cmux/.config
 
 # Create Chrome preferences to disable session restore
-mkdir -p /home/dba/.config/google-chrome/Default
-cat > /home/dba/.config/google-chrome/Default/Preferences << 'CHROME_PREFS_EOF'
+mkdir -p /home/cmux/.config/google-chrome/Default
+cat > /home/cmux/.config/google-chrome/Default/Preferences << 'CHROME_PREFS_EOF'
 {
   "session": {
     "restore_on_startup": 5
@@ -1481,7 +1481,7 @@ cat > /home/dba/.config/google-chrome/Default/Preferences << 'CHROME_PREFS_EOF'
   }
 }
 CHROME_PREFS_EOF
-chown -R dba:dba /home/dba/.config/google-chrome
+chown -R cmux:cmux /home/cmux/.config/google-chrome
 
 log_info "VNC configured with Chrome autostart (session restore disabled)"
 
@@ -1493,15 +1493,15 @@ log_step "Step 10/13: Creating systemd services"
 # VNC Server service
 cat > /etc/systemd/system/vncserver.service << 'EOF'
 [Unit]
-Description=TigerVNC Server for DBA
+Description=TigerVNC Server for cmux devbox
 After=network.target
 
 [Service]
 Type=simple
-User=dba
-Group=dba
+User=cmux
+Group=cmux
 Environment=DISPLAY=:1
-Environment=HOME=/home/dba
+Environment=HOME=/home/cmux
 
 # Kill any existing VNC server on display :1
 ExecStartPre=-/usr/bin/vncserver -kill :1
@@ -1539,10 +1539,10 @@ Requires=vncserver.service
 
 [Service]
 Type=simple
-User=dba
-Group=dba
+User=cmux
+Group=cmux
 Environment=DISPLAY=:1
-Environment=HOME=/home/dba
+Environment=HOME=/home/cmux
 Environment=XDG_SESSION_TYPE=x11
 
 # Wait for VNC to be ready
@@ -1569,13 +1569,13 @@ Requires=xfce-session.service
 
 [Service]
 Type=simple
-User=dba
-Group=dba
+User=cmux
+Group=cmux
 Environment=DISPLAY=:1
-Environment=HOME=/home/dba
+Environment=HOME=/home/cmux
 
 # Wait for XFCE to be ready
-ExecStartPre=/bin/bash -c 'for i in {1..60}; do pgrep -u dba xfwm4 > /dev/null && break; sleep 0.5; done'
+ExecStartPre=/bin/bash -c 'for i in {1..60}; do pgrep -u cmux xfwm4 > /dev/null && break; sleep 0.5; done'
 ExecStartPre=/bin/sleep 2
 
 ExecStart=/usr/bin/google-chrome \
@@ -1603,7 +1603,7 @@ ExecStart=/usr/bin/google-chrome \
     --safebrowsing-disable-auto-update \
     --password-store=basic \
     --use-mock-keychain \
-    --user-data-dir=/home/dba/.chrome-dba \
+    --user-data-dir=/home/cmux/.chrome-cmux \
     about:blank
 
 Restart=on-failure
@@ -1650,11 +1650,11 @@ After=network.target
 
 [Service]
 Type=simple
-User=dba
-Group=dba
-Environment=HOME=/home/dba
+User=cmux
+Group=cmux
+Environment=HOME=/home/cmux
 Environment=SHELL=/usr/bin/zsh
-WorkingDirectory=/home/dba
+WorkingDirectory=/home/cmux
 
 ExecStartPre=/usr/local/bin/configure-openvscode
 ExecStart=/app/openvscode-server/bin/openvscode-server \
@@ -1663,10 +1663,10 @@ ExecStart=/app/openvscode-server/bin/openvscode-server \
     --server-base-path=/code/ \
     --without-connection-token \
     --disable-workspace-trust \
-    --server-data-dir /home/dba/.openvscode-server/data \
-    --user-data-dir /home/dba/.openvscode-server/data \
-    --extensions-dir /home/dba/.openvscode-server/extensions \
-    /home/dba/workspace
+    --server-data-dir /home/cmux/.openvscode-server/data \
+    --user-data-dir /home/cmux/.openvscode-server/data \
+    --extensions-dir /home/cmux/.openvscode-server/extensions \
+    /home/cmux/workspace
 
 Restart=on-failure
 RestartSec=3
@@ -1677,10 +1677,10 @@ EOF
 
 log_info "Created openvscode.service"
 
-# dba-worker service (browser automation API)
-cat > /etc/systemd/system/dba-worker.service << 'EOF'
+# cmux-worker service (browser automation API)
+cat > /etc/systemd/system/cmux-worker.service << 'EOF'
 [Unit]
-Description=DBA Worker Daemon (Browser Automation API)
+Description=cmux devbox Worker Daemon (Browser Automation API)
 After=chrome-cdp.service
 Requires=chrome-cdp.service
 
@@ -1688,9 +1688,9 @@ Requires=chrome-cdp.service
 Type=simple
 Environment=PORT=39377
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-WorkingDirectory=/home/dba
+WorkingDirectory=/home/cmux
 
-ExecStart=/usr/bin/node /usr/local/bin/dba-worker
+ExecStart=/usr/bin/node /usr/local/bin/cmux-worker
 
 Restart=on-failure
 RestartSec=3
@@ -1699,7 +1699,7 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
-log_info "Created dba-worker.service"
+log_info "Created cmux-worker.service"
 
 # Reload systemd
 systemctl daemon-reload
@@ -1709,8 +1709,8 @@ systemctl daemon-reload
 # -----------------------------------------------------------------------------
 log_step "Step 11/13: Configuring nginx"
 
-cat > /etc/nginx/sites-available/dba << 'EOF'
-# DBA nginx configuration
+cat > /etc/nginx/sites-available/cmux << 'EOF'
+# cmux devbox nginx configuration
 # Routes all services through port 80
 
 upstream code_server {
@@ -1811,7 +1811,7 @@ server {
     # Health check endpoint
     location /health {
         access_log off;
-        return 200 'DBA VM is healthy\n';
+        return 200 'cmux devbox VM is healthy\n';
         add_header Content-Type text/plain;
     }
 
@@ -1823,7 +1823,7 @@ server {
 EOF
 
 # Enable the site
-ln -sf /etc/nginx/sites-available/dba /etc/nginx/sites-enabled/dba
+ln -sf /etc/nginx/sites-available/cmux /etc/nginx/sites-enabled/cmux
 
 # Remove default site
 rm -f /etc/nginx/sites-enabled/default
@@ -1839,19 +1839,19 @@ log_info "nginx configured"
 log_step "Step 12/13: Final setup"
 
 # Create workspace directory
-mkdir -p /home/dba/workspace
-mkdir -p /home/dba/.chrome-dba
-mkdir -p /home/dba/.openvscode-server/extensions
+mkdir -p /home/cmux/workspace
+mkdir -p /home/cmux/.chrome-cmux
+mkdir -p /home/cmux/.openvscode-server/extensions
 # Fix ownership of entire home directory (some files may have been created as root)
-chown -R dba:dba /home/dba
+chown -R cmux:cmux /home/cmux
 
 # Run configure-openvscode to set up initial settings (now that ownership is correct)
-sudo -u dba HOME=/home/dba /usr/local/bin/configure-openvscode
-log_info "Configured OpenVSCode settings for dba user"
+sudo -u cmux HOME=/home/cmux /usr/local/bin/configure-openvscode
+log_info "Configured OpenVSCode settings for cmux user"
 
 # Create a welcome file in workspace
-cat > /home/dba/workspace/README.md << 'EOF'
-# DBA Workspace
+cat > /home/cmux/workspace/README.md << 'EOF'
+# cmux devbox Workspace
 
 This is your development workspace in the Morph Cloud VM.
 
@@ -1893,7 +1893,7 @@ docker compose up -d
 | nginx | 80 |
 
 EOF
-chown dba:dba /home/dba/workspace/README.md
+chown cmux:cmux /home/cmux/workspace/README.md
 
 # Enable services
 systemctl enable vncserver
@@ -1902,7 +1902,7 @@ systemctl enable chrome-cdp
 systemctl enable novnc
 systemctl enable openvscode
 systemctl enable nginx
-systemctl enable dba-worker
+systemctl enable cmux-worker
 
 log_info "Services enabled"
 
@@ -1929,7 +1929,7 @@ log_info "Starting XFCE session..."
 systemctl start xfce-session
 # Wait for XFCE window manager to start
 for i in {1..60}; do
-    pgrep -u dba xfwm4 > /dev/null && break
+    pgrep -u cmux xfwm4 > /dev/null && break
     sleep 1
 done
 sleep 3
@@ -1952,9 +1952,9 @@ for i in {1..30}; do
 done
 log_info "Started chrome-cdp"
 
-log_info "Starting dba-worker..."
-systemctl start dba-worker
-log_info "Started dba-worker"
+log_info "Starting cmux-worker..."
+systemctl start cmux-worker
+log_info "Started cmux-worker"
 
 # Final stabilization wait
 log_info "Waiting for services to stabilize..."
@@ -1966,14 +1966,14 @@ log_info "Cleaning Chrome session state..."
 pkill -f "google-chrome.*--start-maximized" || true
 sleep 2
 # Remove session files that cause restore prompts
-rm -f /home/dba/.config/google-chrome/Default/Current\ Session 2>/dev/null || true
-rm -f /home/dba/.config/google-chrome/Default/Current\ Tabs 2>/dev/null || true
-rm -f /home/dba/.config/google-chrome/Default/Last\ Session 2>/dev/null || true
-rm -f /home/dba/.config/google-chrome/Default/Last\ Tabs 2>/dev/null || true
-rm -rf /home/dba/.config/google-chrome/Default/Sessions 2>/dev/null || true
+rm -f /home/cmux/.config/google-chrome/Default/Current\ Session 2>/dev/null || true
+rm -f /home/cmux/.config/google-chrome/Default/Current\ Tabs 2>/dev/null || true
+rm -f /home/cmux/.config/google-chrome/Default/Last\ Session 2>/dev/null || true
+rm -f /home/cmux/.config/google-chrome/Default/Last\ Tabs 2>/dev/null || true
+rm -rf /home/cmux/.config/google-chrome/Default/Sessions 2>/dev/null || true
 # Ensure exit_type is Normal
-if [ -f /home/dba/.config/google-chrome/Default/Preferences ]; then
-    sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/g' /home/dba/.config/google-chrome/Default/Preferences 2>/dev/null || true
+if [ -f /home/cmux/.config/google-chrome/Default/Preferences ]; then
+    sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/g' /home/cmux/.config/google-chrome/Default/Preferences 2>/dev/null || true
 fi
 log_info "Chrome session state cleaned"
 
@@ -2017,7 +2017,7 @@ check_service "novnc"
 check_service "openvscode"
 check_service "nginx"
 check_service "docker"
-check_service "dba-worker"
+check_service "cmux-worker"
 
 echo ""
 
@@ -2027,7 +2027,7 @@ check_port 5901 "VNC"
 check_port 6080 "noVNC"
 check_port 9222 "Chrome CDP"
 check_port 10080 "openvscode"
-check_port 39377 "dba-worker"
+check_port 39377 "cmux-worker"
 
 echo ""
 
@@ -2056,9 +2056,9 @@ fi
 # -----------------------------------------------------------------------------
 # Create marker file
 # -----------------------------------------------------------------------------
-touch /dba_base_snapshot_valid
-echo "DBA_SNAPSHOT_VERSION=1.0" > /dba_snapshot_info
-echo "DBA_SNAPSHOT_DATE=$(date -Iseconds)" >> /dba_snapshot_info
+touch /cmux_base_snapshot_valid
+echo "CMUX_SNAPSHOT_VERSION=1.0" > /cmux_snapshot_info
+echo "CMUX_SNAPSHOT_DATE=$(date -Iseconds)" >> /cmux_snapshot_info
 
 echo ""
 echo "=============================================="
@@ -2068,9 +2068,9 @@ if [ $FAILED -eq 0 ]; then
     echo ""
     echo "All services are running. You can now:"
     echo "  1. Save this VM as a snapshot"
-    echo "  2. Use this snapshot as the base for DBA workspaces"
+    echo "  2. Use this snapshot as the base for cmux devbox workspaces"
     echo ""
-    echo "Marker file created: /dba_base_snapshot_valid"
+    echo "Marker file created: /cmux_base_snapshot_valid"
 else
     echo -e "${RED}       SETUP COMPLETED WITH ERRORS          ${NC}"
     echo "=============================================="

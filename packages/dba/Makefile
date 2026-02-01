@@ -1,4 +1,4 @@
-# Makefile for DBA CLI
+# Makefile for cmux devbox CLI
 
 VERSION ?= 0.1.0
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -11,10 +11,10 @@ LDFLAGS := -X main.Version=$(VERSION) \
 .PHONY: build clean test install fmt lint run deps
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o bin/dba ./cmd/dba
+	go build -ldflags "$(LDFLAGS)" -o bin/cmux-devbox ./cmd/dba
 
 install: build
-	cp bin/dba /usr/local/bin/dba
+	cp bin/cmux-devbox /usr/local/bin/cmux-devbox
 
 clean:
 	rm -rf bin/
@@ -33,11 +33,11 @@ deps:
 	go mod tidy
 
 run: build
-	./bin/dba
+	./bin/cmux-devbox
 
 # Build for all platforms
 build-all:
-	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/dba-darwin-amd64 ./cmd/dba
-	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/dba-darwin-arm64 ./cmd/dba
-	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/dba-linux-amd64 ./cmd/dba
-	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/dba-linux-arm64 ./cmd/dba
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-devbox-darwin-amd64 ./cmd/dba
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-devbox-darwin-arm64 ./cmd/dba
+	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-devbox-linux-amd64 ./cmd/dba
+	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-devbox-linux-arm64 ./cmd/dba

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dba-cli/dba/internal/auth"
-	"github.com/dba-cli/dba/internal/state"
-	"github.com/dba-cli/dba/internal/vm"
+	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/state"
+	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +18,7 @@ var resumeCmd = &cobra.Command{
 	Long: `Resume a paused VM by its ID.
 
 Examples:
-  dba resume dba_abc123`,
+  cmux resume cmux_abc123`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -66,7 +66,7 @@ Examples:
 		}
 
 		// Build authenticated URLs
-		codeAuthURL, err := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/dba/workspace", token)
+		codeAuthURL, err := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/cmux/workspace", token)
 		if err != nil {
 			return fmt.Errorf("failed to build VS Code URL: %w", err)
 		}

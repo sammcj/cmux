@@ -1025,7 +1025,7 @@ morphRouter.openapi(
     tags: ["Morph"],
     summary: "Get CLI credentials for authenticated user",
     description:
-      "Returns the Morph API key and default snapshot ID for CLI tools (dba, cmux). " +
+      "Returns the Morph API key and default snapshot ID for CLI tools (cmux devbox, cmux sandbox). " +
       "Requires authentication via Stack Auth Bearer token.",
     responses: {
       200: {

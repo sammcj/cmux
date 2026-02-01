@@ -1,11 +1,11 @@
-// cmd/dba/main.go
+// cmd/cmux-devbox/main.go
 package main
 
 import (
 	"fmt"
 	"os"
 
-	"github.com/dba-cli/dba/internal/cli"
+	"github.com/cmux-cli/cmux-devbox/internal/cli"
 )
 
 // These are set by the build process
@@ -20,11 +20,11 @@ func main() {
 	cli.SetVersionInfo(Version, Commit, BuildTime)
 	cli.SetBuildMode(Mode)
 
-	// Set DBA_DEV based on build mode if not already set
+	// Set CMUX_DEVBOX_DEV based on build mode if not already set
 	// This ensures auth package uses correct config
-	if os.Getenv("DBA_DEV") == "" && os.Getenv("DBA_PROD") == "" {
+	if os.Getenv("CMUX_DEVBOX_DEV") == "" && os.Getenv("CMUX_DEVBOX_PROD") == "" {
 		if Mode == "dev" {
-			os.Setenv("DBA_DEV", "1")
+			os.Setenv("CMUX_DEVBOX_DEV", "1")
 		}
 	}
 

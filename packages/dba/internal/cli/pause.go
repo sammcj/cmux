@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dba-cli/dba/internal/auth"
-	"github.com/dba-cli/dba/internal/vm"
+	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +17,7 @@ var pauseCmd = &cobra.Command{
 	Long: `Pause a VM by its ID. The VM state is preserved and can be resumed.
 
 Examples:
-  dba pause dba_abc123`,
+  cmux pause cmux_abc123`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -43,7 +43,7 @@ Examples:
 		}
 
 		fmt.Println("✓ VM paused")
-		fmt.Printf("  Resume with: dba resume %s\n", instanceID)
+		fmt.Printf("  Resume with: cmux resume %s\n", instanceID)
 		return nil
 	},
 }

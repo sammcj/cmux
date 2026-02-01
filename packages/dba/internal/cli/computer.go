@@ -12,8 +12,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/dba-cli/dba/internal/auth"
-	"github.com/dba-cli/dba/internal/vm"
+	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
 
@@ -25,11 +25,11 @@ var computerCmd = &cobra.Command{
 These commands allow you to automate the Chrome browser running in the VNC desktop.
 
 Examples:
-  dba computer snapshot dba_abc123              # Get accessibility tree
-  dba computer open dba_abc123 https://example.com  # Navigate to URL
-  dba computer click dba_abc123 @e1             # Click element by ref
-  dba computer type dba_abc123 "hello world"   # Type text
-  dba computer screenshot dba_abc123           # Take screenshot`,
+  cmux computer snapshot cmux_abc123              # Get accessibility tree
+  cmux computer open cmux_abc123 https://example.com  # Navigate to URL
+  cmux computer click cmux_abc123 @e1             # Click element by ref
+  cmux computer type cmux_abc123 "hello world"   # Type text
+  cmux computer screenshot cmux_abc123           # Take screenshot`,
 }
 
 // getWorkerClient returns the worker URL and JWT for an instance
@@ -136,7 +136,7 @@ var computerSnapshotCmd = &cobra.Command{
 Each element is assigned a ref (e.g., @e1, @e2) that can be used with click, type, etc.
 
 Example:
-  dba computer snapshot dba_abc123`,
+  cmux computer snapshot cmux_abc123`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -172,7 +172,7 @@ var computerOpenCmd = &cobra.Command{
 	Long: `Navigate the browser to the specified URL.
 
 Example:
-  dba computer open dba_abc123 https://google.com`,
+  cmux computer open cmux_abc123 https://google.com`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -197,8 +197,8 @@ var computerClickCmd = &cobra.Command{
 	Long: `Click an element by selector (ref like @e1 or CSS selector).
 
 Examples:
-  dba computer click dba_abc123 @e1          # Click by ref
-  dba computer click dba_abc123 "#submit"    # Click by CSS selector`,
+  cmux computer click cmux_abc123 @e1          # Click by ref
+  cmux computer click cmux_abc123 "#submit"    # Click by CSS selector`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -223,7 +223,7 @@ var computerTypeCmd = &cobra.Command{
 	Long: `Type text into the currently focused element.
 
 Example:
-  dba computer type dba_abc123 "hello world"`,
+  cmux computer type cmux_abc123 "hello world"`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -248,8 +248,8 @@ var computerFillCmd = &cobra.Command{
 	Long: `Clear an input field and fill it with the specified value.
 
 Examples:
-  dba computer fill dba_abc123 @e2 "user@example.com"
-  dba computer fill dba_abc123 "#email" "user@example.com"`,
+  cmux computer fill cmux_abc123 @e2 "user@example.com"
+  cmux computer fill cmux_abc123 "#email" "user@example.com"`,
 	Args: cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -277,8 +277,8 @@ var computerPressCmd = &cobra.Command{
 Common keys: Enter, Tab, Escape, Backspace, Delete, Space, ArrowUp, ArrowDown, ArrowLeft, ArrowRight
 
 Example:
-  dba computer press dba_abc123 Enter
-  dba computer press dba_abc123 Tab`,
+  cmux computer press cmux_abc123 Enter
+  cmux computer press cmux_abc123 Tab`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -305,8 +305,8 @@ var computerScrollCmd = &cobra.Command{
 Directions: up, down
 
 Example:
-  dba computer scroll dba_abc123 down
-  dba computer scroll dba_abc123 up`,
+  cmux computer scroll cmux_abc123 down
+  cmux computer scroll cmux_abc123 up`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -333,8 +333,8 @@ var computerScreenshotCmd = &cobra.Command{
 If output file is not specified, outputs base64-encoded PNG to stdout.
 
 Examples:
-  dba computer screenshot dba_abc123
-  dba computer screenshot dba_abc123 screenshot.png`,
+  cmux computer screenshot cmux_abc123
+  cmux computer screenshot cmux_abc123 screenshot.png`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -499,8 +499,8 @@ var computerWaitCmd = &cobra.Command{
 	Long: `Wait for an element to be visible.
 
 Example:
-  dba computer wait dba_abc123 "#content"
-  dba computer wait dba_abc123 "@e5"`,
+  cmux computer wait cmux_abc123 "#content"
+  cmux computer wait cmux_abc123 "@e5"`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		timeout, _ := cmd.Flags().GetInt("timeout")
@@ -527,8 +527,8 @@ var computerHoverCmd = &cobra.Command{
 	Long: `Hover the mouse over an element.
 
 Example:
-  dba computer hover dba_abc123 @e5
-  dba computer hover dba_abc123 ".dropdown"`,
+  cmux computer hover cmux_abc123 @e5
+  cmux computer hover cmux_abc123 ".dropdown"`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

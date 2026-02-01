@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dba-cli/dba/internal/auth"
-	"github.com/dba-cli/dba/internal/vm"
+	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
 
@@ -16,10 +16,10 @@ var deleteCmd = &cobra.Command{
 	Short: "Delete a VM",
 	Long: `Delete a VM by its ID.
 
-Use 'dba pause <id>' to pause instead (preserves state for resume).
+Use 'cmux pause <id>' to pause instead (preserves state for resume).
 
 Examples:
-  dba delete dba_abc123`,
+  cmux delete cmux_abc123`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

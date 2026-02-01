@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dba-cli/dba/internal/auth"
-	"github.com/dba-cli/dba/internal/vm"
+	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -27,8 +27,8 @@ var ptyCmd = &cobra.Command{
 This provides a tmux-like terminal experience with persistent sessions.
 
 Examples:
-  dba pty dba_abc123              # Open new terminal session
-  dba pty dba_abc123 --session=pty_xyz  # Attach to existing session`,
+  cmux pty cmux_abc123              # Open new terminal session
+  cmux pty cmux_abc123 --session=pty_xyz  # Attach to existing session`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -79,7 +79,7 @@ var ptyListCmd = &cobra.Command{
 	Long: `List all active PTY sessions in a VM.
 
 Examples:
-  dba pty-list dba_abc123`,
+  cmux pty-list cmux_abc123`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -136,7 +136,7 @@ func buildPtyWebSocketURL(workerURL, sessionID, token string) (string, error) {
 	if sessionID == "" {
 		sessionID = "new"
 	}
-	parsed.Path = "/_dba/pty/ws/" + sessionID
+	parsed.Path = "/_cmux/pty/ws/" + sessionID
 
 	// Add query parameters
 	query := parsed.Query()

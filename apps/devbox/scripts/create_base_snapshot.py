@@ -8,14 +8,14 @@
 """
 scripts/create_base_snapshot.py
 
-Creates the DBA base snapshot in Morph Cloud.
+Creates the CMUX base snapshot in Morph Cloud.
 
 This script:
 1. Creates a VM from the morphvm-minimal image
 2. Uploads and runs the setup script
 3. Verifies all services are working
 4. Saves the VM as a reusable snapshot
-5. Auto-updates DEFAULT_DBA_SNAPSHOT_ID in packages/convex/convex/dba_http.ts
+5. Auto-updates DEFAULT_CMUX_SNAPSHOT_ID in packages/convex/convex/dba_http.ts
 6. Outputs the snapshot ID for configuration
 
 Requirements:
@@ -30,7 +30,7 @@ Usage:
 Options:
     --dry-run       Show what would be done without executing
     --skip-verify   Skip service verification after setup
-    --digest NAME   Custom digest name for the snapshot (default: dba-base-v1)
+    --digest NAME   Custom digest name for the snapshot (default: cmux-base-v1)
     --vcpus N       Number of vCPUs (default: 2)
     --memory MB     Memory in MB (default: 4096)
     --disk GB       Disk size in GB (default: 32)
@@ -45,8 +45,8 @@ import re
 from pathlib import Path
 from datetime import datetime
 
-# Path to dba_http.ts where DEFAULT_DBA_SNAPSHOT_ID is defined
-DBA_HTTP_PATH = Path(__file__).resolve().parent.parent.parent.parent / "packages/convex/convex/dba_http.ts"
+# Path to dba_http.ts where DEFAULT_CMUX_SNAPSHOT_ID is defined
+CMUX_HTTP_PATH = Path(__file__).resolve().parent.parent.parent.parent / "packages/convex/convex/dba_http.ts"
 
 # Colors for terminal output
 class Colors:
@@ -214,7 +214,7 @@ def run_setup_script(instance, script_path):
 
 
 def verify_services(instance):
-    """Verify all DBA services are running correctly."""
+    """Verify all CMUX services are running correctly."""
     log_info("Verifying services...")
 
     services = {
@@ -298,41 +298,41 @@ def find_existing_snapshot(client, digest):
 
 
 def update_dba_http_snapshot_id(snapshot_id):
-    """Update the DEFAULT_DBA_SNAPSHOT_ID in dba_http.ts."""
-    if not DBA_HTTP_PATH.exists():
-        log_warn(f"dba_http.ts not found at {DBA_HTTP_PATH}, skipping auto-update")
+    """Update the DEFAULT_CMUX_SNAPSHOT_ID in dba_http.ts."""
+    if not CMUX_HTTP_PATH.exists():
+        log_warn(f"dba_http.ts not found at {CMUX_HTTP_PATH}, skipping auto-update")
         return False
 
-    content = DBA_HTTP_PATH.read_text()
+    content = CMUX_HTTP_PATH.read_text()
 
-    # Pattern to match: const DEFAULT_DBA_SNAPSHOT_ID = "snapshot_xxx";
-    pattern = r'const DEFAULT_DBA_SNAPSHOT_ID = "snapshot_[^"]+";'
-    replacement = f'const DEFAULT_DBA_SNAPSHOT_ID = "{snapshot_id}";'
+    # Pattern to match: const DEFAULT_CMUX_SNAPSHOT_ID = "snapshot_xxx";
+    pattern = r'const DEFAULT_CMUX_SNAPSHOT_ID = "snapshot_[^"]+";'
+    replacement = f'const DEFAULT_CMUX_SNAPSHOT_ID = "{snapshot_id}";'
 
     new_content, count = re.subn(pattern, replacement, content)
 
     if count == 0:
-        log_warn("Could not find DEFAULT_DBA_SNAPSHOT_ID in dba_http.ts")
+        log_warn("Could not find DEFAULT_CMUX_SNAPSHOT_ID in dba_http.ts")
         return False
 
-    DBA_HTTP_PATH.write_text(new_content)
-    log_info(f"Updated DEFAULT_DBA_SNAPSHOT_ID in {DBA_HTTP_PATH}")
+    CMUX_HTTP_PATH.write_text(new_content)
+    log_info(f"Updated DEFAULT_CMUX_SNAPSHOT_ID in {CMUX_HTTP_PATH}")
     return True
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Create DBA base snapshot in Morph Cloud')
+    parser = argparse.ArgumentParser(description='Create CMUX base snapshot in Morph Cloud')
     parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
     parser.add_argument('--skip-verify', action='store_true', help='Skip service verification')
     parser.add_argument('--rebuild', action='store_true', help='Force rebuild from scratch (ignore existing snapshot)')
-    parser.add_argument('--digest', default='dba-base-v1', help='Snapshot digest name')
+    parser.add_argument('--digest', default='cmux-base-v1', help='Snapshot digest name')
     parser.add_argument('--vcpus', type=int, default=4, help='Number of vCPUs')
     parser.add_argument('--memory', type=int, default=4096, help='Memory in MB')
     parser.add_argument('--disk', type=int, default=32, help='Disk size in GB')
     args = parser.parse_args()
 
     print("=" * 60)
-    print("       DBA Base Snapshot Creator")
+    print("       CMUX Base Snapshot Creator")
     print("=" * 60)
     print(f"\nStarted at: {datetime.now().isoformat()}")
     print(f"Configuration:")
@@ -400,7 +400,7 @@ def main():
         if use_existing:
             log_info("Skipping setup script (using existing snapshot)")
             log_info("Just restarting services to ensure they're running...")
-            instance.exec("systemctl restart vncserver xfce-session chrome-cdp novnc openvscode nginx dba-worker 2>/dev/null || true")
+            instance.exec("systemctl restart vncserver xfce-session chrome-cdp novnc openvscode nginx cmux-worker 2>/dev/null || true")
         else:
             script_path = Path(__file__).parent / 'setup_base_snapshot.sh'
             if not run_setup_script(instance, script_path):
@@ -431,7 +431,7 @@ def main():
         # Update dba_http.ts with the new snapshot ID
         log_info("Updating default snapshot ID in dba_http.ts...")
         if update_dba_http_snapshot_id(base_snapshot.id):
-            log_info(f"Successfully updated DEFAULT_DBA_SNAPSHOT_ID to {base_snapshot.id}")
+            log_info(f"Successfully updated DEFAULT_CMUX_SNAPSHOT_ID to {base_snapshot.id}")
         else:
             log_warn("Failed to update dba_http.ts - manual update may be required")
 
@@ -456,7 +456,7 @@ def main():
         print(f'       base_snapshot_id: "{base_snapshot.id}"')
         print()
         print("  2. Or set environment variable:")
-        print(f'     export DBA_BASE_SNAPSHOT="{base_snapshot.id}"')
+        print(f'     export CMUX_BASE_SNAPSHOT="{base_snapshot.id}"')
         print()
         print("To test the snapshot:")
         print(f"  python -c \"")
@@ -471,7 +471,7 @@ def main():
         # Save snapshot info to file
         info_file = Path(__file__).parent / 'SNAPSHOT_INFO.txt'
         with open(info_file, 'w') as f:
-            f.write("DBA Base Snapshot Information\n")
+            f.write("CMUX Base Snapshot Information\n")
             f.write("=" * 40 + "\n")
             f.write(f"Created: {datetime.now().isoformat()}\n")
             f.write(f"Snapshot ID: {base_snapshot.id}\n")
