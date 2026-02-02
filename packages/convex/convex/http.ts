@@ -33,6 +33,23 @@ import {
   anthropicEventLogging,
 } from "./anthropic_http";
 import { serveMedia } from "./media_proxy_http";
+import {
+  createInstance as devboxCreateInstance,
+  listInstances as devboxListInstances,
+  instanceActionRouter as devboxInstanceActionRouter,
+  instanceGetRouter as devboxInstanceGetRouter,
+} from "./devbox_http";
+import {
+  createInstance as cmuxCreateInstance,
+  listInstances as cmuxListInstances,
+  listSnapshots as cmuxListSnapshots,
+  getSnapshot as cmuxGetSnapshot,
+  getConfig as cmuxGetConfig,
+  getMe as cmuxGetMe,
+  instanceActionRouter as cmuxInstanceActionRouter,
+  instanceGetRouter as cmuxInstanceGetRouter,
+  instanceDeleteRouter as cmuxInstanceDeleteRouter,
+} from "./cmux_http";
 
 const http = httpRouter();
 
@@ -187,6 +204,94 @@ http.route({
   pathPrefix: "/api/media/",
   method: "GET",
   handler: serveMedia,
+});
+
+// =============================================================================
+// v1/devbox API - Morph instance management with user authentication
+// =============================================================================
+
+http.route({
+  path: "/api/v1/devbox/instances",
+  method: "POST",
+  handler: devboxCreateInstance,
+});
+
+http.route({
+  path: "/api/v1/devbox/instances",
+  method: "GET",
+  handler: devboxListInstances,
+});
+
+// Instance-specific routes use pathPrefix to capture the instance ID
+http.route({
+  pathPrefix: "/api/v1/devbox/instances/",
+  method: "GET",
+  handler: devboxInstanceGetRouter,
+});
+
+http.route({
+  pathPrefix: "/api/v1/devbox/instances/",
+  method: "POST",
+  handler: devboxInstanceActionRouter,
+});
+
+// =============================================================================
+// v1/cmux API - Morph instance management for cmux devbox CLI
+// =============================================================================
+
+http.route({
+  path: "/api/v1/cmux/instances",
+  method: "POST",
+  handler: cmuxCreateInstance,
+});
+
+http.route({
+  path: "/api/v1/cmux/instances",
+  method: "GET",
+  handler: cmuxListInstances,
+});
+
+http.route({
+  path: "/api/v1/cmux/snapshots",
+  method: "GET",
+  handler: cmuxListSnapshots,
+});
+
+http.route({
+  pathPrefix: "/api/v1/cmux/snapshots/",
+  method: "GET",
+  handler: cmuxGetSnapshot,
+});
+
+http.route({
+  path: "/api/v1/cmux/config",
+  method: "GET",
+  handler: cmuxGetConfig,
+});
+
+http.route({
+  path: "/api/v1/cmux/me",
+  method: "GET",
+  handler: cmuxGetMe,
+});
+
+// Instance-specific routes use pathPrefix to capture the instance ID
+http.route({
+  pathPrefix: "/api/v1/cmux/instances/",
+  method: "GET",
+  handler: cmuxInstanceGetRouter,
+});
+
+http.route({
+  pathPrefix: "/api/v1/cmux/instances/",
+  method: "POST",
+  handler: cmuxInstanceActionRouter,
+});
+
+http.route({
+  pathPrefix: "/api/v1/cmux/instances/",
+  method: "DELETE",
+  handler: cmuxInstanceDeleteRouter,
 });
 
 export default http;
