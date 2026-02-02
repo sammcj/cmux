@@ -25,7 +25,9 @@
   },
   "files": [
     "bin",
-    "lib"
+    "lib",
+    "AGENTS.md",
+    "llms.txt"
   ],
   "scripts": {
     "postinstall": "node lib/postinstall.js"

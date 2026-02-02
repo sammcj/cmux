@@ -17,7 +17,7 @@ if (isInteractive) {
 │   ✨ cmux installed successfully!                       │
 │                                                         │
 │   Get started:                                          │
-│     $ cmux auth login     # Login to your account       │
+│     $ cmux login          # Login to your account       │
 │     $ cmux start          # Create a cloud VM           │
 │     $ cmux --help         # See all commands            │
 │                                                         │

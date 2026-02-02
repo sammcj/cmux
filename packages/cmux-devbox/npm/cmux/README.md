@@ -12,7 +12,7 @@ npm install -g cmux
 
 ```bash
 # Login
-cmux auth login
+cmux login
 
 # Create a VM
 cmux start                     # Returns ID like cmux_abc123
@@ -37,7 +37,7 @@ cmux ls
 
 | Command | Description |
 |---------|-------------|
-| `cmux auth login` | Login via browser |
+| `cmux login` | Login via browser |
 | `cmux start [path]` | Create new VM, optionally sync directory |
 | `cmux ls` | List all VMs |
 | `cmux code <id>` | Open VS Code in browser |
