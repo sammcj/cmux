@@ -1,4 +1,26 @@
 #!/bin/bash
+# VNC xstartup script for cmux E2B sandbox
+# Launches XFCE desktop with Chrome browser open
+
 unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
-exec startxfce4
+
+# Start XFCE desktop in background
+startxfce4 &
+
+# Wait for desktop to initialize
+sleep 3
+
+# Launch Chrome browser (visible in VNC, separate from headless CDP instance)
+google-chrome \
+    --no-sandbox \
+    --disable-gpu \
+    --no-first-run \
+    --no-default-browser-check \
+    --disable-default-apps \
+    --start-maximized \
+    --new-window \
+    "https://google.com" &
+
+# Keep the script running
+wait
