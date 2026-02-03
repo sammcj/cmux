@@ -8,10 +8,9 @@ import (
 )
 
 var stopCmd = &cobra.Command{
-	Use:     "stop <id>",
-	Aliases: []string{"kill"},
-	Short:   "Stop a sandbox",
-	Args:    cobra.ExactArgs(1),
+	Use:   "stop <id>",
+	Short: "Stop a sandbox",
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		teamSlug, err := getTeamSlug()
 		if err != nil {
@@ -23,6 +22,26 @@ var stopCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("Stopped: %s\n", args[0])
+		return nil
+	},
+}
+
+var deleteCmd = &cobra.Command{
+	Use:     "delete <id>",
+	Aliases: []string{"rm", "kill"},
+	Short:   "Delete a sandbox",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		teamSlug, err := getTeamSlug()
+		if err != nil {
+			return fmt.Errorf("failed to get team: %w", err)
+		}
+
+		client := api.NewClient()
+		if err := client.StopInstance(teamSlug, args[0]); err != nil {
+			return err
+		}
+		fmt.Printf("Deleted: %s\n", args[0])
 		return nil
 	},
 }

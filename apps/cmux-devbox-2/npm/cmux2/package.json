@@ -1,0 +1,43 @@
+{
+  "name": "cmux2",
+  "version": "0.1.0",
+  "description": "Cloud sandboxes for development - spawn isolated dev environments instantly (E2B)",
+  "keywords": [
+    "cli",
+    "devbox",
+    "cloud",
+    "sandbox",
+    "development",
+    "e2b",
+    "vscode",
+    "vnc"
+  ],
+  "homepage": "https://cmux.sh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/manaflow-ai/cmux.git",
+    "directory": "apps/cmux-devbox-2"
+  },
+  "license": "MIT",
+  "author": "Manaflow",
+  "bin": {
+    "cmux2": "bin/cmux2"
+  },
+  "files": [
+    "bin",
+    "lib"
+  ],
+  "scripts": {
+    "postinstall": "node lib/postinstall.js"
+  },
+  "optionalDependencies": {
+    "cmux2-darwin-arm64": "0.1.0",
+    "cmux2-darwin-x64": "0.1.0",
+    "cmux2-linux-arm64": "0.1.0",
+    "cmux2-linux-x64": "0.1.0",
+    "cmux2-win32-x64": "0.1.0"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

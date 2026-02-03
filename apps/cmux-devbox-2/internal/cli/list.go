@@ -47,46 +47,6 @@ var listCmd = &cobra.Command{
 	},
 }
 
-var getCmd = &cobra.Command{
-	Use:   "get <id>",
-	Short: "Get sandbox details",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		teamSlug, err := getTeamSlug()
-		if err != nil {
-			return fmt.Errorf("failed to get team: %w", err)
-		}
-
-		client := api.NewClient()
-		inst, err := client.GetInstance(teamSlug, args[0])
-		if err != nil {
-			return err
-		}
-
-		if flagJSON {
-			data, _ := json.MarshalIndent(inst, "", "  ")
-			fmt.Println(string(data))
-			return nil
-		}
-
-		fmt.Printf("ID:       %s\n", inst.DevboxID)
-		fmt.Printf("Status:   %s\n", inst.Status)
-		if inst.Name != "" {
-			fmt.Printf("Name:     %s\n", inst.Name)
-		}
-		if inst.Template != "" {
-			fmt.Printf("Template: %s\n", inst.Template)
-		}
-		if inst.VSCodeURL != "" {
-			fmt.Printf("VSCode:   %s\n", inst.VSCodeURL)
-		}
-		if inst.VNCURL != "" {
-			fmt.Printf("VNC:      %s\n", inst.VNCURL)
-		}
-		return nil
-	},
-}
-
 var templatesCmd = &cobra.Command{
 	Use:   "templates",
 	Short: "List available E2B templates",
