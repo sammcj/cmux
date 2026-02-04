@@ -12,9 +12,10 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "cmux",
-	Short: "cmux - Cloud sandboxes for development",
-	Long: `cmux manages cloud sandboxes for development.
+	Use:     "cmux",
+	Short:   "cmux - Cloud sandboxes for development",
+	Version: "dev", // Set dynamically in init
+	Long:    `cmux manages cloud sandboxes for development.
 
 Quick start:
   cmux login                      # Authenticate (or: cmux auth login)
@@ -94,6 +95,7 @@ func SetVersionInfo(version, commit, buildTime string) {
 	versionStr = version
 	commitStr = commit
 	buildTimeStr = buildTime
+	rootCmd.Version = version
 }
 
 func SetBuildMode(mode string) {
