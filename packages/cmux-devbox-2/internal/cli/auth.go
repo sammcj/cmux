@@ -29,9 +29,8 @@ var logoutCmd = &cobra.Command{
 }
 
 var whoamiCmd = &cobra.Command{
-	Use:     "whoami",
-	Aliases: []string{"status"},
-	Short:   "Show current user and team",
+	Use:   "whoami",
+	Short: "Show current user and team",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !auth.IsLoggedIn() {
 			fmt.Println("Not logged in. Run 'cmux login' to authenticate.")
