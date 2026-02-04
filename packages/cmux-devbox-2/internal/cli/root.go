@@ -12,10 +12,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:     "cmux",
-	Short:   "cmux - Cloud sandboxes for development",
-	Version: "dev", // Set dynamically in init
-	Long:    `cmux manages cloud sandboxes for development.
+	Use:   "cmux",
+	Short: "cmux - Cloud sandboxes for development",
+	Long:  `cmux manages cloud sandboxes for development.
 
 Quick start:
   cmux login                      # Authenticate (or: cmux auth login)
