@@ -204,24 +204,154 @@ func countFiles(dir string) int {
 	return count
 }
 
+// defaultExcludes contains patterns that should never be synced.
+// These fall into categories:
+// 1. Dependencies (agents can run install commands)
+// 2. Build artifacts (agents can rebuild)
+// 3. Caches (regenerated automatically)
+// 4. Secrets/credentials (security)
+// 5. OS/IDE files (not needed)
+// 6. Logs/temp files (not needed)
+var defaultExcludes = []string{
+	// === Version control ===
+	".git",
+	".hg",
+	".svn",
+
+	// === Package manager dependencies (agents run install) ===
+	"node_modules",
+	".pnpm-store",
+	"vendor",           // Go, PHP, Ruby
+	"target",           // Rust, Java/Maven
+	".gradle",          // Gradle
+	"Pods",             // iOS CocoaPods
+	".dart_tool",       // Dart/Flutter
+	".pub-cache",       // Dart/Flutter
+	".bundle",          // Ruby Bundler
+	"elm-stuff",        // Elm
+	"bower_components", // Bower (legacy)
+	"jspm_packages",    // JSPM (legacy)
+
+	// === Virtual environments (agents can create) ===
+	".venv",
+	"venv",
+	"env",
+	"virtualenv",
+	".virtualenv",
+	".conda",
+	"conda-env",
+	".pixi",
+
+	// === Build artifacts (agents can rebuild) ===
+	"dist",
+	"build",
+	"out",
+	".next",       // Next.js
+	".nuxt",       // Nuxt.js
+	".output",     // Nuxt 3
+	".svelte-kit", // SvelteKit
+	".vercel",     // Vercel
+	".netlify",    // Netlify
+	"storybook-static",
+	"coverage",
+	".nyc_output",
+
+	// === Caches (regenerated automatically) ===
+	".cache",
+	".turbo",        // Turborepo
+	".parcel-cache", // Parcel
+	".webpack",      // Webpack
+	".rollup.cache", // Rollup
+	".eslintcache",
+	".stylelintcache",
+	".prettiercache",
+	"__pycache__",
+	".mypy_cache",
+	".pytest_cache",
+	".ruff_cache",
+	".tox",
+	".nox",
+	".hypothesis",
+	"*.egg-info",
+	".eggs",
+
+	// === Secrets and credentials (security) ===
+	".env",
+	".env.local",
+	".env.development",
+	".env.production",
+	".env.test",
+	".envrc",
+	".npmrc",     // May contain auth tokens
+	".yarnrc",    // May contain auth tokens
+	".yarnrc.yml",
+	"auth.json",
+	".netrc",
+	"credentials.json",
+	"secrets.json",
+	"*.pem",
+	"*.key",
+	"*.p12",
+	"*.pfx",
+	".aws",
+	".docker/config.json",
+
+	// === OS and IDE files ===
+	".DS_Store",
+	"Thumbs.db",
+	"desktop.ini",
+	".Spotlight-V100",
+	".Trashes",
+	".idea",        // JetBrains
+	"*.swp",        // Vim
+	"*.swo",        // Vim
+	"*~",           // Backup files
+	".project",     // Eclipse
+	".classpath",   // Eclipse
+	".settings",    // Eclipse
+	"*.sublime-*",
+
+	// === Logs and temp files ===
+	"*.log",
+	"logs",
+	"tmp",
+	"temp",
+	".temp",
+	".tmp",
+	"npm-debug.log*",
+	"yarn-debug.log*",
+	"yarn-error.log*",
+	"pnpm-debug.log*",
+	"lerna-debug.log*",
+
+	// === Compiled files (can be regenerated) ===
+	"*.pyc",
+	"*.pyo",
+	"*.o",
+	"*.obj",
+	"*.so",
+	"*.dylib",
+	"*.dll",
+	"*.class",
+
+	// === Large generated files ===
+	"*.js.map",  // Source maps (if not needed for debugging)
+	"*.css.map", // Source maps
+}
+
 func shouldExcludeEntry(name string) bool {
-	excludes := []string{
-		"node_modules",
-		".git",
-		".venv",
-		"__pycache__",
-		".DS_Store",
-		".env",
-		"dist",
-		"build",
-	}
+	excludes := append([]string{}, defaultExcludes...)
 	excludes = append(excludes, rsyncFlagExclude...)
 
 	for _, ex := range excludes {
 		if name == ex {
 			return true
 		}
+		// Handle glob patterns
 		if strings.HasPrefix(ex, "*") && strings.HasSuffix(name, ex[1:]) {
+			return true
+		}
+		if strings.HasSuffix(ex, "*") && strings.HasPrefix(name, ex[:len(ex)-1]) {
 			return true
 		}
 	}
@@ -285,18 +415,7 @@ func runSingleRsync(workerURL, token, localPath, remotePath string, items []stri
 		rsyncArgs = append(rsyncArgs, "-n")
 	}
 
-	// Add excludes
-	defaultExcludes := []string{
-		"node_modules",
-		".git",
-		".venv",
-		"__pycache__",
-		".DS_Store",
-		"*.pyc",
-		".env",
-		"dist",
-		"build",
-	}
+	// Add excludes (use shared defaultExcludes list)
 	for _, ex := range defaultExcludes {
 		rsyncArgs = append(rsyncArgs, "--exclude", ex)
 	}
