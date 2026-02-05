@@ -59,7 +59,7 @@ export default tseslint.config(
   // Base configs for all TypeScript files
   withTypescriptFiles(js.configs.recommended),
   ...tseslint.configs.recommended.map(withTypescriptFiles),
-  withTypescriptFiles(reactHooks.configs['recommended-latest']),
+  withTypescriptFiles(reactHooks.configs.flat['recommended-latest']),
 
   // Base rules
   {
