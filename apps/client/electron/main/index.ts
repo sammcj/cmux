@@ -529,6 +529,31 @@ function registerAutoUpdateIpcHandlers(): void {
   });
 }
 
+function registerAppIpcHandlers(): void {
+  ipcMain.handle("cmux:app:get-protocol-status", async () => {
+    try {
+      let isDefaultProtocolClient = false;
+      try {
+        isDefaultProtocolClient = app.isDefaultProtocolClient("cmux");
+      } catch (error) {
+        mainWarn("isDefaultProtocolClient(cmux) failed", error);
+      }
+
+      return {
+        ok: true as const,
+        isPackaged: app.isPackaged,
+        isDefaultProtocolClient,
+      };
+    } catch (error) {
+      mainWarn("Failed to get protocol status", error);
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+}
+
 
 function setupAutoUpdates(): void {
   if (!app.isPackaged) {
@@ -815,6 +840,7 @@ app.whenReady().then(async () => {
   });
   registerLogIpcHandlers();
   registerAutoUpdateIpcHandlers();
+  registerAppIpcHandlers();
   initCmdK({
     getMainWindow: () => mainWindow,
     logger: {
