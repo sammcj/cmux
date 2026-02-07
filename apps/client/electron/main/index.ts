@@ -533,9 +533,18 @@ function registerAutoUpdateIpcHandlers(): void {
 function registerAppIpcHandlers(): void {
   ipcMain.handle("cmux:app:get-protocol-status", async () => {
     try {
+      const call = computeSetAsDefaultProtocolClientCall({
+        scheme: "cmux",
+        defaultApp: process.defaultApp,
+        execPath: process.execPath,
+        argv: process.argv,
+      });
       let isDefaultProtocolClient = false;
       try {
-        isDefaultProtocolClient = app.isDefaultProtocolClient("cmux");
+        isDefaultProtocolClient =
+          call.kind === "withArgs"
+            ? app.isDefaultProtocolClient(call.scheme, call.execPath, call.args)
+            : app.isDefaultProtocolClient(call.scheme);
       } catch (error) {
         mainWarn("isDefaultProtocolClient(cmux) failed", error);
       }
@@ -977,7 +986,10 @@ app.whenReady().then(async () => {
         : app.setAsDefaultProtocolClient(call.scheme);
     let isDefaultProtocolClient = false;
     try {
-      isDefaultProtocolClient = app.isDefaultProtocolClient("cmux");
+      isDefaultProtocolClient =
+        call.kind === "withArgs"
+          ? app.isDefaultProtocolClient(call.scheme, call.execPath, call.args)
+          : app.isDefaultProtocolClient(call.scheme);
     } catch (error) {
       mainWarn("isDefaultProtocolClient(cmux) failed after registration", error);
     }
