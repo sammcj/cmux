@@ -501,12 +501,186 @@ sandboxesRouter.openapi(
         return c.text("VSCode or worker service not found", 500);
       }
 
+      // --- Fast path for prewarmed instances ---
+      // Skip VSCode ready check (already verified during prewarm) and run all
+      // instance.exec() calls in parallel to minimize latency.
+      if (usedWarmPool) {
+        console.log(
+          `[sandboxes.start] Fast path: warm pool instance ${instance.id}`,
+        );
+
+        // Persist VSCode info immediately (don't wait for VSCode ready check)
+        let vscodePersisted = false;
+        const persistPromise = body.taskRunId
+          ? convex
+              .mutation(api.taskRuns.updateVSCodeInstance, {
+                teamSlugOrId: body.teamSlugOrId,
+                id: body.taskRunId as Id<"taskRuns">,
+                vscode: {
+                  provider: "morph",
+                  containerName: instance.id,
+                  status: "starting",
+                  url: vscodeService.url,
+                  workspaceUrl: `${vscodeService.url}/?folder=/root/workspace`,
+                  startedAt: Date.now(),
+                },
+              })
+              .then(() => {
+                vscodePersisted = true;
+                console.log(
+                  `[sandboxes.start] Persisted VSCode info for ${body.taskRunId}`,
+                );
+              })
+              .catch((error: unknown) => {
+                console.error(
+                  "[sandboxes.start] Failed to persist VSCode info (non-fatal):",
+                  error,
+                );
+              })
+          : Promise.resolve();
+
+        // Prepare env vars content
+        const environmentEnvVarsContent = await environmentEnvVarsPromise;
+        let envVarsToApply =
+          environmentEnvVarsContent ||
+          workspaceConfig?.envVarsContent ||
+          "";
+        if (body.taskRunId) {
+          envVarsToApply += `\nCMUX_TASK_RUN_ID="${body.taskRunId}"`;
+        }
+        if (body.taskRunJwt) {
+          envVarsToApply += `\nCMUX_TASK_RUN_JWT="${body.taskRunJwt}"`;
+        }
+
+        // Run all instance config in parallel: env vars, GitHub access, git identity, persist
+        const { githubAccessToken, githubAccessTokenError } =
+          await githubAccessTokenPromise;
+        if (githubAccessTokenError) {
+          console.error(
+            `[sandboxes.start] GitHub access token error: ${githubAccessTokenError}`,
+          );
+          return c.text("Failed to resolve GitHub credentials", 401);
+        }
+
+        await Promise.all([
+          // Apply env vars
+          envVarsToApply.trim().length > 0
+            ? (async () => {
+                const encodedEnv = encodeEnvContentForEnvctl(envVarsToApply);
+                const loadRes = await instance.exec(
+                  envctlLoadCommand(encodedEnv),
+                );
+                if (loadRes.exit_code === 0) {
+                  console.log(
+                    `[sandboxes.start] Applied environment variables via envctl`,
+                  );
+                } else {
+                  console.error(
+                    `[sandboxes.start] Env var bootstrap failed exit=${loadRes.exit_code}`,
+                  );
+                }
+              })()
+            : Promise.resolve(),
+          // Configure GitHub access (fresh token for the user's session)
+          configureGithubAccess(instance, githubAccessToken),
+          // Configure git identity
+          gitIdentityPromise
+            .then(([who, gh]) => {
+              const { name, email } = selectGitIdentity(who, gh);
+              return configureGitIdentity(instance, { name, email });
+            })
+            .catch((error) => {
+              console.log(
+                `[sandboxes.start] Failed to configure git identity; continuing...`,
+                error,
+              );
+            }),
+          // Persist VSCode info
+          persistPromise,
+        ]);
+
+        // Skip hydration - repo already cloned during prewarm
+        const skipHydration = warmPoolRepoUrl === body.repoUrl && !!body.repoUrl;
+        if (skipHydration) {
+          console.log(
+            `[sandboxes.start] Skipping hydration - repo already cloned in warm pool instance ${instance.id}`,
+          );
+        } else if (body.repoUrl) {
+          if (!parsedRepoUrl) {
+            return c.text("Unsupported repo URL; expected GitHub URL", 400);
+          }
+          try {
+            await hydrateWorkspace({
+              instance,
+              repo: {
+                owner: parsedRepoUrl.owner,
+                name: parsedRepoUrl.repo,
+                repoFull: parsedRepoUrl.fullName,
+                cloneUrl: parsedRepoUrl.gitUrl,
+                maskedCloneUrl: parsedRepoUrl.gitUrl,
+                depth: Math.max(1, Math.floor(body.depth ?? 1)),
+                baseBranch: body.branch || "main",
+                newBranch: body.newBranch ?? "",
+              },
+            });
+          } catch (error) {
+            console.error(`[sandboxes.start] Hydration failed:`, error);
+            await instance.stop().catch(() => {});
+            return c.text("Failed to hydrate sandbox", 500);
+          }
+        }
+
+        // Update status + maintenance scripts (fire-and-forget)
+        if (body.taskRunId && vscodePersisted) {
+          void convex
+            .mutation(api.taskRuns.updateVSCodeStatus, {
+              teamSlugOrId: body.teamSlugOrId,
+              id: body.taskRunId as Id<"taskRuns">,
+              status: "running",
+            })
+            .catch((error) => {
+              console.error(
+                "[sandboxes.start] Failed to update VSCode status to running:",
+                error,
+              );
+            });
+        }
+
+        if (maintenanceScript || devScript) {
+          (async () => {
+            await runMaintenanceAndDevScripts({
+              instance,
+              maintenanceScript: maintenanceScript || undefined,
+              devScript: devScript || undefined,
+              identifiers: scriptIdentifiers ?? undefined,
+              convexUrl: env.NEXT_PUBLIC_CONVEX_URL,
+              taskRunJwt: body.taskRunJwt || undefined,
+              isCloudWorkspace,
+            });
+          })().catch((error) => {
+            console.error(
+              "[sandboxes.start] Background script execution failed:",
+              error,
+            );
+          });
+        }
+
+        return c.json({
+          instanceId: instance.id,
+          vscodeUrl: vscodeService.url,
+          workerUrl: workerService.url,
+          provider: "morph",
+          vscodePersisted,
+        });
+      }
+
+      // --- Regular path (on-demand instance) ---
+
       // Wait for VSCode server to be ready before persisting URL
       // This prevents "upstream connect error" when the frontend loads the iframe
       // before the OpenVSCode server is actually listening
-      // For warm pool instances, do a quick check (they were verified during provisioning)
       const vscodeReady = await waitForVSCodeReady(vscodeService.url, {
-        timeoutMs: usedWarmPool ? 5_000 : 15_000,
+        timeoutMs: 15_000,
       });
       if (!vscodeReady) {
         console.warn(
@@ -614,14 +788,7 @@ sandboxesRouter.openapi(
       // Sandboxes run as the requesting user, so prefer their OAuth scope over GitHub App installation tokens.
       await configureGithubAccess(instance, githubAccessToken);
 
-      // Skip hydration if the prewarmed instance already has the repo cloned
-      const skipHydration = usedWarmPool && warmPoolRepoUrl === body.repoUrl && !!body.repoUrl;
-
-      if (skipHydration) {
-        console.log(
-          `[sandboxes.start] Skipping hydration - repo already cloned in warm pool instance ${instance.id}`
-        );
-      } else {
+      {
         let repoConfig: HydrateRepoConfig | undefined;
         if (body.repoUrl) {
           console.log(`[sandboxes.start] Hydrating repo for ${instance.id}`);
