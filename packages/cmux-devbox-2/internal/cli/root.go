@@ -25,16 +25,22 @@ var rootCmd = &cobra.Command{
 	Long: `cmux manages cloud sandboxes for development.
 
 Quick start:
-  cmux login                      # Authenticate (or: cmux auth login)
-  cmux start ./my-project         # Create sandbox, upload directory → returns ID
+  cmux login                      # Authenticate
+  cmux start                      # Create a sandbox
+  cmux start --gpu T4             # Create a sandbox with GPU
+  cmux start ./my-project         # Create sandbox + upload directory
   cmux code <id>                  # Open VS Code
   cmux pty <id>                   # Open terminal session
-  cmux upload <id> ./my-project   # Upload files to sandbox
-  cmux download <id> ./output     # Download files from sandbox
-  cmux computer screenshot <id>   # Take browser screenshot
   cmux stop <id>                  # Stop sandbox
-  cmux delete <id>                # Delete sandbox
-  cmux ls                         # List all sandboxes`,
+  cmux ls                         # List all sandboxes
+
+GPU options (--gpu):
+  T4          16GB VRAM  - inference, fine-tuning small models
+  L4          24GB VRAM  - inference, image generation
+  A10G        24GB VRAM  - training medium models
+
+  The following require approval (contact founders@manaflow.com):
+  L40S, A100, A100-80GB, H100, H200, B200`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
