@@ -49,10 +49,12 @@ function extractNetworkingUrls(instance: ModalInstance) {
 }
 
 /**
- * Setup script that installs Jupyter Lab + code-server and starts them with token auth.
+ * Setup script that installs cmux-code (VSCode fork) + Jupyter Lab.
+ * cmux-code is the same IDE used in E2B sandboxes, ensuring PTY/terminal parity.
  * Writes token to /home/user/.worker-auth-token for compatibility with E2B auth flow.
  */
 function buildSetupScript(authToken: string): string {
+  const CMUX_CODE_VERSION = "0.9.0";
   return `#!/bin/bash
 set -e
 
@@ -63,17 +65,31 @@ mkdir -p /home/user/workspace
 echo -n '${authToken}' > /home/user/.worker-auth-token
 chmod 600 /home/user/.worker-auth-token
 
-# Install system dependencies if needed
-if ! command -v curl &>/dev/null; then
-  apt-get update -qq > /dev/null 2>&1
-  apt-get install -y -qq curl procps > /dev/null 2>&1
-fi
+# Install system dependencies
+apt-get update -qq > /dev/null 2>&1
+apt-get install -y -qq curl procps jq > /dev/null 2>&1
+
+# Install cmux-code (same VSCode fork as E2B)
+mkdir -p /app/cmux-code
+curl -fSL --retry 3 --retry-delay 2 -o /tmp/cmux-code.tar.gz \\
+  "https://github.com/manaflow-ai/vscode-1/releases/download/v${CMUX_CODE_VERSION}/vscode-server-linux-x64-web.tar.gz"
+tar xf /tmp/cmux-code.tar.gz -C /app/cmux-code/ --strip-components=1
+rm -f /tmp/cmux-code.tar.gz
 
 # Install JupyterLab
-pip install -q jupyterlab 2>/dev/null
+pip install -q jupyterlab 2>/dev/null || true
 
-# Install code-server (VS Code in browser)
-curl -fsSL https://code-server.dev/install.sh | sh -s -- --method standalone > /dev/null 2>&1
+# Start cmux-code on port 39378 (same as E2B)
+# Uses --connection-token-file for auth (token passed via ?tkn= query param)
+nohup /app/cmux-code/bin/code-server-oss \\
+  --host 0.0.0.0 \\
+  --port 39378 \\
+  --connection-token-file /home/user/.worker-auth-token \\
+  --disable-workspace-trust \\
+  --disable-telemetry \\
+  --telemetry-level off \\
+  /home/user/workspace \\
+  > /tmp/cmux-code.log 2>&1 &
 
 # Start Jupyter Lab on port 8888 with token auth
 nohup jupyter lab \\
@@ -85,25 +101,14 @@ nohup jupyter lab \\
   --no-browser \\
   > /tmp/jupyter.log 2>&1 &
 
-# Start code-server (VS Code) on port 39378
-# Uses password auth with the same token
-export PASSWORD='${authToken}'
-nohup code-server \\
-  --bind-addr 0.0.0.0:39378 \\
-  --auth password \\
-  --disable-telemetry \\
-  --disable-update-check \\
-  /home/user/workspace \\
-  > /tmp/code-server.log 2>&1 &
-
 # Wait for services to start
-sleep 2
+sleep 3
 echo "SETUP_COMPLETE"
 `;
 }
 
 /**
- * Start a new Modal sandbox instance with Jupyter + code-server + token auth.
+ * Start a new Modal sandbox instance with cmux-code + Jupyter + token auth.
  */
 export const startInstance = internalAction({
   args: {
@@ -162,7 +167,9 @@ export const startInstance = internalAction({
         jupyterUrl: jupyterUrl
           ? `${jupyterUrl}?token=${authToken}`
           : undefined,
-        vscodeUrl,
+        vscodeUrl: vscodeUrl
+          ? `${vscodeUrl}?tkn=${authToken}&folder=/home/user/workspace`
+          : undefined,
         vncUrl: undefined,
       };
     } finally {
