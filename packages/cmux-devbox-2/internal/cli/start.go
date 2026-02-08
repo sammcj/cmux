@@ -60,12 +60,15 @@ Providers:
 Using --gpu auto-selects Modal. No need to specify --provider.
 
 GPU options (Modal):
-  T4          16GB VRAM - inference, fine-tuning small models
-  L4          24GB VRAM - inference, image generation
-  A10G        24GB VRAM - training medium models
-  A100        40GB VRAM - training large models (7B-70B)
-  A100-80GB   80GB VRAM - very large models
-  H100        80GB VRAM - fastest, cutting-edge research
+  T4          16GB VRAM  - inference, fine-tuning small models
+  L4          24GB VRAM  - inference, image generation
+  A10G        24GB VRAM  - training medium models
+  L40S        48GB VRAM  - inference, video generation
+  A100        40GB VRAM  - training large models (7B-70B)
+  A100-80GB   80GB VRAM  - very large models
+  H100        80GB VRAM  - fast training, research
+  H200        141GB VRAM - maximum memory capacity
+  B200        192GB VRAM - latest gen, frontier models
   Multi-GPU:  A100:2, H100:4, H100:8
 
 Examples:
@@ -351,7 +354,7 @@ func init() {
 	startCmd.Flags().StringVarP(&startFlagProvider, "provider", "p", "", "Sandbox provider: e2b (default), modal")
 
 	// Modal-specific options
-	startCmd.Flags().StringVar(&startFlagGPU, "gpu", "", "GPU type for Modal (e.g., T4, A10G, A100, H100)")
+	startCmd.Flags().StringVar(&startFlagGPU, "gpu", "", "GPU type for Modal (e.g., T4, L4, A10G, L40S, A100, H100, H200, B200)")
 	startCmd.Flags().Float64Var(&startFlagCPU, "cpu", 0, "CPU cores for Modal (fractional ok, e.g., 4, 8)")
 	startCmd.Flags().IntVar(&startFlagMemory, "memory", 0, "Memory in MiB for Modal (e.g., 8192, 65536)")
 	startCmd.Flags().StringVar(&startFlagImage, "image", "", "Container image for Modal (e.g., ubuntu:22.04)")

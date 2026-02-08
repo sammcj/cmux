@@ -21,7 +21,7 @@ func NewClient() *Client {
 	cfg := auth.GetConfig()
 	return &Client{
 		baseURL:    cfg.ConvexSiteURL,
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		httpClient: &http.Client{Timeout: 600 * time.Second},
 	}
 }
 

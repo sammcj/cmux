@@ -23,6 +23,7 @@ export const env = createEnv({
     E2B_API_KEY: z.string().min(1).optional(),
     MODAL_TOKEN_ID: z.string().min(1).optional(),
     MODAL_TOKEN_SECRET: z.string().min(1).optional(),
+    MODAL_SNAPSHOT_IMAGE_ID: z.string().min(1).optional(),
     CMUX_IS_STAGING: z.string().optional(),
     CONVEX_IS_PRODUCTION: z.string().optional(),
     POSTHOG_API_KEY: z.string().optional(),

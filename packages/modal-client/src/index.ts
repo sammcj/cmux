@@ -1,5 +1,5 @@
 import { ModalClient as ModalSdkClient } from "modal";
-import type { Sandbox } from "modal";
+import type { Sandbox, Image } from "modal";
 
 /**
  * GPU types available in Modal.
@@ -15,10 +15,12 @@ export const MODAL_GPU_TYPES = [
   "T4",
   "L4",
   "A10G",
+  "L40S",
   "A100",
   "A100-80GB",
   "H100",
-  "H100-80GB",
+  "H200",
+  "B200",
 ] as const;
 
 export type ModalGpuType = (typeof MODAL_GPU_TYPES)[number];
@@ -67,8 +69,10 @@ export type ModalMetadata = Record<string, string>;
 export interface ModalSandboxCreateOptions {
   /** Modal App name to create sandbox under */
   appName?: string;
-  /** Container image (e.g., "ubuntu:22.04"). Defaults to debian */
+  /** Container image (e.g., "ubuntu:22.04"). Defaults to ubuntu:22.04 */
   image?: string;
+  /** Snapshot image ID to use instead of a registry image */
+  snapshotImageId?: string;
   /** GPU configuration (e.g., "T4", "A100", "H100:2") */
   gpu?: ModalGpuConfig;
   /** CPU core count (fractional values allowed) */
@@ -87,6 +91,30 @@ export interface ModalSandboxCreateOptions {
   workdir?: string;
   /** Cloud provider region */
   region?: string;
+}
+
+function assignPortName(portNum: number): string {
+  if (portNum === 8888) return "jupyter";
+  if (portNum === 39377) return "worker";
+  if (portNum === 39378) return "vscode";
+  if (portNum === 39380) return "vnc";
+  return `port-${portNum}`;
+}
+
+async function fetchTunnelServices(
+  sandbox: Sandbox,
+): Promise<ModalHttpService[]> {
+  const httpServices: ModalHttpService[] = [];
+  const tunnels = await sandbox.tunnels();
+  for (const [port, info] of Object.entries(tunnels)) {
+    const portNum = Number(port);
+    httpServices.push({
+      name: assignPortName(portNum),
+      port: portNum,
+      url: info.url,
+    });
+  }
+  return httpServices;
 }
 
 /**
@@ -167,20 +195,20 @@ export class ModalInstance {
    */
   async refreshTunnels(): Promise<ModalHttpService[]> {
     try {
-      const tunnels = await this.sandbox.tunnels();
-      this._httpServices = [];
-      for (const [port, info] of Object.entries(tunnels)) {
-        this._httpServices.push({
-          name: `port-${port}`,
-          port: Number(port),
-          url: info.url,
-        });
-      }
+      this._httpServices = await fetchTunnelServices(this.sandbox);
       return this._httpServices;
     } catch (err) {
       console.error("[ModalInstance.refreshTunnels] Error:", err);
       return this._httpServices;
     }
+  }
+
+  /**
+   * Snapshot the sandbox filesystem. Returns the image ID.
+   */
+  async snapshotFilesystem(timeoutMs?: number): Promise<string> {
+    const image = await this.sandbox.snapshotFilesystem(timeoutMs);
+    return image.imageId;
   }
 
   /**
@@ -283,7 +311,9 @@ export class ModalClient {
    */
   instances = {
     /**
-     * Start a new sandbox
+     * Start a new sandbox.
+     * If snapshotImageId is provided, uses that pre-built image.
+     * Otherwise falls back to a registry image.
      */
     start: async (
       options: ModalSandboxCreateOptions = {},
@@ -293,12 +323,17 @@ export class ModalClient {
         createIfMissing: true,
       });
 
-      const image = this.client.images.fromRegistry(
-        options.image || "ubuntu:22.04",
-      );
+      let image: Image;
+      if (options.snapshotImageId) {
+        image = await this.client.images.fromId(options.snapshotImageId);
+      } else {
+        image = this.client.images.fromRegistry(
+          options.image || "ubuntu:22.04",
+        );
+      }
 
       const encryptedPorts = options.encryptedPorts || [
-        8888, 39378,
+        8888, 39377, 39378, 39380,
       ];
 
       const sandbox = await this.client.sandboxes.create(app, image, {
@@ -312,16 +347,9 @@ export class ModalClient {
       });
 
       // Fetch tunnel URLs for exposed ports
-      const httpServices: ModalHttpService[] = [];
+      let httpServices: ModalHttpService[] = [];
       try {
-        const tunnels = await sandbox.tunnels();
-        for (const [port, info] of Object.entries(tunnels)) {
-          const portNum = Number(port);
-          let name = `port-${port}`;
-          if (portNum === 8888) name = "jupyter";
-          else if (portNum === 39378) name = "vscode";
-          httpServices.push({ name, port: portNum, url: info.url });
-        }
+        httpServices = await fetchTunnelServices(sandbox);
       } catch (err) {
         console.error("[ModalClient.start] Error fetching tunnels:", err);
       }
@@ -341,16 +369,9 @@ export class ModalClient {
       const sandbox = await this.client.sandboxes.fromId(options.instanceId);
 
       // Fetch tunnel URLs
-      const httpServices: ModalHttpService[] = [];
+      let httpServices: ModalHttpService[] = [];
       try {
-        const tunnels = await sandbox.tunnels();
-        for (const [port, info] of Object.entries(tunnels)) {
-          const portNum = Number(port);
-          let name = `port-${port}`;
-          if (portNum === 8888) name = "jupyter";
-          else if (portNum === 39378) name = "vscode";
-          httpServices.push({ name, port: portNum, url: info.url });
-        }
+        httpServices = await fetchTunnelServices(sandbox);
       } catch (err) {
         console.error("[ModalClient.get] Error fetching tunnels:", err);
       }
@@ -400,4 +421,4 @@ export const createModalClient = (
   return new ModalClient(config);
 };
 
-export type { Sandbox } from "modal";
+export type { Sandbox, Image } from "modal";

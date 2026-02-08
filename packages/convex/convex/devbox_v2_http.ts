@@ -250,6 +250,7 @@ export const createInstance = httpAction(async (ctx, req) => {
         gpu: result.gpu ?? undefined,
         jupyterUrl: result.jupyterUrl,
         vscodeUrl: result.vscodeUrl,
+        workerUrl: result.workerUrl,
         vncUrl: result.vncUrl,
       });
     }
@@ -690,7 +691,7 @@ export const getConfig = httpAction(async (ctx) => {
     },
     modal: {
       defaultTemplateId: DEFAULT_MODAL_TEMPLATE_ID,
-      gpuOptions: ["T4", "L4", "A10G", "A100", "A100-80GB", "H100", "H100-80GB"],
+      gpuOptions: ["T4", "L4", "A10G", "L40S", "A100", "A100-80GB", "H100", "H200", "B200"],
     },
   });
 });
