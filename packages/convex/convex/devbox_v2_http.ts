@@ -671,24 +671,53 @@ async function handlePushEnv(
       );
     }
 
-    // Base64-encode the env content for safe shell transport
-    const encoded = btoa(envVarsContent);
-
-    // Write env file and ensure it's sourced from .bashrc
-    const command = [
-      `printf '%s' '${encoded}' | base64 -d > /home/user/.env`,
-      `chmod 600 /home/user/.env`,
-      `grep -q '/home/user/.env' /home/user/.bashrc 2>/dev/null || printf '\\n# Load environment variables\\nif [ -f /home/user/.env ]; then set -a; . /home/user/.env; set +a; fi\\n' >> /home/user/.bashrc`,
-    ].join(" && ");
-
-    const result = (await ctx.runAction(e2bActionsApi.execCommand, {
+    // Get the worker URL from the E2B instance
+    const e2bResult = (await ctx.runAction(e2bActionsApi.getInstance, {
       instanceId: providerInstanceId,
-      command,
+    })) as {
+      instanceId: string;
+      status: string;
+      workerUrl?: string | null;
+    };
+
+    if (!e2bResult.workerUrl) {
+      return jsonResponse(
+        { code: 503, message: "Worker not available on sandbox" },
+        503
+      );
+    }
+
+    // Get the worker auth token
+    const tokenResult = (await ctx.runAction(e2bActionsApi.execCommand, {
+      instanceId: providerInstanceId,
+      command: "cat /home/user/.worker-auth-token 2>/dev/null || echo ''",
     })) as { stdout?: string; stderr?: string; exit_code?: number };
 
-    if (result.exit_code !== 0) {
+    const workerToken = tokenResult.stdout?.trim() || "";
+    if (!workerToken) {
+      return jsonResponse(
+        { code: 503, message: "Worker auth token not yet available" },
+        503
+      );
+    }
+
+    // POST to worker /env endpoint with base64-encoded content.
+    // This uses the same code path as the CLI (worker handles file writing,
+    // permissions, .bashrc/.profile sourcing, and envctl integration).
+    const encoded = btoa(envVarsContent);
+    const workerResp = await fetch(`${e2bResult.workerUrl}/env`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${workerToken}`,
+      },
+      body: JSON.stringify({ content: encoded, encoding: "base64" }),
+    });
+
+    if (!workerResp.ok) {
+      const errBody = await workerResp.text();
       console.error(
-        `[devbox_v2.env] Failed to push env vars: exit=${result.exit_code} stderr=${(result.stderr ?? "").slice(0, 200)}`
+        `[devbox_v2.env] Worker /env failed: status=${workerResp.status} body=${errBody.slice(0, 200)}`
       );
       return jsonResponse(
         { code: 500, message: "Failed to apply environment variables" },

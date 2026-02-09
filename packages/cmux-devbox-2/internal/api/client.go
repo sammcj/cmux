@@ -3,6 +3,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -287,9 +288,14 @@ func (c *Client) GetConfig() (*ConfigResponse, error) {
 	return &resp, nil
 }
 
-// UploadEnvToWorker sends environment variable content to the worker's /env endpoint
+// UploadEnvToWorker sends environment variable content to the worker's /env endpoint.
+// Content is base64-encoded for safe transport so secrets are not exposed as plaintext in request bodies.
 func UploadEnvToWorker(workerURL, token, envContent string) error {
-	body, err := json.Marshal(map[string]string{"content": envContent})
+	encoded := base64.StdEncoding.EncodeToString([]byte(envContent))
+	body, err := json.Marshal(map[string]string{
+		"content":  encoded,
+		"encoding": "base64",
+	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal env content: %w", err)
 	}
