@@ -24,7 +24,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/gliderlabs/ssh"
-	"nhooyr.io/websocket"
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -48,6 +48,10 @@ var (
 	// PTY sessions
 	ptySessions   = make(map[string]*ptySession)
 	ptySessionsMu sync.RWMutex
+
+	wsUpgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true },
+	}
 )
 
 type ptySession struct {
@@ -759,16 +763,12 @@ func handleBrowserAgent(w http.ResponseWriter, r *http.Request, body map[string]
 // =============================================================================
 
 func handlePTYWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("[worker] Failed to accept WebSocket: %v", err)
 		return
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "")
-
-	ctx := r.Context()
+	defer conn.Close()
 
 	// Parse options from query
 	q := r.URL.Query()
@@ -794,7 +794,7 @@ func handlePTYWebSocket(w http.ResponseWriter, r *http.Request) {
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: cols, Rows: rows})
 	if err != nil {
 		log.Printf("[worker] Failed to start PTY: %v", err)
-		conn.Close(websocket.StatusInternalError, "Failed to start PTY")
+		conn.Close()
 		return
 	}
 	defer ptmx.Close()
@@ -823,7 +823,7 @@ func handlePTYWebSocket(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Send session info
-	conn.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"type":"session","id":"%s"}`, sessionID)))
+	conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"type":"session","id":"%s"}`, sessionID)))
 
 	// Read from PTY, write to WebSocket
 	go func() {
@@ -837,7 +837,7 @@ func handlePTYWebSocket(w http.ResponseWriter, r *http.Request) {
 				"type": "data",
 				"data": string(buf[:n]),
 			})
-			if err := conn.Write(ctx, websocket.MessageText, msg); err != nil {
+			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 				return
 			}
 		}
@@ -845,7 +845,7 @@ func handlePTYWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Read from WebSocket, write to PTY
 	for {
-		_, data, err := conn.Read(ctx)
+		_, data, err := conn.ReadMessage()
 		if err != nil {
 			break
 		}
@@ -879,7 +879,7 @@ func handlePTYWebSocket(w http.ResponseWriter, r *http.Request) {
 	if cmd.ProcessState != nil {
 		exitCode = cmd.ProcessState.ExitCode()
 	}
-	conn.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"type":"exit","code":%d}`, exitCode)))
+	conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"type":"exit","code":%d}`, exitCode)))
 }
 
 // =============================================================================
@@ -887,22 +887,18 @@ func handlePTYWebSocket(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 func handleSSHWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("[worker] Failed to accept SSH WebSocket: %v", err)
 		return
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "")
-
-	ctx := r.Context()
+	defer conn.Close()
 
 	// Connect to local SSH server
 	sshConn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", sshPort))
 	if err != nil {
 		log.Printf("[worker] Failed to connect to SSH: %v", err)
-		conn.Close(websocket.StatusInternalError, "SSH connection failed")
+		conn.Close()
 		return
 	}
 	defer sshConn.Close()
@@ -919,7 +915,7 @@ func handleSSHWebSocket(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-			if err := conn.Write(ctx, websocket.MessageBinary, buf[:n]); err != nil {
+			if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
 				return
 			}
 		}
@@ -928,7 +924,7 @@ func handleSSHWebSocket(w http.ResponseWriter, r *http.Request) {
 	// WebSocket -> SSH
 	go func() {
 		for {
-			_, data, err := conn.Read(ctx)
+			_, data, err := conn.ReadMessage()
 			if err != nil {
 				sshConn.Close()
 				return

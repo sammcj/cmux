@@ -12,7 +12,6 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/term v0.39.0
-	nhooyr.io/websocket v1.8.17
 )
 
 require (
