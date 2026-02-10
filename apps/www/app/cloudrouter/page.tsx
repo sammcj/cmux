@@ -106,16 +106,7 @@ export default function CloudRouterPage() {
           <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
             Install cloudrouter as a skill for Claude Code, Codex, or other coding agents.
           </p>
-          <CodeBlock>
-            {[
-              "# Add to any agent",
-              "npx skills add manaflow-ai/cloudrouter",
-              "",
-              "# Or target a specific agent",
-              "npx skills add manaflow-ai/cloudrouter -a claude-code",
-              "npx skills add manaflow-ai/cloudrouter -a cursor",
-            ].join("\n")}
-          </CodeBlock>
+          <CodeBlock>{`npx skills add manaflow-ai/cloudrouter`}</CodeBlock>
         </section>
 
         <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
