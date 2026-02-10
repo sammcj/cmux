@@ -1,0 +1,294 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "cloudrouter — cloud dev sandboxes for agents and developers",
+  description:
+    "CLI tool that gives AI coding agents and developers instant cloud sandboxes with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
+  openGraph: {
+    title: "cloudrouter — cloud dev sandboxes for agents and developers",
+    description:
+      "CLI tool that gives AI coding agents and developers instant cloud sandboxes with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "cloudrouter — cloud dev sandboxes for agents and developers",
+    description:
+      "CLI tool that gives AI coding agents and developers instant cloud sandboxes with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
+  },
+};
+
+function CodeBlock({ children }: { children: string }) {
+  return (
+    <pre className="overflow-x-auto rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm leading-relaxed dark:border-neutral-800 dark:bg-neutral-900">
+      <code>{children}</code>
+    </pre>
+  );
+}
+
+const features = [
+  {
+    title: "Instant cloud sandboxes",
+    description:
+      "Spin up a remote VM from a local directory, git repo, or template. Built-in Docker support and automatic file syncing.",
+  },
+  {
+    title: "AI agent skill",
+    description:
+      "Install as a skill for Claude Code, Cursor, and other agents. Give them the power to create sandboxes, run code, and automate browsers.",
+  },
+  {
+    title: "Browser automation",
+    description:
+      "Full Chrome CDP integration. Navigate, click, type, take screenshots, and read accessibility trees — all from the CLI.",
+  },
+  {
+    title: "Multiple access methods",
+    description:
+      "VS Code in browser, VNC desktop, interactive terminal, or one-off command execution. Pick what fits your workflow.",
+  },
+  {
+    title: "File transfer",
+    description:
+      "Upload and download files between local and sandbox. Watch mode for auto re-upload on changes with exclude patterns.",
+  },
+  {
+    title: "Open source",
+    description: "MIT licensed. Built in Go, distributed as npm packages for macOS, Linux, and Windows.",
+  },
+];
+
+export default function CloudRouterPage() {
+  return (
+    <div className="flex min-h-screen flex-col items-center bg-white px-4 py-12 font-mono text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 sm:px-6 sm:py-20">
+      <div className="w-full max-w-2xl">
+        {/* Header */}
+        <header className="mb-12 flex items-center justify-between text-sm">
+          <span className="font-semibold">cloudrouter</span>
+          <nav className="flex gap-4 text-neutral-500 dark:text-neutral-400">
+            <a href="#install" className="transition hover:text-neutral-900 dark:hover:text-white">
+              Install
+            </a>
+            <a href="#skill" className="transition hover:text-neutral-900 dark:hover:text-white">
+              Skill
+            </a>
+            <a href="#features" className="transition hover:text-neutral-900 dark:hover:text-white">
+              Features
+            </a>
+            <a
+              href="https://github.com/manaflow-ai/cloudrouter"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition hover:text-neutral-900 dark:hover:text-white"
+            >
+              GitHub
+            </a>
+          </nav>
+        </header>
+
+        {/* Hero */}
+        <section className="mb-16">
+          <h1 className="mb-6 text-2xl font-bold leading-tight sm:text-3xl">
+            Cloud dev sandboxes for agents and developers
+          </h1>
+          <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+            cloudrouter is a CLI that gives AI coding agents and developers instant remote VMs
+            with VS Code, terminal access, VNC desktop, and browser automation via Chrome CDP.
+          </p>
+          <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+            Spin up a sandbox from your local directory, run commands, transfer files,
+            and automate browsers — all from the command line or as an agent skill.
+          </p>
+        </section>
+
+        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+
+        {/* Install */}
+        <section id="install" className="mb-16 scroll-mt-16">
+          <h2 className="mb-4 text-lg font-semibold">Install</h2>
+          <CodeBlock>{`npm install -g cloudrouter`}</CodeBlock>
+          <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-400">
+            Then authenticate:
+          </p>
+          <div className="mt-2">
+            <CodeBlock>{`cloudrouter login`}</CodeBlock>
+          </div>
+        </section>
+
+        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+
+        {/* Quick start */}
+        <section className="mb-16 scroll-mt-16">
+          <h2 className="mb-4 text-lg font-semibold">Quick start</h2>
+          <CodeBlock>
+            {[
+              "# Create a sandbox from the current directory",
+              "cloudrouter start .",
+              "",
+              "# Open VS Code in the browser",
+              "cloudrouter code cr_abc123",
+              "",
+              "# Or get a terminal",
+              "cloudrouter pty cr_abc123",
+              "",
+              "# Run a command",
+              'cloudrouter exec cr_abc123 "npm install && npm run dev"',
+              "",
+              "# Open VNC desktop",
+              "cloudrouter vnc cr_abc123",
+            ].join("\n")}
+          </CodeBlock>
+        </section>
+
+        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+
+        {/* Agent skill */}
+        <section id="skill" className="mb-16 scroll-mt-16">
+          <h2 className="mb-4 text-lg font-semibold">Add as an agent skill</h2>
+          <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+            Give your AI coding agent the ability to create sandboxes, run code, transfer files,
+            and automate browsers.
+          </p>
+          <CodeBlock>
+            {[
+              "# Add to any agent",
+              "npx skills add manaflow-ai/cloudrouter",
+              "",
+              "# Or target a specific agent",
+              "npx skills add manaflow-ai/cloudrouter -a claude-code",
+              "npx skills add manaflow-ai/cloudrouter -a cursor",
+            ].join("\n")}
+          </CodeBlock>
+        </section>
+
+        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+
+        {/* Browser automation */}
+        <section className="mb-16 scroll-mt-16">
+          <h2 className="mb-4 text-lg font-semibold">Browser automation</h2>
+          <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+            Every sandbox includes Chrome CDP integration. Navigate, interact with elements
+            using accessibility tree refs, take screenshots, and scrape data.
+          </p>
+          <CodeBlock>
+            {[
+              "# Open a URL in the sandbox browser",
+              'cloudrouter computer open cr_abc123 "https://example.com"',
+              "",
+              "# Get the accessibility tree with element refs",
+              "cloudrouter computer snapshot cr_abc123",
+              "# → @e1 [input] Email  @e2 [input] Password  @e3 [button] Sign In",
+              "",
+              "# Interact with elements",
+              'cloudrouter computer fill cr_abc123 @e1 "user@example.com"',
+              'cloudrouter computer fill cr_abc123 @e2 "password123"',
+              "cloudrouter computer click cr_abc123 @e3",
+              "",
+              "# Take a screenshot",
+              "cloudrouter computer screenshot cr_abc123 result.png",
+            ].join("\n")}
+          </CodeBlock>
+        </section>
+
+        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+
+        {/* Features */}
+        <section id="features" className="mb-16 scroll-mt-16">
+          <h2 className="mb-6 text-lg font-semibold">Features</h2>
+          <div className="grid gap-6 sm:grid-cols-2">
+            {features.map((feature) => (
+              <div key={feature.title}>
+                <h3 className="mb-1 text-sm font-semibold">{feature.title}</h3>
+                <p className="text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+                  {feature.description}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+
+        {/* File transfer */}
+        <section className="mb-16 scroll-mt-16">
+          <h2 className="mb-4 text-lg font-semibold">File transfer</h2>
+          <CodeBlock>
+            {[
+              "# Upload files to sandbox",
+              "cloudrouter upload cr_abc123 ./src /home/user/project/src",
+              "",
+              "# Download from sandbox",
+              "cloudrouter download cr_abc123 /home/user/project/dist ./dist",
+              "",
+              "# Watch mode — auto re-upload on changes",
+              "cloudrouter upload cr_abc123 ./src /home/user/project/src --watch",
+            ].join("\n")}
+          </CodeBlock>
+        </section>
+
+        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+
+        {/* Sandbox management */}
+        <section className="mb-16 scroll-mt-16">
+          <h2 className="mb-4 text-lg font-semibold">Sandbox management</h2>
+          <CodeBlock>
+            {[
+              "# List running sandboxes",
+              "cloudrouter ls",
+              "",
+              "# Check status",
+              "cloudrouter status cr_abc123",
+              "",
+              "# Stop a sandbox",
+              "cloudrouter stop cr_abc123",
+              "",
+              "# Delete a sandbox",
+              "cloudrouter delete cr_abc123",
+            ].join("\n")}
+          </CodeBlock>
+        </section>
+
+        <hr className="mb-12 border-neutral-200 dark:border-neutral-800" />
+
+        {/* Footer */}
+        <footer className="flex flex-col items-center gap-4 text-center text-xs text-neutral-400 dark:text-neutral-500">
+          <div className="flex gap-4">
+            <a
+              href="https://github.com/manaflow-ai/cloudrouter"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition hover:text-neutral-900 dark:hover:text-white"
+            >
+              GitHub
+            </a>
+            <a
+              href="https://twitter.com/manaflowai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition hover:text-neutral-900 dark:hover:text-white"
+            >
+              Twitter
+            </a>
+            <a
+              href="https://discord.gg/SDbQmzQhRK"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition hover:text-neutral-900 dark:hover:text-white"
+            >
+              Discord
+            </a>
+          </div>
+          <span>
+            cloudrouter by{" "}
+            <a
+              href="https://manaflow.com"
+              className="transition hover:text-neutral-900 dark:hover:text-white"
+            >
+              manaflow
+            </a>
+          </span>
+        </footer>
+      </div>
+    </div>
+  );
+}
