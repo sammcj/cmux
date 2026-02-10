@@ -13,7 +13,9 @@ npm/win32-*/bin/
 npm/cloudrouter/bin/cloudrouter
 npm/cloudrouter/lib/cloudrouter
 npm/cloudrouter/lib/cmux
+npm/cmux/bin/cmux
 npm/cmux/lib/cmux
+npm/cmux55/bin/cmux55
 npm/cmux55/lib/cmux55
 npm/cloudrouter-zzz/lib/cmux
 
