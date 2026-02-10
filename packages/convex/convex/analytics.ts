@@ -36,8 +36,8 @@ export const getDashboardStats = authQuery({
 
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
-    // Tasks created in the past 7 days (exclude workspaces and previews)
-    const recentTasks = await ctx.db
+    // Fetch tasks created in the past 7 days (filter by date at index level)
+    const recentTasksRaw = await ctx.db
       .query("tasks")
       .withIndex("by_team_user_created", (idx) =>
         idx
@@ -45,37 +45,35 @@ export const getDashboardStats = authQuery({
           .eq("userId", userId)
           .gte("createdAt", sevenDaysAgo),
       )
-      .filter((q) =>
-        q.and(
-          q.neq(q.field("isCloudWorkspace"), true),
-          q.neq(q.field("isLocalWorkspace"), true),
-          q.neq(q.field("isPreview"), true),
-        ),
-      )
       .collect();
 
-    // Tasks merged in the past 7 days
+    // Exclude workspaces and previews in memory
+    const recentTasks = recentTasksRaw.filter(
+      (t) => !t.isCloudWorkspace && !t.isLocalWorkspace && !t.isPreview,
+    );
+
+    // Fetch only merged tasks updated in the past 7 days
     const mergedTasks = await ctx.db
       .query("tasks")
-      .withIndex("by_team_user_updated", (idx) =>
+      .withIndex("by_team_user_merge_updated", (idx) =>
         idx
           .eq("teamId", teamId)
           .eq("userId", userId)
+          .eq("mergeStatus", "pr_merged")
           .gte("updatedAt", sevenDaysAgo),
       )
-      .filter((q) => q.eq(q.field("mergeStatus"), "pr_merged"))
       .collect();
 
-    // Completed runs in the past 7 days
+    // Fetch only completed task runs created in the past 7 days
     const completedRuns = await ctx.db
       .query("taskRuns")
-      .withIndex("by_team_user_created", (idx) =>
+      .withIndex("by_team_user_status_created", (idx) =>
         idx
           .eq("teamId", teamId)
           .eq("userId", userId)
+          .eq("status", "completed")
           .gte("createdAt", sevenDaysAgo),
       )
-      .filter((q) => q.eq(q.field("status"), "completed"))
       .collect();
 
     return {
