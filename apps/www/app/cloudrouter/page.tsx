@@ -72,7 +72,7 @@ export default function CloudRouterPage() {
     <div className={`flex min-h-screen flex-col items-center bg-white px-4 py-12 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 sm:px-6 sm:py-20 ${sourceSerif.className}`}>
       <div className="w-full max-w-2xl">
         {/* Header */}
-        <header className="mb-12 flex items-center justify-between text-base">
+        <header className="mb-8 flex items-center justify-between text-base">
           <span className="flex items-center gap-2 font-bold">
             <svg viewBox="0 0 100 140" width="18" height="24" aria-hidden="true">
               <defs>
@@ -107,7 +107,7 @@ export default function CloudRouterPage() {
         </header>
 
         {/* Hero */}
-        <section className="mb-16">
+        <section className="mb-8">
           <h1 className="mb-6 text-2xl font-bold leading-tight sm:text-3xl">
             Cloud VMs/GPUs for Claude Code/Codex
           </h1>
@@ -118,10 +118,10 @@ export default function CloudRouterPage() {
           </p>
         </section>
 
-        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+        <hr className="mb-8 border-neutral-200 dark:border-neutral-800" />
 
         {/* Install as agent skill */}
-        <section id="install" className="mb-16 scroll-mt-16">
+        <section id="install" className="mb-8 scroll-mt-8">
           <h2 className="mb-4 text-lg font-semibold">Install</h2>
           <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
             Install cloudrouter as a skill for Claude Code, Codex, or other coding agents.
@@ -129,10 +129,10 @@ export default function CloudRouterPage() {
           <CodeBlock>{`npx skills add manaflow-ai/cloudrouter`}</CodeBlock>
         </section>
 
-        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+        <hr className="mb-8 border-neutral-200 dark:border-neutral-800" />
 
         {/* Manual installation */}
-        <section id="manual-install" className="mb-16 scroll-mt-16">
+        <section id="manual-install" className="mb-8 scroll-mt-8">
           <h2 className="mb-4 text-lg font-semibold">Manual installation</h2>
           <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
             You can also install cloudrouter as a standalone CLI.
@@ -146,10 +146,10 @@ export default function CloudRouterPage() {
           </div>
         </section>
 
-        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+        <hr className="mb-8 border-neutral-200 dark:border-neutral-800" />
 
         {/* Quick start */}
-        <section className="mb-16 scroll-mt-16">
+        <section className="mb-8 scroll-mt-8">
           <h2 className="mb-4 text-lg font-semibold">Quick start</h2>
           <CodeBlock>
             {[
@@ -171,10 +171,10 @@ export default function CloudRouterPage() {
           </CodeBlock>
         </section>
 
-        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+        <hr className="mb-8 border-neutral-200 dark:border-neutral-800" />
 
         {/* Browser automation */}
-        <section className="mb-16 scroll-mt-16">
+        <section className="mb-8 scroll-mt-8">
           <h2 className="mb-4 text-lg font-semibold">Browser automation</h2>
           <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
             Every sandbox includes Chrome CDP integration. Navigate, interact with elements
@@ -200,10 +200,10 @@ export default function CloudRouterPage() {
           </CodeBlock>
         </section>
 
-        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+        <hr className="mb-8 border-neutral-200 dark:border-neutral-800" />
 
         {/* Features */}
-        <section id="features" className="mb-16 scroll-mt-16">
+        <section id="features" className="mb-8 scroll-mt-8">
           <h2 className="mb-6 text-lg font-semibold">Features</h2>
           <div className="grid gap-6 sm:grid-cols-2">
             {features.map((feature) => (
@@ -217,10 +217,10 @@ export default function CloudRouterPage() {
           </div>
         </section>
 
-        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+        <hr className="mb-8 border-neutral-200 dark:border-neutral-800" />
 
         {/* File transfer */}
-        <section className="mb-16 scroll-mt-16">
+        <section className="mb-8 scroll-mt-8">
           <h2 className="mb-4 text-lg font-semibold">File transfer</h2>
           <CodeBlock>
             {[
@@ -236,10 +236,10 @@ export default function CloudRouterPage() {
           </CodeBlock>
         </section>
 
-        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+        <hr className="mb-8 border-neutral-200 dark:border-neutral-800" />
 
         {/* Sandbox management */}
-        <section className="mb-16 scroll-mt-16">
+        <section className="mb-8 scroll-mt-8">
           <h2 className="mb-4 text-lg font-semibold">Sandbox management</h2>
           <CodeBlock>
             {[
