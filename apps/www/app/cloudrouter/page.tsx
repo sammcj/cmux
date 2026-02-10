@@ -137,13 +137,16 @@ export default function CloudRouterPage() {
           <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
             You can also install cloudrouter as a standalone CLI.
           </p>
-          <CodeBlock>{`npm install -g cloudrouter`}</CodeBlock>
+          <CodeBlock>{`npm install -g @manaflow-ai/cloudrouter`}</CodeBlock>
           <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-400">
             Then authenticate:
           </p>
           <div className="mt-2">
             <CodeBlock>{`cloudrouter login`}</CodeBlock>
           </div>
+          <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-400">
+            Both <code className="rounded bg-neutral-100 px-1 py-0.5 dark:bg-neutral-800">cloudrouter</code> and <code className="rounded bg-neutral-100 px-1 py-0.5 dark:bg-neutral-800">cr</code> work as aliases.
+          </p>
         </section>
 
         <hr className="mb-8 border-neutral-200 dark:border-neutral-800" />
