@@ -32,9 +32,26 @@ var (
 	startFlagGPU      string
 	startFlagCPU      float64
 	startFlagMemory   int
+	startFlagDisk     int
+	startFlagSize     string
 	startFlagImage    string
 	startFlagTimeout  int
 )
+
+// sizePreset defines a machine size preset (cpu, memory, disk).
+type sizePreset struct {
+	CPU      float64
+	MemoryMiB int
+	DiskGB   int
+	Label    string
+}
+
+var sizePresets = map[string]sizePreset{
+	"small":  {CPU: 2, MemoryMiB: 8192, DiskGB: 20, Label: "2 vCPU, 8 GB RAM, 20 GB disk"},
+	"medium": {CPU: 4, MemoryMiB: 16384, DiskGB: 40, Label: "4 vCPU, 16 GB RAM, 40 GB disk"},
+	"large":  {CPU: 8, MemoryMiB: 32768, DiskGB: 80, Label: "8 vCPU, 32 GB RAM, 80 GB disk"},
+	"xlarge": {CPU: 16, MemoryMiB: 65536, DiskGB: 160, Label: "16 vCPU, 64 GB RAM, 160 GB disk"},
+}
 
 // isGitURL checks if the string looks like a git URL
 func isGitURL(s string) bool {
@@ -51,6 +68,12 @@ var startCmd = &cobra.Command{
 	Short:   "Create a new sandbox",
 	Long: `Create a new sandbox and optionally sync files or clone a git repo.
 
+Size presets (--size):
+  small       2 vCPU,  8 GB RAM,  20 GB disk
+  medium      4 vCPU, 16 GB RAM,  40 GB disk
+  large       8 vCPU, 32 GB RAM,  80 GB disk
+  xlarge     16 vCPU, 64 GB RAM, 160 GB disk
+
 GPU options (--gpu):
   T4          16GB VRAM  - inference, fine-tuning small models
   L4          24GB VRAM  - inference, image generation
@@ -62,8 +85,13 @@ GPU options (--gpu):
   H200        141GB VRAM - maximum memory capacity
   B200        192GB VRAM - latest gen, frontier models
 
+Individual resource flags (--cpu, --memory, --disk) override --size values.
+
 Examples:
-  cloudrouter start                          # Create a sandbox
+  cloudrouter start                          # Create a sandbox (8 vCPU, 32 GB RAM)
+  cloudrouter start --size small             # Smaller sandbox (2 vCPU, 8 GB RAM)
+  cloudrouter start --size xlarge            # Large sandbox (16 vCPU, 64 GB RAM)
+  cloudrouter start --cpu 12 --memory 49152  # Custom resources (12 vCPU, 48 GB RAM)
   cloudrouter start --gpu B200               # Sandbox with B200 GPU
   cloudrouter start --gpu A100               # Sandbox with A100 GPU
   cloudrouter start --gpu H100:2             # Sandbox with 2x H100 GPUs
@@ -144,6 +172,23 @@ Examples:
 			provider = "modal"
 		}
 
+		// Apply --size preset (individual flags override preset values)
+		if startFlagSize != "" {
+			preset, ok := sizePresets[strings.ToLower(startFlagSize)]
+			if !ok {
+				return fmt.Errorf("invalid size %q, valid sizes: small, medium, large, xlarge", startFlagSize)
+			}
+			if startFlagCPU <= 0 {
+				startFlagCPU = preset.CPU
+			}
+			if startFlagMemory <= 0 {
+				startFlagMemory = preset.MemoryMiB
+			}
+			if startFlagDisk <= 0 {
+				startFlagDisk = preset.DiskGB
+			}
+		}
+
 		// Determine which template to use
 		templateID := startFlagTemplate
 		if templateID == "" {
@@ -214,6 +259,9 @@ Examples:
 		}
 		if startFlagMemory > 0 {
 			createReq.MemoryMiB = startFlagMemory
+		}
+		if startFlagDisk > 0 {
+			createReq.DiskGB = startFlagDisk
 		}
 		if startFlagImage != "" {
 			createReq.Image = startFlagImage
@@ -342,8 +390,10 @@ func init() {
 
 	// GPU and resource options
 	startCmd.Flags().StringVar(&startFlagGPU, "gpu", "", "GPU type (T4, L4, A10G, L40S, A100, H100, H200, B200)")
-	startCmd.Flags().Float64Var(&startFlagCPU, "cpu", 0, "CPU cores (e.g., 4, 8)")
-	startCmd.Flags().IntVar(&startFlagMemory, "memory", 0, "Memory in MiB (e.g., 8192, 65536)")
+	startCmd.Flags().StringVar(&startFlagSize, "size", "", "Machine size preset: small, medium, large, xlarge")
+	startCmd.Flags().Float64Var(&startFlagCPU, "cpu", 0, "CPU cores (overrides --size)")
+	startCmd.Flags().IntVar(&startFlagMemory, "memory", 0, "Memory in MiB (overrides --size)")
+	startCmd.Flags().IntVar(&startFlagDisk, "disk", 0, "Disk size in GB (overrides --size)")
 	startCmd.Flags().StringVar(&startFlagImage, "image", "", "Container image (e.g., ubuntu:22.04)")
 	startCmd.Flags().IntVar(&startFlagTimeout, "timeout", 600, "Sandbox timeout in seconds (default: 10 minutes)")
 }
