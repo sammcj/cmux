@@ -628,11 +628,9 @@ export function TerminalDemo() {
       </div>
 
       {/* Click hint */}
-      {isRunning && (
-        <div className="mt-3 text-center text-xs text-neutral-600 transition-opacity">
-          Click terminal or press Enter to skip animation
-        </div>
-      )}
+      <div className={`mt-3 text-center text-xs text-neutral-600 transition-opacity ${isRunning ? "opacity-100" : "opacity-0"}`}>
+        Click terminal or press Enter to skip animation
+      </div>
 
       {/* Keyboard listener for restart */}
       <KeyboardListener
