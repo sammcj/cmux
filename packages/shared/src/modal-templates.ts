@@ -147,10 +147,19 @@ export const getModalGpuTemplates = (): readonly ModalTemplatePreset[] => {
 };
 
 /**
- * GPUs available without special approval.
- * Higher-tier GPUs require contacting the Manaflow team.
+ * All GPUs are now available without approval.
  */
-export const MODAL_AVAILABLE_GPUS = new Set(["T4", "L4", "A10G"]);
+export const MODAL_AVAILABLE_GPUS = new Set([
+  "T4",
+  "L4",
+  "A10G",
+  "L40S",
+  "A100",
+  "A100-80GB",
+  "H100",
+  "H200",
+  "B200",
+]);
 
 /**
  * Check if a GPU type requires approval (gated).
