@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Source_Serif_4 } from "next/font/google";
 import { CloudrouterHeader } from "./header";
 import { CodeBlock } from "./code-block";
+import { InstallBar } from "./install-bar";
 import { SkillContent } from "./skill-content";
 import { TerminalDemo } from "./terminal-demo";
 
@@ -82,6 +83,9 @@ export default function CloudRouterPage() {
             run commands, transfer files, and automate browsers — all from the CLI.
           </p>
         </section>
+
+        {/* Install command */}
+        <InstallBar />
 
         {/* Terminal Demo */}
         <TerminalDemo />
