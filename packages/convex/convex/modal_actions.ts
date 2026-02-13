@@ -59,6 +59,24 @@ function extractNetworkingUrls(instance: ModalInstance) {
 }
 
 /**
+ * Parse "8 vCPU" → 8, "4 vCPU" → 4, etc. Returns undefined if unparseable.
+ */
+function parsePresetCpu(cpu: string | undefined): number | undefined {
+  if (!cpu) return undefined;
+  const match = cpu.match(/^(\d+(?:\.\d+)?)\s*v?cpu/i);
+  return match?.[1] ? Number(match[1]) : undefined;
+}
+
+/**
+ * Parse "32 GB RAM" → 32768 MiB, "16 GB RAM" → 16384 MiB, etc.
+ */
+function parsePresetMemoryMiB(memory: string | undefined): number | undefined {
+  if (!memory) return undefined;
+  const match = memory.match(/^(\d+(?:\.\d+)?)\s*gb/i);
+  return match?.[1] ? Math.round(Number(match[1]) * 1024) : undefined;
+}
+
+/**
  * LIGHTWEIGHT startup script — runs on each new instance from a snapshot.
  * Only writes auth token and starts services. No package installation needed.
  */
@@ -173,19 +191,21 @@ export const startInstance = internalAction({
   handler: async (_ctx, args) => {
     const client = getModalClient();
 
-    // Resolve template preset to get GPU/image config
+    // Resolve template preset to get GPU/image/resource config
     const presetId = args.templateId ?? DEFAULT_MODAL_TEMPLATE_ID;
     const preset = getModalTemplateByPresetId(presetId);
     const gpu = args.gpu ?? preset?.gpu;
+    const cpu = args.cpu ?? parsePresetCpu(preset?.cpu);
+    const memoryMiB = args.memoryMiB ?? parsePresetMemoryMiB(preset?.memory);
     const snapshotImageId = MODAL_SNAPSHOT_IMAGE_ID;
 
     try {
-      console.log(`[modal_actions] Starting from snapshot ${snapshotImageId}`);
+      console.log(`[modal_actions] Starting from snapshot ${snapshotImageId} (cpu=${cpu}, memoryMiB=${memoryMiB})`);
 
       const instance = await client.instances.start({
         gpu,
-        cpu: args.cpu,
-        memoryMiB: args.memoryMiB,
+        cpu,
+        memoryMiB,
         timeoutSeconds: args.ttlSeconds ?? 60 * 60,
         metadata: args.metadata,
         envs: args.envs,

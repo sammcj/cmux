@@ -89,6 +89,7 @@ type CreateInstanceRequest struct {
 	GPU          string            `json:"gpu,omitempty"`
 	CPU          float64           `json:"cpu,omitempty"`
 	MemoryMiB    int               `json:"memoryMiB,omitempty"`
+	DiskGB       int               `json:"diskGB,omitempty"`
 	Image        string            `json:"image,omitempty"`
 	TTLSeconds   int               `json:"ttlSeconds,omitempty"`
 	Envs         map[string]string `json:"envs,omitempty"`

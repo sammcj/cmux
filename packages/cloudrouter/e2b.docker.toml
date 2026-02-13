@@ -15,6 +15,6 @@ dockerfile = "template/e2b.docker.Dockerfile"
 template_name = "cmux-devbox-docker"
 start_cmd = "/usr/local/bin/start-services.sh"
 ready_cmd = "curl -sf http://localhost:39377/health || exit 1"
-cpu_count = 4
+cpu_count = 8
 memory_mb = 8_192
 team_id = "aa31b299-02f6-4b38-b9d6-480698e0e377"

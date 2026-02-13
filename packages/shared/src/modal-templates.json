@@ -5,9 +5,9 @@
     {
       "templateId": "cmux-devbox-gpu",
       "label": "Jupyter Lab (CPU)",
-      "cpu": "2 vCPU",
-      "memory": "4 GB RAM",
-      "disk": "20 GB SSD",
+      "cpu": "8 vCPU",
+      "memory": "32 GB RAM",
+      "disk": "40 GB SSD",
       "image": "python:3.11-slim",
       "description": "Jupyter Lab environment for data science, scripting, and CPU-bound tasks. Includes VS Code in browser. Best for: Python development, data analysis, automation, API development.",
       "useCases": ["data-science", "scripting", "automation", "api-dev"],
