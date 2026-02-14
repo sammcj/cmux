@@ -113,10 +113,6 @@ const modalInstancesApi = (internal as any).modalInstances as {
   recordStopInternal: FunctionReference<"mutation", "internal">;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const cloudRouterSubscriptionApi = (internal as any).cloudRouterSubscription as {
-  checkConcurrencyLimit: FunctionReference<"query", "internal">;
-};
 
 /**
  * Record activity for a provider instance
@@ -207,9 +203,9 @@ export const createInstance = httpAction(async (ctx, req) => {
 
   // Check concurrency limit before creating a new instance
   const concurrency = await ctx.runQuery(
-    cloudRouterSubscriptionApi.checkConcurrencyLimit,
+    internal.cloudRouterSubscription.checkConcurrencyLimit,
     { userId: identity!.subject },
-  ) as { allowed: boolean; limit: number; current: number };
+  );
 
   if (!concurrency.allowed) {
     return jsonResponse(
@@ -613,9 +609,9 @@ async function handleResumeInstance(
     // Check concurrency limit before resuming (resuming makes it running)
     const resumeIdentity = await ctx.auth.getUserIdentity();
     const concurrency = await ctx.runQuery(
-      cloudRouterSubscriptionApi.checkConcurrencyLimit,
+      internal.cloudRouterSubscription.checkConcurrencyLimit,
       { userId: resumeIdentity!.subject },
-    ) as { allowed: boolean; limit: number; current: number };
+    );
 
     if (!concurrency.allowed) {
       return jsonResponse(
