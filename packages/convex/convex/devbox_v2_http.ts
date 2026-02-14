@@ -219,15 +219,18 @@ export const createInstance = httpAction(async (ctx, req) => {
 
   try {
     if (provider === "modal") {
-      // Gate expensive GPUs
+      // Gate expensive GPUs — check if user's tier unlocks it
       if (body.gpu && isModalGpuGated(body.gpu)) {
-        return jsonResponse(
-          {
-            code: 403,
-            message: `GPU type "${body.gpu}" requires approval. Please contact founders@manaflow.ai to get this GPU enabled for your account.`,
-          },
-          403,
-        );
+        const baseGpu = body.gpu.split(":")[0]?.toUpperCase() ?? "";
+        if (!concurrency.ungatedGpus.includes(baseGpu)) {
+          return jsonResponse(
+            {
+              code: 403,
+              message: `GPU type "${body.gpu}" requires approval. Please contact founders@manaflow.ai to get this GPU enabled for your account.`,
+            },
+            403,
+          );
+        }
       }
 
       const templateId = body.templateId ?? DEFAULT_MODAL_TEMPLATE_ID;
