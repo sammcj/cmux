@@ -13,328 +13,284 @@ interface LineFragment {
 type Line = string | LineFragment[];
 
 interface Step {
-  prompt?: string;
+  type?: "user" | "agent" | "tool" | "shell";
   command: string;
   output: Line[];
   pauseAfter?: number;
 }
 
-// --- Demo script ---
+// --- Demo script (Claude Code session) ---
 
 const STEPS: Step[] = [
-  // 1. Install as a skill
+  // --- Phase 1: Install the skill ---
   {
-    command: "npx skills add manaflow-ai/cloudrouter --all",
+    type: "shell",
+    command: "npx skills add manaflow-ai/cloudrouter",
     output: [
-      [{ text: "┌   skills ", color: "#d4d4d4" }],
-      [{ text: "│", color: "#d4d4d4" }],
-      [
-        { text: "◇  Source: ", color: "#d4d4d4" },
-        { text: "https://github.com/manaflow-ai/manaflow.git", color: "#38bdf8" },
-      ],
-      [{ text: "│", color: "#d4d4d4" }],
-      [
-        { text: "◇  Repository cloned", color: "#22c55e" },
-      ],
-      [{ text: "│", color: "#d4d4d4" }],
-      [
-        { text: "◇  Found 1 skill", color: "#22c55e" },
-      ],
-      [{ text: "│", color: "#d4d4d4" }],
-      [
-        { text: "●  Installing all 1 skills", color: "#a78bfa" },
-      ],
-      [{ text: "│", color: "#d4d4d4" }],
-      [
-        { text: "●  Installing to all 39 agents", color: "#a78bfa" },
-      ],
-      [{ text: "│", color: "#d4d4d4" }],
-      [
-        { text: "◇  Installation complete", color: "#22c55e" },
-      ],
-      [{ text: "│", color: "#d4d4d4" }],
-      [
-        { text: "◇  Installed 1 skill ─────────────────────────────────────", color: "#22c55e" },
-      ],
-      [
-        { text: "│  ", color: "#d4d4d4" },
-        { text: "✓ ", color: "#22c55e" },
-        { text: "~/.agents/skills/cloudrouter", color: "#d4d4d4" },
-      ],
-      [
-        { text: "│    ", color: "#d4d4d4" },
-        { text: "universal: Amp, Codex, Gemini CLI, GitHub Copilot +3 more", color: "#a3a3a3" },
-      ],
-      [
-        { text: "│    ", color: "#d4d4d4" },
-        { text: "symlinked: Augment, Claude Code, Cline, Cursor +27 more", color: "#a3a3a3" },
-      ],
-      [{ text: "│", color: "#d4d4d4" }],
-      [
-        { text: "└  Done! ", color: "#d4d4d4" },
-        { text: " Review skills before use; they run with full agent permissions.", color: "#737373" },
-      ],
-    ],
-    pauseAfter: 700,
-  },
-  // 2. Login
-  {
-    command: "cloudrouter login",
-    output: [
-      [{ text: "Starting authentication...", color: "#d4d4d4" }],
       "",
-      [{ text: "Opening browser to complete authentication...", color: "#d4d4d4" }],
-      [
-        { text: "If browser doesn't open, visit:", color: "#d4d4d4" },
-      ],
-      [
-        { text: "  https://app.cloudrouter.dev/auth?code=x7k9m2", color: "#38bdf8" },
-      ],
+      [{ text: "  Installing cloudrouter skill...", color: "#a3a3a3" }],
+      [{ text: "  ✓ Added cloudrouter skill to Claude Code", color: "#22c55e" }],
       "",
-      [{ text: "Waiting for authentication... (press Ctrl+C to cancel)", color: "#a3a3a3" }],
-      [{ text: "...", color: "#a3a3a3" }],
+    ],
+    pauseAfter: 1200,
+  },
+
+  // --- Phase 2: Launch Claude Code ---
+  {
+    type: "shell",
+    command: "claude",
+    output: [],
+    pauseAfter: 800,
+  },
+
+  // --- Phase 3: Claude Code session ---
+  {
+    type: "user",
+    command: "/cloudrouter deploy my Next.js app to a cloud sandbox and test it in the browser",
+    output: [],
+    pauseAfter: 800,
+  },
+  {
+    type: "agent",
+    command: "I'll create a sandbox, sync your project, install dependencies, and verify it works in the browser.",
+    output: [],
+    pauseAfter: 800,
+  },
+
+  // Start sandbox
+  {
+    type: "tool",
+    command: "cloudrouter start . --name my-app",
+    output: [
       "",
+      [{ text: "    Waiting for sandbox to initialize.", color: "#a3a3a3" }],
       [
-        { text: "✓ Authentication successful!", color: "#22c55e" },
-      ],
-    ],
-    pauseAfter: 500,
-  },
-  // 3. Check who we are
-  {
-    command: "cloudrouter whoami",
-    output: [
-      [
-        { text: "User: ", color: "#d4d4d4" },
-        { text: "you@company.com", color: "#d4d4d4" },
-      ],
-      [
-        { text: "Team: ", color: "#d4d4d4" },
-        { text: "my-team", color: "#d4d4d4" },
-      ],
-    ],
-    pauseAfter: 400,
-  },
-  // 4. Start sandbox from current directory
-  {
-    prompt: "~/my-app",
-    command: "cloudrouter start .",
-    output: [
-      [{ text: "Waiting for sandbox to initialize.", color: "#d4d4d4" }],
-      [
-        { text: "Syncing ", color: "#d4d4d4" },
+        { text: "    Syncing ", color: "#a3a3a3" },
         { text: "./", color: "#d4d4d4" },
-        { text: " to sandbox...", color: "#d4d4d4" },
+        { text: " to sandbox...", color: "#a3a3a3" },
       ],
+      [{ text: "    ✓ Synced 247 files (12.4 MB) in 3.2s (3.9 MB/s)", color: "#22c55e" }],
       [
-        { text: "✓ Synced 247 files (12.4 MB) in 3.2s (3.9 MB/s)", color: "#22c55e" },
-      ],
-      [
-        { text: "✓ Files synced", color: "#22c55e" },
-      ],
-      [
-        { text: "Created sandbox: ", color: "#d4d4d4" },
+        { text: "    Created sandbox: ", color: "#a3a3a3" },
         { text: "cr_x7k9m2p", color: "#d4d4d4" },
       ],
       [
-        { text: "  Provider: ", color: "#d4d4d4" },
-        { text: "e2b", color: "#d4d4d4" },
+        { text: "      Type:   ", color: "#737373" },
+        { text: "Docker", color: "#d4d4d4" },
       ],
       [
-        { text: "  Status:   ", color: "#d4d4d4" },
+        { text: "      Status: ", color: "#737373" },
         { text: "running", color: "#22c55e" },
       ],
       [
-        { text: "  VSCode:   ", color: "#d4d4d4" },
+        { text: "      VSCode:  ", color: "#737373" },
         { text: "https://39378-x7k9m2p.e2b.app?folder=/home/user/workspace", color: "#38bdf8" },
       ],
       [
-        { text: "  VNC:      ", color: "#d4d4d4" },
+        { text: "      Jupyter: ", color: "#737373" },
+        { text: "https://8888-x7k9m2p.e2b.app", color: "#38bdf8" },
+      ],
+      [
+        { text: "      VNC:     ", color: "#737373" },
         { text: "https://39380-x7k9m2p.e2b.app?autoconnect=true", color: "#38bdf8" },
       ],
-    ],
-    pauseAfter: 700,
-  },
-  // 5. Open VS Code
-  {
-    prompt: "~/my-app",
-    command: "cloudrouter code cr_x7k9m2p",
-    output: [
-      [{ text: "Opening VS Code...", color: "#d4d4d4" }],
-    ],
-    pauseAfter: 400,
-  },
-  // 6. Execute a command
-  {
-    prompt: "~/my-app",
-    command: 'cloudrouter exec cr_x7k9m2p "npm install && npm run dev"',
-    output: [
-      [{ text: "added 847 packages in 12s", color: "#d4d4d4" }],
-      [{ text: "137 packages are looking for funding", color: "#d4d4d4" }],
       "",
-      [{ text: "> my-app@0.1.0 dev", color: "#d4d4d4" }],
-      [{ text: "> next dev", color: "#d4d4d4" }],
+    ],
+    pauseAfter: 1000,
+  },
+
+  // Install deps
+  {
+    type: "agent",
+    command: "Sandbox is running. Installing dependencies and starting the dev server.",
+    output: [],
+    pauseAfter: 600,
+  },
+  {
+    type: "tool",
+    command: 'cloudrouter ssh cr_x7k9m2p "npm install"',
+    output: [
       "",
-      [{ text: "▲ Next.js 15.1.0", color: "#d4d4d4" }],
+      [{ text: "    added 1,247 packages in 8s", color: "#a3a3a3" }],
+      "",
+    ],
+    pauseAfter: 800,
+  },
+
+  // Dev server
+  {
+    type: "tool",
+    command: 'cloudrouter ssh cr_x7k9m2p "npm run dev"',
+    output: [
+      "",
+      [{ text: "    ▲ Next.js 15.5.12", color: "#d4d4d4" }],
       [
-        { text: "- Local:   ", color: "#d4d4d4" },
+        { text: "    - Local:   ", color: "#a3a3a3" },
         { text: "http://localhost:3000", color: "#38bdf8" },
       ],
+      [{ text: "    ✓ Ready in 1414ms", color: "#22c55e" }],
+      "",
+    ],
+    pauseAfter: 1000,
+  },
+
+  // Browser testing
+  {
+    type: "agent",
+    command: "Dev server is running. Opening the browser to verify.",
+    output: [],
+    pauseAfter: 600,
+  },
+  {
+    type: "tool",
+    command: 'cloudrouter browser open cr_x7k9m2p "http://localhost:3000"',
+    output: [
+      "",
       [
-        { text: "✓ Ready in 2.1s", color: "#22c55e" },
+        { text: "    Navigated to: ", color: "#a3a3a3" },
+        { text: "http://localhost:3000", color: "#d4d4d4" },
       ],
+      "",
+    ],
+    pauseAfter: 800,
+  },
+  {
+    type: "tool",
+    command: "cloudrouter browser snapshot cr_x7k9m2p",
+    output: [
+      "",
+      [{ text: "    - document:", color: "#a3a3a3" }],
+      [{ text: "      - main:", color: "#a3a3a3" }],
+      [
+        { text: "        - heading ", color: "#a3a3a3" },
+        { text: '"Welcome to My App"', color: "#d4d4d4" },
+        { text: " [ref=e1] [level=1]", color: "#a78bfa" },
+      ],
+      [{ text: "        - navigation:", color: "#a3a3a3" }],
+      [
+        { text: "          - link ", color: "#a3a3a3" },
+        { text: '"Docs →"', color: "#d4d4d4" },
+        { text: " [ref=e2]", color: "#a78bfa" },
+      ],
+      [
+        { text: "          - link ", color: "#a3a3a3" },
+        { text: '"Learn →"', color: "#d4d4d4" },
+        { text: " [ref=e3]", color: "#a78bfa" },
+      ],
+      [
+        { text: "          - link ", color: "#a3a3a3" },
+        { text: '"Deploy →"', color: "#d4d4d4" },
+        { text: " [ref=e4]", color: "#a78bfa" },
+      ],
+      "",
+    ],
+    pauseAfter: 1000,
+  },
+
+  // Click test
+  {
+    type: "agent",
+    command: "App is live. Testing navigation by clicking the Docs link.",
+    output: [],
+    pauseAfter: 600,
+  },
+  {
+    type: "tool",
+    command: "cloudrouter browser click cr_x7k9m2p e2",
+    output: [
+      "",
+      [{ text: "    Clicked: e2", color: "#a3a3a3" }],
+      "",
     ],
     pauseAfter: 600,
   },
-  // 7. Browser automation — open URL
   {
-    prompt: "~/my-app",
-    command: 'cloudrouter computer open cr_x7k9m2p "http://localhost:3000"',
+    type: "tool",
+    command: "cloudrouter browser screenshot cr_x7k9m2p screenshot.png",
     output: [
-      [
-        { text: "Navigated to: ", color: "#d4d4d4" },
-        { text: "http://localhost:3000", color: "#d4d4d4" },
-      ],
+      "",
+      [{ text: "    ✓ Screenshot saved to screenshot.png", color: "#22c55e" }],
+      "",
     ],
-    pauseAfter: 300,
+    pauseAfter: 1000,
   },
-  // 8. Browser automation — accessibility snapshot
+
+  // GPU sandbox
   {
-    prompt: "~/my-app",
-    command: "cloudrouter computer snapshot cr_x7k9m2p",
-    output: [
-      [
-        { text: "@e1", color: "#a78bfa" },
-        { text: " [RootWebArea] ", color: "#fbbf24" },
-        { text: '"My App" (focused)', color: "#d4d4d4" },
-      ],
-      [
-        { text: "  @e2", color: "#a78bfa" },
-        { text: " [heading] ", color: "#fbbf24" },
-        { text: '"Welcome to My App"', color: "#d4d4d4" },
-      ],
-      [
-        { text: "    @e3", color: "#a78bfa" },
-        { text: " [StaticText] ", color: "#fbbf24" },
-        { text: '"Welcome to My App"', color: "#d4d4d4" },
-      ],
-      [
-        { text: "  @e4", color: "#a78bfa" },
-        { text: " [paragraph]", color: "#fbbf24" },
-      ],
-      [
-        { text: "    @e5", color: "#a78bfa" },
-        { text: " [StaticText] ", color: "#fbbf24" },
-        { text: '"Build something amazing with cloud sandboxes."', color: "#d4d4d4" },
-      ],
-      [
-        { text: "  @e6", color: "#a78bfa" },
-        { text: " [button] ", color: "#fbbf24" },
-        { text: '"Get Started"', color: "#d4d4d4" },
-      ],
-      [
-        { text: "    @e7", color: "#a78bfa" },
-        { text: " [StaticText] ", color: "#fbbf24" },
-        { text: '"Get Started"', color: "#d4d4d4" },
-      ],
-      [
-        { text: "  @e8", color: "#a78bfa" },
-        { text: " [link] ", color: "#fbbf24" },
-        { text: '"Documentation"', color: "#d4d4d4" },
-      ],
-      [
-        { text: "    @e9", color: "#a78bfa" },
-        { text: " [StaticText] ", color: "#fbbf24" },
-        { text: '"Documentation"', color: "#d4d4d4" },
-      ],
-    ],
-    pauseAfter: 500,
+    type: "agent",
+    command: "App is deployed and working. Now spinning up a GPU sandbox for ML training.",
+    output: [],
+    pauseAfter: 800,
   },
-  // 9. Browser automation — click
   {
-    prompt: "~/my-app",
-    command: "cloudrouter computer click cr_x7k9m2p @e6",
+    type: "tool",
+    command: "cloudrouter start --gpu H100 --name ml-training",
     output: [
-      [{ text: "Clicked: @e6", color: "#d4d4d4" }],
-    ],
-    pauseAfter: 300,
-  },
-  // 10. Browser automation — screenshot
-  {
-    prompt: "~/my-app",
-    command: "cloudrouter computer screenshot cr_x7k9m2p ./screenshot.png",
-    output: [
+      "",
+      [{ text: "    Waiting for sandbox to initialize.", color: "#a3a3a3" }],
       [
-        { text: "Screenshot saved to: ", color: "#d4d4d4" },
-        { text: "./screenshot.png", color: "#d4d4d4" },
-      ],
-    ],
-    pauseAfter: 400,
-  },
-  // 11. Upload with watch mode
-  {
-    prompt: "~/my-app",
-    command: "cloudrouter upload cr_x7k9m2p ./src",
-    output: [
-      [
-        { text: "Uploading ", color: "#d4d4d4" },
-        { text: "./src", color: "#d4d4d4" },
-        { text: " to cr_x7k9m2p:/home/user/workspace...", color: "#d4d4d4" },
-      ],
-      [
-        { text: "✓ Synced 42 files (1.8 MB) in 1.1s (1.6 MB/s)", color: "#22c55e" },
-      ],
-    ],
-    pauseAfter: 400,
-  },
-  // 12. List sandboxes
-  {
-    prompt: "~/my-app",
-    command: "cloudrouter ls",
-    output: [
-      [{ text: "Sandboxes:", color: "#d4d4d4" }],
-      [
-        { text: "  cr_x7k9m2p", color: "#d4d4d4" },
-        { text: " - ", color: "#737373" },
-        { text: "running", color: "#22c55e" },
-        { text: " (my-app) [e2b]", color: "#a3a3a3" },
-      ],
-      [
-        { text: "  cr_p3n8q1r", color: "#d4d4d4" },
-        { text: " - ", color: "#737373" },
-        { text: "running", color: "#22c55e" },
-        { text: " (ml-train) [e2b]", color: "#a3a3a3" },
-      ],
-    ],
-    pauseAfter: 500,
-  },
-  // 13. Start GPU sandbox
-  {
-    prompt: "~/my-app",
-    command: "cloudrouter start --gpu B200 --name gpu-training",
-    output: [
-      [{ text: "Waiting for sandbox to initialize.", color: "#d4d4d4" }],
-      [
-        { text: "Created sandbox: ", color: "#d4d4d4" },
+        { text: "    Created sandbox: ", color: "#a3a3a3" },
         { text: "cr_g4h8j2k", color: "#d4d4d4" },
       ],
       [
-        { text: "  Provider: ", color: "#d4d4d4" },
-        { text: "modal", color: "#d4d4d4" },
+        { text: "      Type:   ", color: "#737373" },
+        { text: "GPU (H100)", color: "#fbbf24" },
       ],
       [
-        { text: "  Status:   ", color: "#d4d4d4" },
+        { text: "      Status: ", color: "#737373" },
         { text: "running", color: "#22c55e" },
       ],
       [
-        { text: "  GPU:      ", color: "#d4d4d4" },
-        { text: "B200 (192GB VRAM)", color: "#fbbf24" },
+        { text: "      Jupyter: ", color: "#737373" },
+        { text: "https://ta-g4h8j2k-8888.modal.host", color: "#38bdf8" },
+      ],
+      "",
+    ],
+    pauseAfter: 1000,
+  },
+
+  // Verify GPU
+  {
+    type: "tool",
+    command: 'cloudrouter ssh cr_g4h8j2k "nvidia-smi --query-gpu=name,memory.total --format=csv"',
+    output: [
+      "",
+      [{ text: "    name, memory.total [MiB]", color: "#a3a3a3" }],
+      [{ text: "    NVIDIA H100, 81920 MiB", color: "#d4d4d4" }],
+      "",
+    ],
+    pauseAfter: 800,
+  },
+
+  // List all
+  {
+    type: "tool",
+    command: "cloudrouter ls",
+    output: [
+      "",
+      [{ text: "    Sandboxes:", color: "#a3a3a3" }],
+      [
+        { text: "      cr_x7k9m2p", color: "#d4d4d4" },
+        { text: " - ", color: "#737373" },
+        { text: "running", color: "#22c55e" },
+        { text: " (my-app) [Docker]", color: "#a3a3a3" },
       ],
       [
-        { text: "  Jupyter:  ", color: "#d4d4d4" },
-        { text: "https://cr-g4h8j2k.modal.run/jupyter", color: "#38bdf8" },
+        { text: "      cr_g4h8j2k", color: "#d4d4d4" },
+        { text: " - ", color: "#737373" },
+        { text: "running", color: "#22c55e" },
+        { text: " (ml-training) [GPU]", color: "#a3a3a3" },
       ],
+      "",
     ],
+    pauseAfter: 800,
+  },
+
+  // Final summary
+  {
+    type: "agent",
+    command: "Done! Two sandboxes running — your Next.js app on Docker and an H100 GPU for ML training.",
+    output: [],
   },
 ];
 
@@ -343,6 +299,19 @@ const STEPS: Step[] = [
 const CHAR_DELAY = 32;
 const CHAR_VARIANCE = 18;
 const STEP_PAUSE = 800;
+
+/** Colorize a cloudrouter CLI command into fragments */
+function colorizeCommand(cmd: string): LineFragment[] {
+  // Match: cloudrouter <rest...>
+  const match = cmd.match(/^(cloudrouter)\s+(.*)/);
+  if (!match) return [{ text: cmd, color: "#d4d4d4" }];
+
+  const [, bin, rest] = match;
+  return [
+    { text: bin, color: "#f97316" },    // orange for cloudrouter
+    { text: " " + rest, color: "#38bdf8" },  // blue for everything after
+  ];
+}
 
 function randomDelay(base: number, variance: number) {
   return base + (Math.random() * variance * 2 - variance);
@@ -369,7 +338,7 @@ export function TerminalDemo() {
   const [lines, setLines] = useState<Array<{ key: string; content: Line }>>([]);
   const [currentTyping, setCurrentTyping] = useState("");
   const [showCursor, setShowCursor] = useState(true);
-  const [currentPrompt, setCurrentPrompt] = useState("~");
+  const [promptStyle, setPromptStyle] = useState<"shell" | "claude">("shell");
   const [isComplete, setIsComplete] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -411,6 +380,45 @@ export function TerminalDemo() {
     [sleep],
   );
 
+  const renderStepLines = useCallback(
+    (step: Step) => {
+      const type = step.type ?? "user";
+
+      if (type === "shell") {
+        // $ command
+        addLine([
+          { text: "$ ", color: "#a3a3a3" },
+          { text: step.command, color: "#d4d4d4" },
+        ]);
+      } else if (type === "user") {
+        // ❯ command
+        addLine([
+          { text: "❯ ", color: "#22c55e" },
+          { text: step.command, color: "#d4d4d4" },
+        ]);
+      } else if (type === "agent") {
+        // ⏺ text
+        addLine([
+          { text: "⏺ ", color: "#818cf8" },
+          { text: step.command, color: "#d4d4d4" },
+        ]);
+      } else if (type === "tool") {
+        // ⏺  Bash  command (with syntax coloring)
+        addLine([
+          { text: "  ⏺ ", color: "#818cf8" },
+          { text: "Bash ", color: "#737373" },
+          ...colorizeCommand(step.command),
+        ]);
+      }
+
+      // Output lines
+      for (const outputLine of step.output) {
+        addLine(outputLine);
+      }
+    },
+    [addLine],
+  );
+
   const runDemo = useCallback(async () => {
     if (isRunning) return;
     setIsRunning(true);
@@ -428,54 +436,40 @@ export function TerminalDemo() {
 
       for (let stepIdx = 0; stepIdx < STEPS.length; stepIdx++) {
         const step = STEPS[stepIdx];
-        const prompt = step.prompt ?? "~";
+        const type = step.type ?? "user";
 
-        setCurrentPrompt(prompt);
-        setCurrentTyping("");
-        setShowCursor(true);
+        if (type === "shell" || type === "user") {
+          // Type the command character by character
+          setPromptStyle(type === "shell" ? "shell" : "claude");
+          setCurrentTyping("");
+          setShowCursor(true);
 
-        // Small pause before typing
-        await sleep(300, signal);
+          await sleep(400, signal);
+          await typeCommand(step.command, signal);
+          await sleep(300, signal);
 
-        // Type the command
-        await typeCommand(step.command, signal);
-
-        // Brief pause after command is typed
-        await sleep(200, signal);
-
-        // "Submit" the command — add the prompt+command as a line
-        const promptLine: LineFragment[] = [
-          { text: `${prompt} `, color: "#22c55e" },
-          { text: "$ ", color: "#737373" },
-          { text: step.command, color: "#d4d4d4" },
-        ];
-        setCurrentTyping("");
-        addLine(promptLine);
-
-        // Output all lines at once (like a real terminal)
-        setShowCursor(false);
-        signal.throwIfAborted();
-        for (const outputLine of step.output) {
-          addLine(outputLine);
+          // "Submit" — add as line and clear typing
+          setCurrentTyping("");
+          setShowCursor(false);
+          renderStepLines(step);
+        } else {
+          // Agent text and tool calls appear instantly
+          setShowCursor(false);
+          await sleep(300, signal);
+          renderStepLines(step);
         }
-
-        // Show next prompt immediately, then pause before typing
-        const nextPrompt = STEPS[stepIdx + 1]?.prompt ?? "~/my-app";
-        setCurrentPrompt(nextPrompt);
-        setShowCursor(true);
 
         // Pause between steps
         const pause = step.pauseAfter ?? STEP_PAUSE;
-        await sleep(pause + 400, signal);
+        await sleep(pause, signal);
       }
 
-      // Demo complete
-      setCurrentPrompt("~/my-app");
+      // Demo complete — show cursor again
+      setShowCursor(true);
       setCurrentTyping("");
       setIsComplete(true);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        // Aborted — skip to end
         return;
       }
       console.error("Terminal demo error:", err);
@@ -483,7 +477,7 @@ export function TerminalDemo() {
       setIsRunning(false);
       abortRef.current = null;
     }
-  }, [isRunning, sleep, typeCommand, addLine]);
+  }, [isRunning, sleep, typeCommand, renderStepLines]);
 
   const skipToEnd = useCallback(() => {
     if (abortRef.current) {
@@ -494,23 +488,44 @@ export function TerminalDemo() {
     // Render all steps at once
     const allLines: Array<{ key: string; content: Line }> = [];
     let counter = 0;
+
+    const addSkipLine = (content: Line) => {
+      allLines.push({ key: `line-${counter++}`, content });
+    };
+
     for (const step of STEPS) {
-      const prompt = step.prompt ?? "~";
-      allLines.push({
-        key: `line-${counter++}`,
-        content: [
-          { text: `${prompt} `, color: "#22c55e" },
-          { text: "$ ", color: "#737373" },
+      const type = step.type ?? "user";
+
+      if (type === "shell") {
+        addSkipLine([
+          { text: "$ ", color: "#a3a3a3" },
           { text: step.command, color: "#d4d4d4" },
-        ],
-      });
+        ]);
+      } else if (type === "user") {
+        addSkipLine([
+          { text: "❯ ", color: "#22c55e" },
+          { text: step.command, color: "#d4d4d4" },
+        ]);
+      } else if (type === "agent") {
+        addSkipLine([
+          { text: "⏺ ", color: "#818cf8" },
+          { text: step.command, color: "#d4d4d4" },
+        ]);
+      } else if (type === "tool") {
+        addSkipLine([
+          { text: "  ⏺ ", color: "#818cf8" },
+          { text: "Bash ", color: "#737373" },
+          ...colorizeCommand(step.command),
+        ]);
+      }
+
       for (const outputLine of step.output) {
-        allLines.push({ key: `line-${counter++}`, content: outputLine });
+        addSkipLine(outputLine);
       }
     }
+
     lineCounterRef.current = counter;
     setLines(allLines);
-    setCurrentPrompt("~/my-app");
     setCurrentTyping("");
     setShowCursor(true);
     setIsComplete(true);
@@ -525,11 +540,9 @@ export function TerminalDemo() {
     setLines([]);
     setCurrentTyping("");
     setShowCursor(true);
-    setCurrentPrompt("~");
     setIsComplete(false);
     setIsRunning(false);
     lineCounterRef.current = 0;
-    // Small delay before restarting
     setTimeout(() => {
       runDemo();
     }, 100);
@@ -576,8 +589,8 @@ export function TerminalDemo() {
             <div className="h-3 w-3 rounded-full bg-[#febc2e]" />
             <div className="h-3 w-3 rounded-full bg-[#28c840]" />
           </div>
-          <span className="ml-2 flex-1 text-center text-xs text-neutral-500">
-            cloudrouter — bash
+          <span className="ml-2 flex-1 select-none text-center text-xs text-neutral-500">
+            cloudrouter
           </span>
         </div>
 
@@ -598,8 +611,11 @@ export function TerminalDemo() {
             {/* Current prompt + typing */}
             {showCursor && (
               <div className="min-h-[1.35em]">
-                <span style={{ color: "#22c55e" }}>{currentPrompt} </span>
-                <span style={{ color: "#737373" }}>$ </span>
+                {promptStyle === "shell" ? (
+                  <span style={{ color: "#a3a3a3" }}>$ </span>
+                ) : (
+                  <span style={{ color: "#22c55e" }}>❯ </span>
+                )}
                 <span style={{ color: "#d4d4d4" }}>{currentTyping}</span>
                 <span
                   className="inline-block h-[1.1em] w-[0.55em] translate-y-[0.15em] align-baseline"
@@ -630,11 +646,9 @@ export function TerminalDemo() {
       </div>
 
       {/* Click hint */}
-      {isRunning && (
-        <div className="mt-3 text-center text-xs text-neutral-600 transition-opacity">
-          Click terminal or press Enter to skip animation
-        </div>
-      )}
+      <div className={`mt-3 text-center text-xs text-neutral-600 transition-opacity ${isRunning ? "opacity-100" : "opacity-0"}`}>
+        Click terminal or press Enter to skip animation
+      </div>
 
       {/* Keyboard listener for restart */}
       <KeyboardListener

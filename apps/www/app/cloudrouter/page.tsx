@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Source_Serif_4 } from "next/font/google";
 import { CloudrouterHeader } from "./header";
 import { CodeBlock } from "./code-block";
+import { InstallBar } from "./install-bar";
 import { SkillContent } from "./skill-content";
 import { TerminalDemo } from "./terminal-demo";
 
@@ -30,6 +32,18 @@ export const metadata: Metadata = {
       "Cloud sandboxes for development. Instant remote VMs with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
   },
 };
+
+const instances = [
+  { gpu: "T4", vram: "16 GB", bestFor: "Inference, fine-tuning small models" },
+  { gpu: "L4", vram: "24 GB", bestFor: "Inference, image generation" },
+  { gpu: "A10G", vram: "24 GB", bestFor: "Training medium models" },
+  { gpu: "L40S", vram: "48 GB", bestFor: "Inference, video generation" },
+  { gpu: "A100", vram: "40 GB", bestFor: "Training large models (7B–70B)" },
+  { gpu: "A100-80GB", vram: "80 GB", bestFor: "Very large models" },
+  { gpu: "H100", vram: "80 GB", bestFor: "Fast training, research" },
+  { gpu: "H200", vram: "141 GB", bestFor: "Maximum memory capacity" },
+  { gpu: "B200", vram: "192 GB", bestFor: "Latest gen, frontier models" },
+] as const;
 
 const features = [
   {
@@ -73,15 +87,18 @@ export default function CloudRouterPage() {
         <CloudrouterHeader />
 
         {/* Hero */}
-        <section className="mb-10 text-center">
-          <h1 className="mb-3 text-2xl font-bold leading-tight sm:text-3xl">
-            Cloud VMs and GPUs for AI coding agents
+        <section className="mb-8">
+          <h1 className="mb-3 text-xl font-bold leading-tight whitespace-nowrap sm:text-2xl">
+            Skill for Claude Code/Codex to spin up VMs and GPUs
           </h1>
-          <p className="mx-auto max-w-xl text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">
+          <p className="max-w-xl text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">
             Give Claude Code, Codex, and other agents the ability to spin up cloud sandboxes,
-            run commands, transfer files, and automate browsers — all from the CLI.
+            run commands, transfer files, and automate browsers — all from the CLI as a skill.
           </p>
         </section>
+
+        {/* Install command */}
+        <InstallBar />
 
         {/* Terminal Demo */}
         <TerminalDemo />
@@ -136,7 +153,7 @@ export default function CloudRouterPage() {
                 "cloudrouter pty cr_abc123",
                 "",
                 "# Run a command",
-                'cloudrouter exec cr_abc123 "npm install && npm run dev"',
+                'cloudrouter ssh cr_abc123 "npm install && npm run dev"',
                 "",
                 "# Open VNC desktop",
                 "cloudrouter vnc cr_abc123",
@@ -156,19 +173,19 @@ export default function CloudRouterPage() {
             <CodeBlock>
               {[
                 "# Open a URL in the sandbox browser",
-                'cloudrouter computer open cr_abc123 "https://example.com"',
+                'cloudrouter browser open cr_abc123 "https://example.com"',
                 "",
                 "# Get the accessibility tree with element refs",
-                "cloudrouter computer snapshot cr_abc123",
+                "cloudrouter browser snapshot cr_abc123",
                 "# → @e1 [input] Email  @e2 [input] Password  @e3 [button] Sign In",
                 "",
                 "# Interact with elements",
-                'cloudrouter computer fill cr_abc123 @e1 "user@example.com"',
-                'cloudrouter computer fill cr_abc123 @e2 "password123"',
-                "cloudrouter computer click cr_abc123 @e3",
+                'cloudrouter browser fill cr_abc123 @e1 "user@example.com"',
+                'cloudrouter browser fill cr_abc123 @e2 "password123"',
+                "cloudrouter browser click cr_abc123 @e3",
                 "",
                 "# Take a screenshot",
-                "cloudrouter computer screenshot cr_abc123 result.png",
+                "cloudrouter browser screenshot cr_abc123 result.png",
               ].join("\n")}
             </CodeBlock>
           </section>
@@ -192,19 +209,54 @@ export default function CloudRouterPage() {
 
           <hr className="mb-8 border-neutral-200 dark:border-neutral-800" />
 
+          {/* Instances / GPU options */}
+          <section id="instances" className="mb-8 scroll-mt-8">
+            <h2 className="mb-2 text-lg font-semibold">Instances</h2>
+            <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+              Standard sandboxes are available instantly. GPU instances can be added with{" "}
+              <code className="rounded bg-neutral-100 px-1 py-0.5 dark:bg-neutral-800">--gpu</code>.
+              Multi-GPU supported via <code className="rounded bg-neutral-100 px-1 py-0.5 dark:bg-neutral-800">--gpu H100:2</code>.
+            </p>
+            <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900">
+                    <th className="px-4 py-2 font-semibold">GPU</th>
+                    <th className="px-4 py-2 font-semibold">VRAM</th>
+                    <th className="px-4 py-2 font-semibold">Best for</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {instances.map((row) => (
+                    <tr key={row.gpu} className="border-b border-neutral-100 last:border-0 dark:border-neutral-800">
+                      <td className="whitespace-nowrap px-4 py-2 font-mono text-xs">{row.gpu}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-neutral-600 dark:text-neutral-400">{row.vram}</td>
+                      <td className="px-4 py-2 text-neutral-600 dark:text-neutral-400">{row.bestFor}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <hr className="mb-8 border-neutral-200 dark:border-neutral-800" />
+
           {/* File transfer */}
           <section className="mb-8 scroll-mt-8">
             <h2 className="mb-4 text-lg font-semibold">File transfer</h2>
             <CodeBlock>
               {[
                 "# Upload files to sandbox",
-                "cloudrouter upload cr_abc123 ./src /home/user/project/src",
+                "cloudrouter upload cr_abc123 ./src",
+                "",
+                "# Upload to a specific remote path",
+                "cloudrouter upload cr_abc123 ./src -r /home/user/project/src",
                 "",
                 "# Download from sandbox",
-                "cloudrouter download cr_abc123 /home/user/project/dist ./dist",
+                "cloudrouter download cr_abc123 ./dist",
                 "",
                 "# Watch mode — auto re-upload on changes",
-                "cloudrouter upload cr_abc123 ./src /home/user/project/src --watch",
+                "cloudrouter upload cr_abc123 ./src --watch",
               ].join("\n")}
             </CodeBlock>
           </section>
@@ -247,7 +299,7 @@ export default function CloudRouterPage() {
 
         {/* Footer */}
         <footer className="flex flex-col items-center gap-4 text-center text-xs text-neutral-400 dark:text-neutral-500">
-          <div className="flex gap-4">
+          <div className="flex flex-wrap justify-center gap-4">
             <a
               href="https://github.com/manaflow-ai/manaflow"
               target="_blank"
@@ -272,6 +324,18 @@ export default function CloudRouterPage() {
             >
               Discord
             </a>
+            <Link href="/privacy-policy" className="transition hover:text-neutral-900 dark:hover:text-white">
+              Privacy
+            </Link>
+            <Link href="/terms-of-service" className="transition hover:text-neutral-900 dark:hover:text-white">
+              Terms
+            </Link>
+            <Link href="/eula" className="transition hover:text-neutral-900 dark:hover:text-white">
+              EULA
+            </Link>
+            <Link href="/contact" className="transition hover:text-neutral-900 dark:hover:text-white">
+              Contact
+            </Link>
           </div>
           <span>
             cloudrouter by{" "}
