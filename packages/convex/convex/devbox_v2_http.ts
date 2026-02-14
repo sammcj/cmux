@@ -560,10 +560,15 @@ async function handlePauseInstance(
 
     // Neither E2B nor Modal has native pause
     if (provider === "e2b") {
-      await ctx.runAction(e2bActionsApi.extendTimeout, {
-        instanceId: providerInstanceId,
-        timeoutMs: 60 * 60 * 1000,
-      });
+      try {
+        await ctx.runAction(e2bActionsApi.extendTimeout, {
+          instanceId: providerInstanceId,
+          timeoutMs: 60 * 60 * 1000,
+        });
+      } catch (error) {
+        // E2B sandbox may have already expired — still update our status
+        console.error("[devbox_v2.pause] E2B extendTimeout failed (sandbox may have expired):", error);
+      }
     }
 
     await ctx.runMutation(devboxApi.updateStatus, {
@@ -688,9 +693,14 @@ async function handleStopInstance(
     const actionsApi =
       provider === "modal" ? modalActionsApi : e2bActionsApi;
 
-    await ctx.runAction(actionsApi.stopInstance, {
-      instanceId: providerInstanceId,
-    });
+    try {
+      await ctx.runAction(actionsApi.stopInstance, {
+        instanceId: providerInstanceId,
+      });
+    } catch (error) {
+      // Provider instance may already be stopped/expired — still update our status
+      console.error("[devbox_v2.stop] Provider stop failed (may already be gone):", error);
+    }
 
     await ctx.runMutation(devboxApi.updateStatus, {
       teamSlugOrId,
