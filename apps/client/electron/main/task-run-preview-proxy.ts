@@ -75,8 +75,9 @@ const CMUX_DOMAINS = [
   "cmux.app",
   "cmux.sh",
   "cmux.dev",
-  "cmux.local",
-  "cmux.localhost",
+  "manaflow.com",
+  "manaflow.local",
+  "manaflow.localhost",
   "autobuild.app",
 ] as const;
 
@@ -228,7 +229,7 @@ export function getPreviewPartitionForPersistKey(
     return null;
   }
   const hash = createHash("sha256").update(key).digest("hex").slice(0, 24);
-  return `persist:cmux-preview-${hash}`;
+  return `persist:manaflow-preview-${hash}`;
 }
 
 export function getProxyCredentialsForWebContents(
@@ -643,7 +644,7 @@ function shouldInterceptTls(
   if (!context.route) {
     return false;
   }
-  if (isLoopbackHostname(hostname) || hostname.endsWith(".cmux.local")) {
+  if (isLoopbackHostname(hostname) || hostname.endsWith(".manaflow.local")) {
     return true;
   }
   return false;
@@ -1965,7 +1966,7 @@ function deriveRoute(url: string): ProxyRoute | null {
             return {
                 morphId: "test",
                 scope: "base",
-                domainSuffix: "cmux.local",
+                domainSuffix: "manaflow.local",
                 cmuxProxyOrigin: process.env.TEST_CMUX_PROXY_ORIGIN
             };
         }
