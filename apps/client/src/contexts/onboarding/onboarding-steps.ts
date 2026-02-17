@@ -102,7 +102,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     id: "complete",
     title: "You're all set!",
     description:
-      "You now know the essentials of cmux. Start by selecting a repository and describing a task. The AI agents will handle the rest!",
+      "You now know the essentials of Manaflow. Start by selecting a repository and describing a task. The AI agents will handle the rest!",
     placement: "center",
   },
 ];

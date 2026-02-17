@@ -695,7 +695,7 @@ function MockCmuxStartRun() {
         <main className="flex-1 bg-neutral-950/35 flex flex-col min-h-0">
           <div className="px-6 pt-5 pb-4">
             <div className="text-[11px] uppercase tracking-[0.2em] text-neutral-500">
-              cmux
+              manaflow
             </div>
             <div className="mt-3 rounded-xl border border-neutral-800 bg-neutral-950/70 px-4 py-3">
               <div className="text-sm text-neutral-500">Describe a task</div>
@@ -1517,7 +1517,7 @@ function MockGitHubPRBrowser() {
                     <div className="shrink-0 w-10 h-10 rounded-full bg-[#0d1117] border border-[#30363d] flex items-center justify-center relative z-10">
                       <Image
                         src="https://avatars.githubusercontent.com/in/1690796?s=80&v=4"
-                        alt="cmux-agent avatar"
+                        alt="manaflow-agent avatar"
                         width={40}
                         height={40}
                         className="rounded-full"
@@ -1636,7 +1636,7 @@ function MockGitHubPRBrowser() {
                               }}
                               className="text-[#2f81f7] hover:underline cursor-pointer"
                             >
-                              cmux
+                              manaflow
                             </button>{" "}
                             preview system
                           </p>
@@ -2053,7 +2053,7 @@ function MockGitHubPRBrowser() {
                           </span>
                           <span className="flex-1 px-2 text-[#3fb950]">
                             +import {"{"} api {"}"} from
-                            &quot;@cmux/convex/api&quot;;
+                            &quot;@manaflow/convex/api&quot;;
                           </span>
                         </div>
                         <div className="flex bg-[#2ea04326]">
@@ -2622,7 +2622,7 @@ function MockGitHubPRBrowser() {
                         </div>
                         <div className="flex items-center gap-1 px-2 py-0.5 text-[11px] text-[#cccccc]">
                           <ChevronDown className="h-3 w-3" />
-                          <span className="text-[10px]">cmux</span>
+                          <span className="text-[10px]">manaflow</span>
                         </div>
                         <div className="flex-1 overflow-y-auto text-[11px]">
                           {/* Root folders */}
@@ -2946,7 +2946,7 @@ function MockGitHubPRBrowser() {
                                 </span>
                                 <span className="flex-1 px-2 text-[#3fb950]">
                                   +import {"{"} api {"}"} from
-                                  &quot;@cmux/convex/api&quot;;
+                                  &quot;@manaflow/convex/api&quot;;
                                 </span>
                               </div>
                               <div className="px-2 py-0.5 text-[#858585] bg-[#1f2733] text-[8px]">
@@ -3100,7 +3100,7 @@ function MockGitHubPRBrowser() {
                       </div>
                       <div className="flex items-center gap-1 px-2 py-0.5 text-[11px] text-[#cccccc] bg-[#37373d]">
                         <ChevronDown className="h-3 w-3" />
-                        <span className="text-[10px]">cmux</span>
+                        <span className="text-[10px]">manaflow</span>
                       </div>
                       <div className="flex-1 overflow-y-auto text-[11px]">
                         {/* Root folders */}
@@ -3371,7 +3371,7 @@ function MockGitHubPRBrowser() {
                             </span>
                             <span className="flex-1 px-4 text-[#3fb950]">
                               +import {"{"} api {"}"} from
-                              &quot;@cmux/convex/api&quot;;
+                              &quot;@manaflow/convex/api&quot;;
                             </span>
                           </div>
                           <div className="px-4 py-1 text-[#858585] bg-[#1f2733]">

@@ -25,6 +25,11 @@ import {
 } from "react";
 import { RepositoryAdvancedOptions } from "./RepositoryAdvancedOptions";
 
+const GITHUB_INSTALL_COMPLETE_MESSAGE_TYPES = new Set([
+  "manaflow/github-install-complete",
+  "cmux/github-install-complete",
+]);
+
 function formatTimeAgo(input?: string | number): string {
   if (!input) return "";
   const ts = typeof input === "number" ? input : Date.parse(input);
@@ -153,7 +158,9 @@ export function RepositoryPicker({
       if (
         data &&
         typeof data === "object" &&
-        (data as { type?: string }).type === "cmux/github-install-complete"
+        GITHUB_INSTALL_COMPLETE_MESSAGE_TYPES.has(
+          (data as { type?: string }).type ?? "",
+        )
       ) {
         handleConnectionsInvalidated();
       }
@@ -518,7 +525,7 @@ function RepositoryConnectionsSection({
         window.open(url, "_blank", "noopener,noreferrer");
         return null;
       }
-      const name = opts?.name ?? "cmux-popup";
+      const name = opts?.name ?? "manaflow-popup";
       const width = Math.floor(opts?.width ?? 980);
       const height = Math.floor(opts?.height ?? 780);
       const dualScreenLeft = window.screenLeft ?? window.screenX ?? 0;

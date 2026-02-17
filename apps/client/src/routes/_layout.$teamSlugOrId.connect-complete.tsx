@@ -3,6 +3,9 @@ import { CheckCircle2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
+const GITHUB_INSTALL_COMPLETE_MESSAGE_TYPE =
+  "manaflow/github-install-complete";
+
 export const Route = createFileRoute("/_layout/$teamSlugOrId/connect-complete")(
   {
     component: ConnectComplete,
@@ -27,7 +30,7 @@ function ConnectComplete() {
     if (isWebPopup) {
       try {
         window.opener?.postMessage?.(
-          { type: "cmux/github-install-complete" },
+          { type: GITHUB_INSTALL_COMPLETE_MESSAGE_TYPE },
           window.location.origin
         );
         window.opener?.focus?.();
@@ -64,7 +67,7 @@ function ConnectComplete() {
       triedAutoClose.current = true;
       try {
         window.opener?.postMessage?.(
-          { type: "cmux/github-install-complete" },
+          { type: GITHUB_INSTALL_COMPLETE_MESSAGE_TYPE },
           window.location.origin
         );
         window.opener?.focus?.();
@@ -97,7 +100,7 @@ function ConnectComplete() {
               GitHub Connected
             </h1>
             <p className="mt-2 text-center text-sm text-neutral-600 dark:text-neutral-400">
-              You can now close this window and return to your cmux tab.
+              You can now close this window and return to your Manaflow tab.
             </p>
             <p
               className="mt-4 text-center text-xs text-neutral-500 dark:text-neutral-500"

@@ -59,8 +59,8 @@ import {
 import { computeSetAsDefaultProtocolClientCall } from "./protocol-registration";
 
 // Use a cookieable HTTPS origin intercepted locally instead of a custom scheme.
-const PARTITION = "persist:cmux";
-const APP_HOST = "cmux.local";
+const PARTITION = "persist:manaflow";
+const APP_HOST = "manaflow.local";
 
 function resolveMaxSuspendedWebContents(): number | undefined {
   const raw =
@@ -546,7 +546,7 @@ function registerAppIpcHandlers(): void {
             ? app.isDefaultProtocolClient(call.scheme, call.execPath, call.args)
             : app.isDefaultProtocolClient(call.scheme);
       } catch (error) {
-        mainWarn("isDefaultProtocolClient(cmux) failed", error);
+        mainWarn("isDefaultProtocolClient(manaflow) failed", error);
       }
 
       return {
@@ -696,9 +696,9 @@ function createWindow(): void {
     },
   };
 
-  // Use only the icon from cmux-logos iconset.
+  // Use only the icon from manaflow-logos iconset.
   const iconPng = resolveResourcePath(
-    "cmux-logos/cmux.iconset/icon_512x512.png"
+    "manaflow-logos/manaflow.iconset/icon_512x512.png"
   );
   if (process.platform !== "darwin") {
     windowOptions.icon = iconPng;
@@ -991,9 +991,12 @@ app.whenReady().then(async () => {
           ? app.isDefaultProtocolClient(call.scheme, call.execPath, call.args)
           : app.isDefaultProtocolClient(call.scheme);
     } catch (error) {
-      mainWarn("isDefaultProtocolClient(cmux) failed after registration", error);
+      mainWarn(
+        "isDefaultProtocolClient(manaflow) failed after registration",
+        error,
+      );
     }
-    mainLog("setAsDefaultProtocolClient(cmux)", {
+    mainLog("setAsDefaultProtocolClient(manaflow)", {
       ok,
       isDefaultProtocolClient,
       packaged: app.isPackaged,
@@ -1013,7 +1016,7 @@ app.whenReady().then(async () => {
   // Set Dock icon from iconset on macOS.
   if (process.platform === "darwin") {
     const iconPng = resolveResourcePath(
-      "cmux-logos/cmux.iconset/icon_512x512.png"
+      "manaflow-logos/manaflow.iconset/icon_512x512.png"
     );
     const img = nativeImage.createFromPath(iconPng);
     if (!img.isEmpty()) app.dock?.setIcon(img);
