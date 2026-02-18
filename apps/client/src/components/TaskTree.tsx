@@ -1585,6 +1585,10 @@ function TaskRunTreeInner({
     });
   }, [refreshGitHubAuth, run._id, teamSlugOrId]);
 
+  const shouldRenderPullRequestLink = Boolean(
+    (run.pullRequestUrl && run.pullRequestUrl !== "pending") ||
+      run.pullRequests?.some((pr) => pr.url)
+  );
   const hasOpenWithActions = openWithActions.length > 0;
   const hasPortActions = portActions.length > 0;
   const canCopyBranch = Boolean(copyRunBranch);
@@ -1755,6 +1759,7 @@ function TaskRunTreeInner({
         teamSlugOrId={teamSlugOrId}
         isExpanded={isExpanded}
         hasChildren={hasChildren}
+        shouldRenderPullRequestLink={shouldRenderPullRequestLink}
         previewServices={previewServices}
         customPreviews={run.customPreviews || []}
         environmentError={run.environmentError}
@@ -1892,6 +1897,7 @@ interface TaskRunDetailsProps {
   teamSlugOrId: string;
   isExpanded: boolean;
   hasChildren: boolean;
+  shouldRenderPullRequestLink: boolean;
   previewServices: PreviewService[];
   customPreviews: Array<{
     url: string;
@@ -1914,6 +1920,7 @@ function TaskRunDetails({
   teamSlugOrId,
   isExpanded,
   hasChildren,
+  shouldRenderPullRequestLink,
   previewServices,
   customPreviews,
   environmentError,
@@ -2240,7 +2247,7 @@ function TaskRunDetails({
         />
       ) : null}
 
-      {!isLocalWorkspace ? (
+      {shouldRenderPullRequestLink ? (
         <TaskRunDetailLink
           to="/$teamSlugOrId/task/$taskId/run/$runId/pr"
           params={{ teamSlugOrId, taskId, runId: run._id }}
