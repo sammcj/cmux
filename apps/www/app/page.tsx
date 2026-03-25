@@ -261,7 +261,7 @@ export default async function LandingPage() {
                 <p className="text-xs text-neutral-400">
                   Latest release: Manaflow {latestVersion}. Need another build? Visit the{" "}
                   <a
-                    href="https://github.com/manaflow-ai/manaflow/releases"
+                    href="https://github.com/manaflow-ai/cmux/releases"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="underline hover:text-neutral-300"
@@ -560,7 +560,7 @@ export default async function LandingPage() {
           <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
             <a
               className="transition hover:text-white"
-              href="https://github.com/manaflow-ai/manaflow"
+              href="https://github.com/manaflow-ai/cmux"
               rel="noopener noreferrer"
               target="_blank"
             >
