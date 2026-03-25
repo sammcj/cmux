@@ -38,7 +38,7 @@ export default function ManaflowPage() {
                 cmux.com
               </a>
               <a
-                href="https://github.com/manaflow-ai/manaflow"
+                href="https://github.com/manaflow-ai/cmux"
                 target="_blank"
                 className="text-neutral-500 hover:text-neutral-700 hover:underline text-sm"
               >
@@ -48,6 +48,13 @@ export default function ManaflowPage() {
             <p className="text-neutral-600 text-sm mt-1">
               The open source terminal built for coding agents.
             </p>
+            <div className="mt-4 overflow-hidden rounded-lg border border-neutral-200 shadow-sm">
+              <img
+                src="/cmux-screenshot.jpg"
+                alt="cmux — the terminal built for coding agents"
+                className="w-full"
+              />
+            </div>
           </div>
         </div>
 
