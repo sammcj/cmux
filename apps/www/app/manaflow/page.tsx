@@ -48,17 +48,15 @@ export default function ManaflowPage() {
             <p className="text-neutral-600 text-sm mt-1">
               The open source terminal built for coding agents.
             </p>
-            <div className="mt-4 overflow-hidden rounded-lg border border-neutral-200 shadow-sm">
-              <img
-                src="/cmux-screenshot.jpg"
-                alt="cmux — the terminal built for coding agents"
-                className="w-full"
-              />
-            </div>
+            <img
+              src="/cmux-screenshot.jpg"
+              alt="cmux — the terminal built for coding agents"
+              className="mt-4 w-full rounded-lg"
+            />
           </div>
         </div>
 
-        <div className="mt-12 flex gap-4 text-sm">
+        <div className="mt-8 flex gap-4 text-sm">
           <a
             href="https://x.com/manaflowai"
             target="_blank"
