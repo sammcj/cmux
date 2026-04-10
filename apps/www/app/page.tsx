@@ -171,8 +171,8 @@ export default async function LandingPage() {
       >
         <CmuxIcon className="h-3.5 w-3.5" aria-hidden />
         <span className="text-sky-100/90">
-          <span className="font-medium text-white">cmux.com</span>
-          <span className="hidden sm:inline"> — The Open Source Terminal for Coding Agents</span>
+          <span className="font-medium text-white">cmux</span>
+          <span className="hidden sm:inline"> - The open source terminal built for coding agents</span>
         </span>
         <ArrowRight className="h-3.5 w-3.5 text-sky-300/60 transition-transform group-hover:translate-x-0.5 group-hover:text-sky-200" aria-hidden />
       </a>
@@ -552,48 +552,88 @@ export default async function LandingPage() {
       </main>
 
       <footer className="border-t border-white/10 bg-black/50">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 px-4 py-8 text-sm text-neutral-500 sm:flex-row sm:px-6">
-          <div className="flex items-center gap-2">
-            <Terminal className="h-4 w-4 text-neutral-600" aria-hidden />
-            <span className="font-mono">Manaflow</span>
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 text-sm text-neutral-500 sm:px-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Terminal className="h-4 w-4 text-neutral-600" aria-hidden />
+              <span className="font-mono">Manaflow</span>
+            </div>
+            <p className="max-w-md">
+              Open source applied AI lab building next-gen devtools.
+            </p>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <a
+                  className="font-medium text-neutral-200 transition hover:text-white"
+                  href="https://cmux.com/"
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  cmux
+                </a>
+                <a
+                  className="font-medium text-neutral-200 transition hover:text-white"
+                  href="https://github.com/manaflow-ai/cmux"
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  [github]
+                </a>
+              </div>
+              <p className="max-w-md">
+                The open source terminal built for coding agents.
+              </p>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
-            <a
-              className="transition hover:text-white"
-              href="https://github.com/manaflow-ai/cmux"
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              GitHub
-            </a>
-            <a
-              className="transition hover:text-white"
-              href="https://twitter.com/manaflowai"
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              Twitter
-            </a>
-            <a
-              className="transition hover:text-white"
-              href="https://discord.gg/SDbQmzQhRK"
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              Discord
-            </a>
-            <Link className="transition hover:text-white" href="/privacy-policy">
-              Privacy
-            </Link>
-            <Link className="transition hover:text-white" href="/terms-of-service">
-              Terms
-            </Link>
-            <Link className="transition hover:text-white" href="/eula">
-              EULA
-            </Link>
-            <Link className="transition hover:text-white" href="/contact">
-              Contact
-            </Link>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <a
+                className="transition hover:text-white"
+                href="https://twitter.com/manaflowai"
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                X
+              </a>
+              <a
+                className="transition hover:text-white"
+                href="https://github.com/manaflow-ai/cmux"
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                GitHub
+              </a>
+              <a
+                className="transition hover:text-white"
+                href="https://discord.gg/SDbQmzQhRK"
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                Discord
+              </a>
+              <a
+                className="transition hover:text-white"
+                href="https://www.linkedin.com/company/manaflow-ai/"
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                LinkedIn
+              </a>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <Link className="transition hover:text-white" href="/privacy-policy">
+                Privacy
+              </Link>
+              <Link className="transition hover:text-white" href="/terms-of-service">
+                Terms
+              </Link>
+              <Link className="transition hover:text-white" href="/eula">
+                EULA
+              </Link>
+              <Link className="transition hover:text-white" href="/contact">
+                Contact
+              </Link>
+            </div>
           </div>
         </div>
       </footer>
