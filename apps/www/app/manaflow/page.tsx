@@ -33,7 +33,7 @@ export default function ManaflowPage() {
             target="_blank"
             className="text-sm text-black underline hover:text-neutral-600 sm:text-base"
           >
-            cmux.com
+            cmux
           </a>
           <a
             href="https://github.com/manaflow-ai/cmux"
